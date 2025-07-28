@@ -228,6 +228,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Setup webhook (call this once)
+  app.post('/setup-webhook', async (req, res) => {
+    try {
+      const webhookUrl = `${req.protocol}://${req.get('host')}/webhook/telegram`;
+      const result = await bot.setWebhook(webhookUrl);
+      res.json(result);
+    } catch (error) {
+      console.error('Error setting up webhook:', error);
+      res.status(500).json({ error: 'Failed to setup webhook' });
+    }
+  });
+
+  // GET endpoint for easy webhook setup
+  app.get('/setup-webhook', async (req, res) => {
+    try {
+      const webhookUrl = `${req.protocol}://${req.get('host')}/webhook/telegram`;
+      const result = await bot.setWebhook(webhookUrl);
+      res.json({ 
+        success: true, 
+        webhook_url: webhookUrl,
+        result 
+      });
+    } catch (error) {
+      console.error('Error setting up webhook:', error);
+      res.status(500).json({ error: 'Failed to setup webhook' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

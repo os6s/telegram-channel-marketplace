@@ -20,6 +20,7 @@ interface TelegramMessage {
 interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  callback_query?: any;
 }
 
 export class TelegramBot {
@@ -74,6 +75,67 @@ export class TelegramBot {
     if (update.message) {
       this.handleMessage(update.message);
     }
+    if (update.callback_query) {
+      this.handleCallbackQuery(update.callback_query);
+    }
+  }
+
+  private async handleCallbackQuery(callbackQuery: any) {
+    const chatId = callbackQuery.message.chat.id;
+    const data = callbackQuery.data;
+
+    if (data === 'how_it_works') {
+      const howItWorksText = `
+📋 <b>How Channel Marketplace Works:</b>
+
+1️⃣ <b>Browse Channels</b> - Find channels by category, price, or subscribers
+2️⃣ <b>Secure Purchase</b> - Use TON cryptocurrency with escrow protection
+3️⃣ <b>Verification</b> - Ownership is verified before transfer
+4️⃣ <b>Transfer</b> - Admin rights transferred to you safely
+
+💰 <b>Escrow Protection:</b>
+• Your payment is held securely
+• Released only after successful transfer
+• Full refund if transfer fails
+
+🔒 <b>Verification Process:</b>
+• Sellers must prove channel ownership
+• Bot verification ensures legitimacy
+• No fake or stolen channels
+      `;
+      
+      await this.sendMessage(chatId, howItWorksText);
+    } else if (data === 'support') {
+      const supportText = `
+💬 <b>Need Help?</b>
+
+For support with:
+• Technical issues
+• Transaction problems
+• Account questions
+• General inquiries
+
+Contact our support team or check our documentation.
+
+🚀 <b>Quick Links:</b>
+• FAQ and guides
+• Transaction history
+• Security tips
+      `;
+      
+      await this.sendMessage(chatId, supportText);
+    }
+
+    // Answer the callback query to remove loading state
+    await fetch(`${this.baseUrl}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        callback_query_id: callbackQuery.id,
+      }),
+    });
   }
 
   private async handleMessage(message: TelegramMessage) {
@@ -101,7 +163,7 @@ Buy and sell Telegram channels with secure escrow using TON cryptocurrency.
             {
               text: "🛒 Open Marketplace",
               web_app: {
-                url: process.env.WEBAPP_URL || "https://your-app-url.onrender.com"
+                url: process.env.WEBAPP_URL || `https://${process.env.REPL_SLUG || 'telegram-marketplace'}.${process.env.REPLIT_DEV_DOMAIN || 'replit.dev'}`
               }
             }
           ],
