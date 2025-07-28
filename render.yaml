@@ -2,7 +2,7 @@ services:
   - type: web
     name: telegram-channel-marketplace
     env: node
-    buildCommand: npm install && npm run build
+    buildCommand: npm install && npx vite build && npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist
     startCommand: npm start
     plan: free
     envVars:
