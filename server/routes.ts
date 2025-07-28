@@ -12,13 +12,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/users", async (req, res) => {
     try {
       const userData = insertUserSchema.parse(req.body);
-      
+
       // Check if user already exists
       const existingUser = await storage.getUserByTelegramId(userData.telegramId);
       if (existingUser) {
         return res.json(existingUser);
       }
-      
+
       const user = await storage.createUser(userData);
       res.json(user);
     } catch (error) {
@@ -61,7 +61,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         search: req.query.search as string,
         sellerId: req.query.sellerId as string,
       };
-      
+
       const channels = await storage.getChannels(filters);
       res.json(channels);
     } catch (error) {
@@ -85,13 +85,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { sellerId, ...channelData } = req.body;
       const validatedChannelData = insertChannelSchema.parse(channelData);
-      
+
       // Check if channel username already exists
       const existingChannel = await storage.getChannelByUsername(validatedChannelData.username);
       if (existingChannel) {
         return res.status(400).json({ error: "Channel username already exists" });
       }
-      
+
       const channel = await storage.createChannel({
         ...validatedChannelData,
         sellerId, // This should come from authenticated user
@@ -132,7 +132,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.query.userId as string;
       const channelId = req.query.channelId as string;
-      
+
       let escrows;
       if (userId) {
         escrows = await storage.getEscrowsByUser(userId);
@@ -141,7 +141,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         return res.status(400).json({ error: "userId or channelId required" });
       }
-      
+
       res.json(escrows);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
@@ -163,18 +163,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/escrows", async (req, res) => {
     try {
       const escrowData = insertEscrowSchema.parse(req.body);
-      
+
       // Verify channel exists and is active
       const channel = await storage.getChannel(escrowData.channelId);
       if (!channel || !channel.isActive) {
         return res.status(400).json({ error: "Channel not found or inactive" });
       }
-      
+
       // Verify amount matches channel price
       if (parseFloat(escrowData.amount) !== parseFloat(channel.price)) {
         return res.status(400).json({ error: "Amount does not match channel price" });
       }
-      
+
       const escrow = await storage.createEscrow(escrowData);
       res.json(escrow);
     } catch (error) {
@@ -210,18 +210,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { botToken } = req.body;
       const channelId = req.params.id;
-      
+
       // TODO: Implement bot verification logic
       // This would involve:
       // 1. Creating a temporary bot with the provided token
       // 2. Checking if the bot is admin of the channel
       // 3. Verifying ownership
-      
+
       const channel = await storage.updateChannel(channelId, { isVerified: true });
       if (!channel) {
         return res.status(404).json({ error: "Channel not found" });
       }
-      
+
       res.json({ verified: true, channel });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
