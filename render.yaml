@@ -10,4 +10,6 @@ services:
         value: production
       - key: PORT
         sync: false
+      - key: DATABASE_URL
+        sync: false
     autoDeploy: true
