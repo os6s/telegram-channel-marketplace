@@ -19,7 +19,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await storage.createUser(userData);
       res.json(user);
     } catch (error) {
-      res.status(400).json({ error: error.message });
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -31,7 +31,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(user);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -44,7 +44,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(user);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -62,7 +62,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const channels = await storage.getChannels(filters);
       res.json(channels);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -74,27 +74,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(channel);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
   app.post("/api/channels", async (req, res) => {
     try {
-      const channelData = insertChannelSchema.parse(req.body);
+      const { sellerId, ...channelData } = req.body;
+      const validatedChannelData = insertChannelSchema.parse(channelData);
       
       // Check if channel username already exists
-      const existingChannel = await storage.getChannelByUsername(channelData.username);
+      const existingChannel = await storage.getChannelByUsername(validatedChannelData.username);
       if (existingChannel) {
         return res.status(400).json({ error: "Channel username already exists" });
       }
       
       const channel = await storage.createChannel({
-        ...channelData,
-        sellerId: req.body.sellerId, // This should come from authenticated user
+        ...validatedChannelData,
+        sellerId, // This should come from authenticated user
       });
       res.json(channel);
     } catch (error) {
-      res.status(400).json({ error: error.message });
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -107,7 +108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(channel);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -119,7 +120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -140,7 +141,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(escrows);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -152,7 +153,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(escrow);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -174,7 +175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const escrow = await storage.createEscrow(escrowData);
       res.json(escrow);
     } catch (error) {
-      res.status(400).json({ error: error.message });
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -187,7 +188,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(escrow);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -197,7 +198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stats = await storage.getMarketplaceStats();
       res.json(stats);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -220,7 +221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ verified: true, channel });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 

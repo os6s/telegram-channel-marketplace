@@ -240,7 +240,7 @@ export default function SellChannel() {
                       <FormItem>
                         <FormLabel>Avatar URL (Optional)</FormLabel>
                         <FormControl>
-                          <Input placeholder="https://..." {...field} />
+                          <Input placeholder="https://..." {...field} value={field.value || ""} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

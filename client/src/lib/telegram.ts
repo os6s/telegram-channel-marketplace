@@ -7,7 +7,6 @@ declare global {
         expand(): void;
         enableClosingConfirmation(): void;
         disableClosingConfirmation(): void;
-        isClosingConfirmationEnabled: boolean;
         onEvent(eventType: string, eventHandler: () => void): void;
         offEvent(eventType: string, eventHandler: () => void): void;
         sendData(data: string): void;

@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: telegram-channel-marketplace
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        sync: false
+    autoDeploy: true

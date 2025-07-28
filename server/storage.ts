@@ -60,7 +60,14 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = { ...insertUser, id };
+    const user: User = { 
+      ...insertUser, 
+      id,
+      username: insertUser.username || null,
+      firstName: insertUser.firstName || null,
+      lastName: insertUser.lastName || null,
+      tonWallet: insertUser.tonWallet || null
+    };
     this.users.set(id, user);
     return user;
   }
@@ -119,13 +126,14 @@ export class MemStorage implements IStorage {
     return channels.sort((a, b) => b.subscribers - a.subscribers);
   }
 
-  async createChannel(insertChannel: InsertChannel): Promise<Channel> {
+  async createChannel(insertChannel: InsertChannel & { sellerId: string }): Promise<Channel> {
     const id = randomUUID();
     const channel: Channel = { 
       ...insertChannel, 
       id,
       isVerified: false,
-      isActive: true
+      isActive: true,
+      avatarUrl: insertChannel.avatarUrl || null
     };
     this.channels.set(id, channel);
     return channel;
@@ -172,7 +180,8 @@ export class MemStorage implements IStorage {
       id,
       sellerId: channel.sellerId,
       status: "pending",
-      expiresAt
+      expiresAt,
+      botToken: insertEscrow.botToken || null
     };
     this.escrows.set(id, escrow);
     return escrow;

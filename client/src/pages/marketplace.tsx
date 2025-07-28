@@ -45,7 +45,7 @@ export default function Marketplace() {
       
       const response = await fetch(`/api/channels?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch channels');
-      return response.json() as Channel[];
+      return response.json();
     },
   });
 
@@ -160,7 +160,7 @@ export default function Marketplace() {
               {statsLoading ? (
                 <Skeleton className="h-6 w-16 bg-white/20 mx-auto" />
               ) : (
-                stats?.activeListings || 0
+                (stats as any)?.activeListings || 0
               )}
             </div>
             <div className="text-sm opacity-90">Active Listings</div>
@@ -170,7 +170,7 @@ export default function Marketplace() {
               {statsLoading ? (
                 <Skeleton className="h-6 w-20 bg-white/20 mx-auto" />
               ) : (
-                `${stats?.totalVolume || '0'} TON`
+                `${(stats as any)?.totalVolume || '0'} TON`
               )}
             </div>
             <div className="text-sm opacity-90">Total Volume</div>
@@ -180,7 +180,7 @@ export default function Marketplace() {
               {statsLoading ? (
                 <Skeleton className="h-6 w-12 bg-white/20 mx-auto" />
               ) : (
-                stats?.activeEscrows || 0
+                (stats as any)?.activeEscrows || 0
               )}
             </div>
             <div className="text-sm opacity-90">Active Escrows</div>

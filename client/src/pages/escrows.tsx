@@ -17,7 +17,7 @@ export default function Escrows() {
     queryFn: async () => {
       const response = await fetch(`/api/escrows?userId=${userId}`);
       if (!response.ok) throw new Error('Failed to fetch escrows');
-      return response.json() as Escrow[];
+      return response.json();
     },
   });
 
@@ -27,7 +27,7 @@ export default function Escrows() {
     queryFn: async () => {
       if (escrows.length === 0) return {};
       
-      const channelIds = [...new Set(escrows.map(e => e.channelId))];
+      const channelIds = Array.from(new Set(escrows.map(e => e.channelId)));
       const channelPromises = channelIds.map(async (id) => {
         const response = await fetch(`/api/channels/${id}`);
         if (response.ok) {
