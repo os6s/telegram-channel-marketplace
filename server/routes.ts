@@ -3,8 +3,11 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertChannelSchema, insertEscrowSchema } from "@shared/schema";
 import { z } from "zod";
+import { registerBotRoutes } from "./telegram-bot";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Register Telegram bot routes
+  registerBotRoutes(app);
   // User routes
   app.post("/api/users", async (req, res) => {
     try {
