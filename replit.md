@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is a full-stack web application built for Telegram that allows users to buy and sell Telegram channels. The platform operates as a marketplace where channel owners can list their channels for sale, and buyers can browse, purchase, and manage transactions through an escrow system. The application integrates with the Telegram Web App API and supports TON cryptocurrency payments.
+This is a full-stack Telegram mini app that allows users to buy and sell Telegram channels. The platform operates as a marketplace where channel owners can list their channels for sale, and buyers can browse, purchase, and manage transactions through an escrow system. The application integrates with the Telegram Web App API and supports TON cryptocurrency payments. Successfully deployed and working on Render platform.
 
 ## User Preferences
 
