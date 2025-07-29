@@ -21,6 +21,7 @@ const categories = [
   { id: 'gaming', name: 'entertainment', icon: '🎮' },
   { id: 'education', name: 'education', icon: '🎓' },
   { id: 'lifestyle', name: 'lifestyle', icon: '✨' },
+  { id: 'guarantors', name: 'guarantors', icon: '🛡️' },
 ];
 
 export default function EnhancedMarketplace() {

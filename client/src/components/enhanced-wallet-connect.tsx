@@ -85,6 +85,14 @@ export function EnhancedWalletConnect() {
       if (tonConnectUI) {
         // Use real TON Connect
         await tonConnectUI.openModal();
+        
+        // Auto-hide the modal after 3 seconds
+        setTimeout(() => {
+          if (tonConnectUI.modal.state?.status === 'opened') {
+            tonConnectUI.modal.close();
+          }
+        }, 3000);
+        
         toast({
           title: "Connecting...",
           description: "Please approve the connection in your TON wallet.",

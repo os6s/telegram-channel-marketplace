@@ -12,7 +12,7 @@ import { lazy, Suspense } from "react";
 // Lazy load pages for better performance
 const Marketplace = lazy(() => import("@/components/enhanced-marketplace"));
 const SellChannel = lazy(() => import("@/pages/enhanced-sell-channel"));
-const Escrows = lazy(() => import("@/pages/escrows"));
+const Guarantors = lazy(() => import("@/pages/guarantors"));
 const Profile = lazy(() => import("@/pages/profile"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -28,7 +28,7 @@ function Router() {
       <Switch>
         <Route path="/" component={Marketplace} />
         <Route path="/sell" component={SellChannel} />
-        <Route path="/escrows" component={Escrows} />
+        <Route path="/guarantors" component={Guarantors} />
         <Route path="/profile" component={Profile} />
         {/* Fallback to 404 */}
         <Route component={NotFound} />
@@ -61,13 +61,13 @@ function BottomNavigation() {
       label: t('sellChannel')
     },
     {
-      path: "/escrows",
+      path: "/guarantors",
       icon: (
         <svg className="w-5 h-5 mb-1" fill="currentColor" viewBox="0 0 24 24">
           <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M12,7C13.4,7 14.8,8.6 14.8,10V11H16V18H8V11H9.2V10C9.2,8.6 10.6,7 12,7M12,8.2C11.2,8.2 10.4,8.7 10.4,10V11H13.6V10C13.6,8.7 12.8,8.2 12,8.2Z"/>
         </svg>
       ),
-      label: t('escrows')
+      label: t('guarantors')
     },
     {
       path: "/profile",

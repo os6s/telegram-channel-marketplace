@@ -87,19 +87,43 @@ export default function EnhancedSellChannel() {
   };
 
   const nextStep = () => {
-    form.trigger().then((isValid) => {
+    // Get current step fields to validate
+    const fieldsToValidate = getFieldsForStep(step);
+    
+    form.trigger(fieldsToValidate).then((isValid) => {
       if (isValid) {
         setStep(step + 1);
       } else {
         // Show form errors if validation fails
-        console.log('Form validation errors:', form.formState.errors);
+        const errors = form.formState.errors;
+        console.log('Form validation errors:', errors);
+        
+        // Show specific error message
+        const errorMessages = Object.keys(errors).map(field => {
+          const fieldName = field.charAt(0).toUpperCase() + field.slice(1);
+          return `${fieldName}: ${errors[field]?.message || 'Required field'}`;
+        }).join(', ');
+        
         toast({
-          title: "Form Error",
-          description: "Please check all required fields are filled correctly.",
+          title: "Please Complete Required Fields",
+          description: errorMessages || "Make sure all required fields are filled correctly.",
           variant: "destructive",
         });
       }
     });
+  };
+
+  const getFieldsForStep = (currentStep: number) => {
+    switch (currentStep) {
+      case 1:
+        return ['name', 'username', 'category'] as (keyof InsertChannel)[];
+      case 2:
+        return ['description', 'subscribers'] as (keyof InsertChannel)[];
+      case 3:
+        return ['price'] as (keyof InsertChannel)[];
+      default:
+        return [] as (keyof InsertChannel)[];
+    }
   };
 
   const prevStep = () => {
@@ -163,13 +187,27 @@ export default function EnhancedSellChannel() {
               
               {/* Step 1: Basic Information */}
               {step === 1 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users className="h-5 w-5" />
-                      Channel Information
-                    </CardTitle>
-                  </CardHeader>
+                <div className="space-y-4">
+                  <Alert className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                    <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <AlertDescription className="text-blue-800 dark:text-blue-200">
+                      <div className="font-medium mb-2">Required: Add Bot to Your Channel</div>
+                      <ol className="list-decimal list-inside space-y-1 text-sm">
+                        <li>Add @Giftspremarketbot to your channel</li>
+                        <li>Grant the bot Admin rights</li>
+                        <li>This ensures secure ownership verification during sales</li>
+                      </ol>
+                      <p className="mt-2 text-sm font-medium">The bot will automatically monitor ownership transfers and notify both parties when complete.</p>
+                    </AlertDescription>
+                  </Alert>
+                  
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Users className="h-5 w-5" />
+                        Channel Information
+                      </CardTitle>
+                    </CardHeader>
                   <CardContent className="space-y-4">
                     <FormField
                       control={form.control}
@@ -227,7 +265,8 @@ export default function EnhancedSellChannel() {
                       )}
                     />
                   </CardContent>
-                </Card>
+                  </Card>
+                </div>
               )}
 
               {/* Step 2: Channel Details */}

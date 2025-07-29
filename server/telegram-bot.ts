@@ -71,6 +71,63 @@ export class TelegramBot {
     }
   }
 
+  async checkChannelOwnership(channelId: string, userId: number): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/getChatMember`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chat_id: channelId,
+          user_id: userId,
+        }),
+      });
+
+      const result = await response.json();
+      return result.ok && ['creator', 'administrator'].includes(result.result?.status);
+    } catch (error) {
+      console.error('Error checking channel ownership:', error);
+      return false;
+    }
+  }
+
+  async monitorChannelTransfer(channelId: string, sellerId: number, buyerId: number) {
+    // Monitor channel ownership change
+    const checkInterval = setInterval(async () => {
+      const buyerIsOwner = await this.checkChannelOwnership(channelId, buyerId);
+      const sellerIsOwner = await this.checkChannelOwnership(channelId, sellerId);
+      
+      if (buyerIsOwner && !sellerIsOwner) {
+        // Ownership transferred successfully
+        clearInterval(checkInterval);
+        
+        // Notify both parties
+        await this.sendMessage(buyerId, `🎉 <b>Channel Transfer Complete!</b>
+
+You are now the owner of the channel. The escrow will be released shortly.
+
+<b>Channel:</b> ${channelId}
+<b>Status:</b> ✅ Ownership Verified`);
+
+        await this.sendMessage(sellerId, `✅ <b>Channel Transfer Confirmed!</b>
+
+The buyer has successfully become the channel owner. The transaction is complete.
+
+<b>Channel:</b> ${channelId}
+<b>Status:</b> ✅ Transfer Verified`);
+
+        // Here you would typically trigger escrow completion
+        console.log('Channel transfer completed:', { channelId, sellerId, buyerId });
+      }
+    }, 30000); // Check every 30 seconds
+
+    // Stop monitoring after 24 hours
+    setTimeout(() => {
+      clearInterval(checkInterval);
+    }, 24 * 60 * 60 * 1000);
+  }
+
   handleUpdate(update: TelegramUpdate) {
     if (update.message) {
       this.handleMessage(update.message);

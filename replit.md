@@ -11,12 +11,19 @@ This is a full-stack Telegram mini app that allows users to buy and sell Telegra
 - ✓ Added comprehensive English/Arabic language switching with RTL layout support
 - ✓ Enhanced marketplace with improved category navigation (no page reloads, smooth transitions)
 - ✓ Created multi-step channel selling process with verification and enhanced UX
-- ✓ Integrated TON wallet connection functionality with mock implementation for development
+- ✓ Integrated TON wallet connection functionality with real TON Connect integration
 - ✓ Made app fully compatible with Telegram Mini App standards and WebApp API
 - ✓ Fixed navigation system to use proper client-side routing instead of page reloads
 - ✓ Added theme and settings modal with user-friendly controls
 - ✓ Implemented internationalization system with context providers for theme and language
 - ✓ Enhanced UI components with proper dark mode support and responsive design
+- ✓ Fixed Profile page dark mode issues with proper CSS variable usage
+- ✓ Added language persistence across page reloads
+- ✓ Implemented enhanced form validation with detailed error messages
+- ✓ Added bot security notifications for channel selling process
+- ✓ Renamed "Escrow" category to "Guarantors" with dedicated guarantor profiles
+- ✓ Added automatic TON wallet popup timeout (3 seconds)
+- ✓ Implemented bot monitoring for channel ownership transfers with notifications
 
 ## User Preferences
 

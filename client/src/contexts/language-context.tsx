@@ -17,7 +17,7 @@ const translations: Record<Language, Translations> = {
     // Navigation
     marketplace: "Marketplace",
     sellChannel: "Sell Channel",
-    escrows: "Escrows",
+    guarantors: "Guarantors",
     profile: "Profile",
     
     // Marketplace
@@ -32,6 +32,7 @@ const translations: Record<Language, Translations> = {
     technology: "Technology",
     lifestyle: "Lifestyle",
     news: "News",
+    guarantors: "Guarantors",
     
     // Filters
     minSubscribers: "Min Subscribers",
@@ -80,7 +81,7 @@ const translations: Record<Language, Translations> = {
     // Navigation
     marketplace: "السوق",
     sellChannel: "بيع قناة",
-    escrows: "الضمان",
+    guarantors: "الضامنين",
     profile: "الملف الشخصي",
     
     // Marketplace
@@ -95,6 +96,7 @@ const translations: Record<Language, Translations> = {
     technology: "التكنولوجيا",
     lifestyle: "نمط الحياة",
     news: "الأخبار",
+    guarantors: "الضامنين",
     
     // Filters
     minSubscribers: "الحد الأدنى للمشتركين",
