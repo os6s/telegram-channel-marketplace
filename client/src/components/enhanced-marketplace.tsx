@@ -40,8 +40,15 @@ export default function EnhancedMarketplace() {
   const { t, language } = useLanguage();
   const { theme } = useTheme();
 
+  // Define the stats type
+  type MarketplaceStats = {
+    activeListings: number;
+    totalVolume: string;
+    activeEscrows: number;
+  };
+
   // Fetch marketplace stats
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery<MarketplaceStats>({
     queryKey: ['/api/stats'],
   });
 
@@ -193,7 +200,18 @@ export default function EnhancedMarketplace() {
                 <Input
                   type="number"
                   placeholder="1000"
-                  onChange={(e) => toggleFilter('minSubscribers', parseInt(e.target.value) || undefined)}
+                  min="0"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '' || value === '0') {
+                      toggleFilter('minSubscribers', undefined);
+                    } else {
+                      const num = parseInt(value);
+                      if (!isNaN(num) && num > 0) {
+                        toggleFilter('minSubscribers', num);
+                      }
+                    }
+                  }}
                   className="mt-1"
                 />
               </div>
@@ -202,7 +220,19 @@ export default function EnhancedMarketplace() {
                 <Input
                   type="number"
                   placeholder="100"
-                  onChange={(e) => toggleFilter('maxPrice', e.target.value || undefined)}
+                  min="0"
+                  step="0.01"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '' || value === '0') {
+                      toggleFilter('maxPrice', undefined);
+                    } else {
+                      const num = parseFloat(value);
+                      if (!isNaN(num) && num > 0) {
+                        toggleFilter('maxPrice', value);
+                      }
+                    }
+                  }}
                   className="mt-1"
                 />
               </div>

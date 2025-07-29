@@ -49,16 +49,21 @@ export default function EnhancedSellChannel() {
 
   const createChannelMutation = useMutation({
     mutationFn: async (data: InsertChannel) => {
-      // For development/testing with mock data
-      console.log('Creating channel listing:', data);
+      // Get user from Telegram WebApp context
+      const webApp = (window as any).Telegram?.WebApp;
+      const user = webApp?.initDataUnsafe?.user;
       
-      // Create channel with mock seller ID for development
+      if (!user?.id) {
+        throw new Error("User authentication required. Please open this app from Telegram.");
+      }
+      
+      // Create channel with actual user ID
       const channelData = {
         ...data,
-        sellerId: 'mock-user-id',
+        sellerId: user.id.toString(),
       };
 
-      return apiRequest('POST', '/api/channels', channelData);
+      return await apiRequest('POST', '/api/channels', channelData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/channels'] });
@@ -70,6 +75,7 @@ export default function EnhancedSellChannel() {
       setStep(4); // Success step
     },
     onError: (error: Error) => {
+      console.error('Channel creation error:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to list channel. Please try again.",
@@ -101,7 +107,8 @@ export default function EnhancedSellChannel() {
         // Show specific error message
         const errorMessages = Object.keys(errors).map(field => {
           const fieldName = field.charAt(0).toUpperCase() + field.slice(1);
-          return `${fieldName}: ${errors[field]?.message || 'Required field'}`;
+          const error = errors[field as keyof typeof errors];
+          return `${fieldName}: ${error?.message || 'Required field'}`;
         }).join(', ');
         
         toast({

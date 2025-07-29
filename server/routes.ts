@@ -112,7 +112,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/channels", async (req, res) => {
     try {
       const { sellerId, ...channelData } = req.body;
+      
+      // Validate sellerId is provided
+      if (!sellerId) {
+        return res.status(400).json({ error: "Seller ID is required. Please authenticate first." });
+      }
+      
       const validatedChannelData = insertChannelSchema.parse(channelData);
+
+      // Validate positive numbers
+      if (validatedChannelData.subscribers < 0) {
+        return res.status(400).json({ error: "Subscriber count cannot be negative" });
+      }
+      
+      if (parseFloat(validatedChannelData.price) < 0) {
+        return res.status(400).json({ error: "Price cannot be negative" });
+      }
+
+      // Validate username format (alphanumeric and underscores, 5-32 chars)
+      const usernameRegex = /^[a-zA-Z0-9_]{5,32}$/;
+      if (!usernameRegex.test(validatedChannelData.username)) {
+        return res.status(400).json({ error: "Username must be 5-32 characters and contain only letters, numbers, and underscores" });
+      }
 
       // Check if channel username already exists
       const existingChannel = await storage.getChannelByUsername(validatedChannelData.username);
@@ -122,7 +143,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const channel = await storage.createChannel({
         ...validatedChannelData,
-        sellerId, // This should come from authenticated user
+        sellerId,
       });
       res.json(channel);
     } catch (error) {
@@ -132,12 +153,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/channels/:id", async (req, res) => {
     try {
-      const updates = req.body;
-      const channel = await storage.updateChannel(req.params.id, updates);
+      const { userId, ...updates } = req.body;
+      
+      // Check if channel exists
+      const channel = await storage.getChannel(req.params.id);
       if (!channel) {
         return res.status(404).json({ error: "Channel not found" });
       }
-      res.json(channel);
+      
+      // Only channel owner can update
+      if (channel.sellerId !== userId) {
+        return res.status(403).json({ error: "You can only update your own channels" });
+      }
+      
+      // Validate updates if they contain price or subscribers
+      if (updates.subscribers !== undefined && updates.subscribers < 0) {
+        return res.status(400).json({ error: "Subscriber count cannot be negative" });
+      }
+      
+      if (updates.price !== undefined && parseFloat(updates.price) < 0) {
+        return res.status(400).json({ error: "Price cannot be negative" });
+      }
+      
+      const updatedChannel = await storage.updateChannel(req.params.id, updates);
+      res.json(updatedChannel);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
@@ -145,10 +184,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/channels/:id", async (req, res) => {
     try {
-      const success = await storage.deleteChannel(req.params.id);
-      if (!success) {
+      const userId = req.query.userId as string;
+      
+      if (!userId) {
+        return res.status(400).json({ error: "User ID is required" });
+      }
+      
+      // Check if channel exists and user owns it
+      const channel = await storage.getChannel(req.params.id);
+      if (!channel) {
         return res.status(404).json({ error: "Channel not found" });
       }
+      
+      if (channel.sellerId !== userId) {
+        return res.status(403).json({ error: "You can only delete your own channels" });
+      }
+      
+      // Check if there are active escrows for this channel
+      const escrows = await storage.getEscrowsByChannel(req.params.id);
+      const activeEscrows = escrows.filter(e => e.status === "pending" || e.status === "paid");
+      
+      if (activeEscrows.length > 0) {
+        return res.status(400).json({ error: "Cannot delete channel with active escrows" });
+      }
+      
+      const success = await storage.deleteChannel(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });

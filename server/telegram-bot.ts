@@ -92,40 +92,80 @@ export class TelegramBot {
     }
   }
 
-  async monitorChannelTransfer(channelId: string, sellerId: number, buyerId: number) {
+  private activeMonitors = new Map<string, NodeJS.Timeout>();
+
+  async monitorChannelTransfer(channelId: string, sellerId: number, buyerId: number, escrowId: string) {
+    // Clean up any existing monitor for this escrow
+    const existingMonitor = this.activeMonitors.get(escrowId);
+    if (existingMonitor) {
+      clearInterval(existingMonitor);
+    }
+
+    let checkCount = 0;
+    const maxChecks = 48; // 24 hours with 30-second intervals
+    
     // Monitor channel ownership change
     const checkInterval = setInterval(async () => {
-      const buyerIsOwner = await this.checkChannelOwnership(channelId, buyerId);
-      const sellerIsOwner = await this.checkChannelOwnership(channelId, sellerId);
+      checkCount++;
       
-      if (buyerIsOwner && !sellerIsOwner) {
-        // Ownership transferred successfully
-        clearInterval(checkInterval);
+      try {
+        const buyerIsOwner = await this.checkChannelOwnership(channelId, buyerId);
+        const sellerIsOwner = await this.checkChannelOwnership(channelId, sellerId);
         
-        // Notify both parties
-        await this.sendMessage(buyerId, `🎉 <b>Channel Transfer Complete!</b>
+        if (buyerIsOwner && !sellerIsOwner) {
+          // Ownership transferred successfully
+          this.cleanupMonitor(escrowId);
+          
+          // Notify both parties
+          await this.sendMessage(buyerId, `🎉 <b>Channel Transfer Complete!</b>
 
 You are now the owner of the channel. The escrow will be released shortly.
 
 <b>Channel:</b> ${channelId}
 <b>Status:</b> ✅ Ownership Verified`);
 
-        await this.sendMessage(sellerId, `✅ <b>Channel Transfer Confirmed!</b>
+          await this.sendMessage(sellerId, `✅ <b>Channel Transfer Confirmed!</b>
 
 The buyer has successfully become the channel owner. The transaction is complete.
 
 <b>Channel:</b> ${channelId}
 <b>Status:</b> ✅ Transfer Verified`);
 
-        // Here you would typically trigger escrow completion
-        console.log('Channel transfer completed:', { channelId, sellerId, buyerId });
+          // Here you would typically trigger escrow completion
+          console.log('Channel transfer completed:', { channelId, sellerId, buyerId, escrowId });
+        } else if (checkCount >= maxChecks) {
+          // Timeout reached
+          this.cleanupMonitor(escrowId);
+          
+          await this.sendMessage(buyerId, `⚠️ <b>Transfer Timeout</b>
+
+The channel transfer has not been completed within 24 hours. Please contact support.
+
+<b>Channel:</b> ${channelId}
+<b>Status:</b> ❌ Timeout`);
+        }
+      } catch (error) {
+        console.error('Error monitoring channel transfer:', error);
+        // Continue monitoring despite errors
       }
     }, 30000); // Check every 30 seconds
 
-    // Stop monitoring after 24 hours
-    setTimeout(() => {
-      clearInterval(checkInterval);
-    }, 24 * 60 * 60 * 1000);
+    // Store the interval
+    this.activeMonitors.set(escrowId, checkInterval);
+  }
+
+  private cleanupMonitor(escrowId: string) {
+    const monitor = this.activeMonitors.get(escrowId);
+    if (monitor) {
+      clearInterval(monitor);
+      this.activeMonitors.delete(escrowId);
+    }
+  }
+
+  // Clean up all monitors on shutdown
+  cleanupAllMonitors() {
+    this.activeMonitors.forEach(monitor => clearInterval(monitor));
+    this.activeMonitors.clear();
   }
 
   handleUpdate(update: TelegramUpdate) {
