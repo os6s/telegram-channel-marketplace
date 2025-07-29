@@ -4,22 +4,33 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TelegramApp } from "@/components/telegram-app";
-import Marketplace from "@/pages/marketplace";
-import SellChannel from "@/pages/sell-channel";
-import Escrows from "@/pages/escrows";
-import Profile from "@/pages/profile";
-import NotFound from "@/pages/not-found";
+import { lazy, Suspense } from "react";
+
+// Lazy load pages for better performance
+const Marketplace = lazy(() => import("@/pages/marketplace"));
+const SellChannel = lazy(() => import("@/pages/sell-channel"));
+const Escrows = lazy(() => import("@/pages/escrows"));
+const Profile = lazy(() => import("@/pages/profile"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+
+const LoadingSpinner = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-telegram-500"></div>
+  </div>
+);
 
 function Router() {
   return (
-    <Switch>
-      <Route path="/" component={Marketplace} />
-      <Route path="/sell" component={SellChannel} />
-      <Route path="/escrows" component={Escrows} />
-      <Route path="/profile" component={Profile} />
-      {/* Fallback to 404 */}
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={<LoadingSpinner />}>
+      <Switch>
+        <Route path="/" component={Marketplace} />
+        <Route path="/sell" component={SellChannel} />
+        <Route path="/escrows" component={Escrows} />
+        <Route path="/profile" component={Profile} />
+        {/* Fallback to 404 */}
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 
