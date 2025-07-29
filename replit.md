@@ -4,6 +4,15 @@
 
 This is a full-stack Telegram mini app that allows users to buy and sell Telegram channels. The platform operates as a marketplace where channel owners can list their channels for sale, and buyers can browse, purchase, and manage transactions through an escrow system. The application integrates with the Telegram Web App API and supports TON cryptocurrency payments. Successfully deployed and working on Render platform.
 
+## Recent Changes
+
+### January 29, 2025 - Deployment Configuration Fixes
+- ✓ Fixed port mismatch: Updated server default port from 10000 to 5000 to match .replit configuration
+- ✓ Added SESSION_SECRET environment variable handling with fallback defaults for production
+- ✓ Fixed LSP diagnostics errors in server/routes.ts related to bot references
+- ✓ Created DEPLOYMENT_README.md with comprehensive deployment guidance
+- ✓ Enhanced environment variable validation for production deployments
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.

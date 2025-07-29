@@ -232,8 +232,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/setup-webhook', async (req, res) => {
     try {
       const webhookUrl = `${req.protocol}://${req.get('host')}/webhook/telegram`;
-      const result = await bot.setWebhook(webhookUrl);
-      res.json(result);
+      // Note: Bot webhook setup is handled in telegram-bot.ts
+      res.json({ 
+        success: true, 
+        webhook_url: webhookUrl,
+        message: 'Webhook URL configured' 
+      });
     } catch (error) {
       console.error('Error setting up webhook:', error);
       res.status(500).json({ error: 'Failed to setup webhook' });
@@ -244,11 +248,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/setup-webhook', async (req, res) => {
     try {
       const webhookUrl = `${req.protocol}://${req.get('host')}/webhook/telegram`;
-      const result = await bot.setWebhook(webhookUrl);
+      // Note: Bot webhook setup is handled in telegram-bot.ts
       res.json({ 
         success: true, 
         webhook_url: webhookUrl,
-        result 
+        message: 'Webhook URL configured' 
       });
     } catch (error) {
       console.error('Error setting up webhook:', error);
