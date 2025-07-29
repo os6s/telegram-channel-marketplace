@@ -2,21 +2,20 @@ services:
   - type: web
     name: telegram-channel-marketplace
     env: node
+    plan: free
     buildCommand: npm install && npm run build
     startCommand: npm start
-    plan: free
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        sync: false
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: telegram-marketplace-db
+          property: connectionString
       - key: TELEGRAM_BOT_TOKEN
         sync: false
-    autoDeploy: true
+    healthCheckPath: /api/health
 
-  - type: pserv
-    name: telegram-marketplace-db
-    env: docker
+databases:
+  - name: telegram-marketplace-db
     plan: free

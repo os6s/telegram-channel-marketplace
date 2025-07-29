@@ -24,6 +24,9 @@ This is a full-stack Telegram mini app that allows users to buy and sell Telegra
 - ✓ Renamed "Escrow" category to "Guarantors" with dedicated guarantor profiles
 - ✓ Added automatic TON wallet popup timeout (3 seconds)
 - ✓ Implemented bot monitoring for channel ownership transfers with notifications
+- ✓ Added comprehensive deployment configuration for external hosting
+- ✓ Created deployment guides for Render.com, Railway, Vercel, and Heroku platforms
+- ✓ Prepared health check endpoints and production build scripts for permanent hosting
 
 ## User Preferences
 
