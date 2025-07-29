@@ -163,7 +163,7 @@ Buy and sell Telegram channels with secure escrow using TON cryptocurrency.
             {
               text: "🛒 Open Marketplace",
               web_app: {
-                url: process.env.WEBAPP_URL || `https://${process.env.REPL_SLUG || 'telegram-marketplace'}.${process.env.REPLIT_DEV_DOMAIN || 'replit.dev'}`
+                url: process.env.WEBAPP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || `${process.env.REPL_ID}.replit.dev`}`
               }
             }
           ],
