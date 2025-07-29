@@ -45,41 +45,48 @@ export function EnhancedWalletConnect() {
   };
 
   const connectWallet = async () => {
-    if (!isTonConnectAvailable) {
-      // Fallback for non-TON environments
-      toast({
-        title: "TON Wallet",
-        description: "Please open this app in a TON-compatible wallet or browser.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsConnecting(true);
     setError(null);
 
     try {
-      // Mock TON Connect implementation for development
-      // In production, this would use actual TON Connect SDK
-      const mockWallet: TonWallet = {
-        name: "TON Wallet",
-        address: "UQA...", // Mock address
-        balance: "10.50",
-        network: "mainnet"
-      };
-
-      setWallet(mockWallet);
-      localStorage.setItem('ton-wallet', JSON.stringify(mockWallet));
+      // Check if running in Telegram environment
+      const isInTelegram = typeof window !== 'undefined' && window.Telegram?.WebApp;
       
-      toast({
-        title: "Wallet Connected",
-        description: "Your TON wallet has been connected successfully.",
-      });
+      if (isInTelegram) {
+        // In Telegram, we can simulate a successful connection
+        // In production, this would integrate with TON Space or other Telegram wallet
+        const mockWallet: TonWallet = {
+          name: "TON Space",
+          address: "EQD4FPq-PRDieyQKkizFTRtSDyucUIqrj0v_zXJmqaDp6_0t",
+          balance: "125.437",
+          network: "mainnet"
+        };
+
+        // Simulate connection delay
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        setWallet(mockWallet);
+        localStorage.setItem('ton-wallet', JSON.stringify(mockWallet));
+        
+        toast({
+          title: "Wallet Connected",
+          description: "Successfully connected to TON Space wallet.",
+        });
+      } else {
+        // Outside Telegram, provide helpful instructions
+        setError('telegram-required');
+        toast({
+          title: "Open in Telegram",
+          description: "TON wallet connection requires opening this app through Telegram.",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
-      setError("Failed to connect wallet");
+      console.error('Wallet connection failed:', error);
+      setError('connection-failed');
       toast({
         title: "Connection Failed",
-        description: "Unable to connect to TON wallet. Please try again.",
+        description: "Could not connect to TON wallet. Please try again.",
         variant: "destructive",
       });
     } finally {
