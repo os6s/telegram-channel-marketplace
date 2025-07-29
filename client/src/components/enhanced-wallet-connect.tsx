@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Wallet, ExternalLink, Copy, CheckCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
+import { TonConnectUI } from "@tonconnect/ui-react";
 
 // TON Connect integration types
 interface TonWallet {
@@ -18,29 +19,61 @@ export function EnhancedWalletConnect() {
   const [wallet, setWallet] = useState<TonWallet | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tonConnectUI, setTonConnectUI] = useState<TonConnectUI | null>(null);
   const { toast } = useToast();
   const { t } = useLanguage();
 
-  // Check if TON Connect is available
-  const isTonConnectAvailable = typeof window !== 'undefined' && 
-    (window as any).TON?.Connect !== undefined;
-
   useEffect(() => {
-    // Initialize TON Connect
-    if (isTonConnectAvailable) {
-      initializeTonConnect();
-    }
+    initializeTonConnect();
   }, []);
 
   const initializeTonConnect = async () => {
     try {
-      // Check if wallet is already connected
+      // Initialize real TON Connect UI
+      const tonConnectUI = new TonConnectUI({
+        manifestUrl: window.location.origin + '/tonconnect-manifest.json',
+      });
+      
+      setTonConnectUI(tonConnectUI);
+      
+      // Check for existing connection
+      if (tonConnectUI.connected) {
+        const walletInfo = tonConnectUI.wallet;
+        if (walletInfo) {
+          const connectedWallet: TonWallet = {
+            name: walletInfo.device.appName,
+            address: walletInfo.account.address,
+            balance: "0", // Will be fetched separately
+            network: "mainnet"
+          };
+          setWallet(connectedWallet);
+        }
+      }
+      
+      // Listen for wallet connection changes
+      tonConnectUI.onStatusChange((wallet) => {
+        if (wallet) {
+          const connectedWallet: TonWallet = {
+            name: wallet.device.appName,
+            address: wallet.account.address,
+            balance: "0",
+            network: "mainnet"
+          };
+          setWallet(connectedWallet);
+          localStorage.setItem('ton-wallet', JSON.stringify(connectedWallet));
+        } else {
+          setWallet(null);
+          localStorage.removeItem('ton-wallet');
+        }
+      });
+      
+    } catch (error) {
+      console.log('TON Connect initialization failed, falling back to demo mode:', error);
+      // Check if wallet is already connected in demo mode
       const savedWallet = localStorage.getItem('ton-wallet');
       if (savedWallet) {
         setWallet(JSON.parse(savedWallet));
       }
-    } catch (error) {
-      console.log('TON Connect initialization failed:', error);
     }
   };
 
@@ -49,37 +82,43 @@ export function EnhancedWalletConnect() {
     setError(null);
 
     try {
-      // Check if running in Telegram environment
-      const isInTelegram = typeof window !== 'undefined' && window.Telegram?.WebApp;
-      
-      if (isInTelegram) {
-        // In Telegram, we can simulate a successful connection
-        // In production, this would integrate with TON Space or other Telegram wallet
-        const mockWallet: TonWallet = {
-          name: "TON Space",
-          address: "EQD4FPq-PRDieyQKkizFTRtSDyucUIqrj0v_zXJmqaDp6_0t",
-          balance: "125.437",
-          network: "mainnet"
-        };
-
-        // Simulate connection delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        setWallet(mockWallet);
-        localStorage.setItem('ton-wallet', JSON.stringify(mockWallet));
-        
+      if (tonConnectUI) {
+        // Use real TON Connect
+        await tonConnectUI.openModal();
         toast({
-          title: "Wallet Connected",
-          description: "Successfully connected to TON Space wallet.",
+          title: "Connecting...",
+          description: "Please approve the connection in your TON wallet.",
         });
       } else {
-        // Outside Telegram, provide helpful instructions
-        setError('telegram-required');
-        toast({
-          title: "Open in Telegram",
-          description: "TON wallet connection requires opening this app through Telegram.",
-          variant: "destructive",
-        });
+        // Fallback to demo mode for development/testing
+        const isInTelegram = typeof window !== 'undefined' && window.Telegram?.WebApp;
+        
+        if (isInTelegram) {
+          const mockWallet: TonWallet = {
+            name: "TON Space (Demo)",
+            address: "EQD4FPq-PRDieyQKkizFTRtSDyucUIqrj0v_zXJmqaDp6_0t",
+            balance: "125.437",
+            network: "mainnet"
+          };
+
+          // Simulate connection delay
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          setWallet(mockWallet);
+          localStorage.setItem('ton-wallet', JSON.stringify(mockWallet));
+          
+          toast({
+            title: "Demo Wallet Connected",
+            description: "Connected to demo TON wallet for testing.",
+          });
+        } else {
+          setError('telegram-required');
+          toast({
+            title: "Open in Telegram",
+            description: "TON wallet connection requires opening this app through Telegram.",
+            variant: "destructive",
+          });
+        }
       }
     } catch (error) {
       console.error('Wallet connection failed:', error);
@@ -94,13 +133,23 @@ export function EnhancedWalletConnect() {
     }
   };
 
-  const disconnectWallet = () => {
-    setWallet(null);
-    localStorage.removeItem('ton-wallet');
-    toast({
-      title: "Wallet Disconnected",
-      description: "Your wallet has been disconnected.",
-    });
+  const disconnectWallet = async () => {
+    try {
+      if (tonConnectUI && tonConnectUI.connected) {
+        await tonConnectUI.disconnect();
+      } else {
+        // Manual cleanup for demo mode
+        setWallet(null);
+        localStorage.removeItem('ton-wallet');
+      }
+      
+      toast({
+        title: "Wallet Disconnected",
+        description: "Your wallet has been disconnected.",
+      });
+    } catch (error) {
+      console.error('Disconnect failed:', error);
+    }
   };
 
   const copyAddress = async () => {

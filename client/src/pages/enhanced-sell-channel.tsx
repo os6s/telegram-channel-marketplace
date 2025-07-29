@@ -94,6 +94,14 @@ export default function EnhancedSellChannel() {
     form.trigger().then((isValid) => {
       if (isValid) {
         setStep(step + 1);
+      } else {
+        // Show form errors if validation fails
+        console.log('Form validation errors:', form.formState.errors);
+        toast({
+          title: "Form Error",
+          description: "Please check all required fields are filled correctly.",
+          variant: "destructive",
+        });
       }
     });
   };
@@ -418,7 +426,10 @@ export default function EnhancedSellChannel() {
                   
                   <Button 
                     type={step === 3 ? "submit" : "button"}
-                    onClick={step === 3 ? undefined : nextStep}
+                    onClick={step === 3 ? undefined : (e) => {
+                      e.preventDefault();
+                      nextStep();
+                    }}
                     disabled={createChannelMutation.isPending}
                     className="ml-auto"
                   >

@@ -145,14 +145,20 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<Language>(() => {
-    // Check Telegram's language first
-    if (typeof window !== 'undefined' && window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code) {
-      const telegramLang = window.Telegram.WebApp.initDataUnsafe.user.language_code;
-      if (telegramLang.startsWith('ar')) return 'ar';
+    // Always check localStorage first for user preference
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem("language") as Language;
+      if (stored && (stored === 'en' || stored === 'ar')) {
+        return stored;
+      }
+      
+      // Only use Telegram's language as fallback if no preference saved
+      if (window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code) {
+        const telegramLang = window.Telegram.WebApp.initDataUnsafe.user.language_code;
+        if (telegramLang.startsWith('ar')) return 'ar';
+      }
     }
-    // Fallback to localStorage or default
-    const stored = localStorage.getItem("language") as Language;
-    return stored || "en";
+    return "en";
   });
 
   const t = (key: string): string => {
@@ -161,7 +167,9 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const handleSetLanguage = (lang: Language) => {
     setLanguage(lang);
-    localStorage.setItem("language", lang);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem("language", lang);
+    }
     
     // Update document direction for RTL support
     document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
