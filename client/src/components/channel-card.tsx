@@ -2,37 +2,39 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Eye, ShoppingCart, Users, TrendingUp, Zap, CheckCircle } from "lucide-react";
+import { AdminControls } from "@/components/admin-controls";
 import { type Channel } from "@shared/schema";
 
 interface ChannelCardProps {
   channel: Channel;
   onViewDetails: (channel: Channel) => void;
   onBuyNow: (channel: Channel) => void;
+  currentUser?: { username?: string };
 }
 
 const categoryIcons: Record<string, string> = {
-  crypto: "🪙",
-  news: "📰", 
-  gaming: "🎮",
-  entertainment: "🎬",
-  education: "🎓",
-  business: "💼",
-  tech: "🔧",
-  lifestyle: "🌟"
+  statueOfLiberty: "🗽",
+  torchOfFreedom: "🔥",
+  goldenEagle: "🦅",
+  diamondHands: "💎",
+  cryptoPunk: "👾",
+  moonWalker: "🌙",
+  rocketShip: "🚀",
+  unicornMagic: "🦄"
 };
 
 const categoryColors: Record<string, string> = {
-  crypto: "bg-yellow-100 text-yellow-800",
-  news: "bg-blue-100 text-blue-800",
-  gaming: "bg-purple-100 text-purple-800",
-  entertainment: "bg-pink-100 text-pink-800",
-  education: "bg-green-100 text-green-800",
-  business: "bg-gray-100 text-gray-800",
-  tech: "bg-indigo-100 text-indigo-800",
-  lifestyle: "bg-orange-100 text-orange-800"
+  statueOfLiberty: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  torchOfFreedom: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  goldenEagle: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  diamondHands: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  cryptoPunk: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+  moonWalker: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200",
+  rocketShip: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  unicornMagic: "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200"
 };
 
-export function ChannelCard({ channel, onViewDetails, onBuyNow }: ChannelCardProps) {
+export function ChannelCard({ channel, onViewDetails, onBuyNow, currentUser }: ChannelCardProps) {
   const formatNumber = (num: number): string => {
     if (num >= 1000000) {
       return (num / 1000000).toFixed(1) + 'M';
@@ -130,6 +132,9 @@ export function ChannelCard({ channel, onViewDetails, onBuyNow }: ChannelCardPro
             </Button>
           </div>
         </div>
+        
+        {/* Admin Controls for @Os6s7 */}
+        <AdminControls channel={channel} currentUser={currentUser} />
       </CardContent>
     </Card>
   );

@@ -17,14 +17,14 @@ import { ArrowLeft, Upload, Check, AlertCircle, Users, DollarSign, Shield, Bot }
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const categories = [
-  { value: 'business', label: 'Business' },
-  { value: 'crypto', label: 'Crypto & Finance' },
-  { value: 'news', label: 'News & Media' },
-  { value: 'gaming', label: 'Gaming' },
-  { value: 'entertainment', label: 'Entertainment' },
-  { value: 'education', label: 'Education' },
-  { value: 'lifestyle', label: 'Lifestyle' },
-  { value: 'technology', label: 'Technology' },
+  { value: 'statueOfLiberty', label: 'Statue of Liberty' },
+  { value: 'torchOfFreedom', label: 'Torch of Freedom' },
+  { value: 'goldenEagle', label: 'Golden Eagle' },
+  { value: 'diamondHands', label: 'Diamond Hands' },
+  { value: 'cryptoPunk', label: 'Crypto Punk' },
+  { value: 'moonWalker', label: 'Moon Walker' },
+  { value: 'rocketShip', label: 'Rocket Ship' },
+  { value: 'unicornMagic', label: 'Unicorn Magic' },
 ];
 
 export default function EnhancedSellChannel() {

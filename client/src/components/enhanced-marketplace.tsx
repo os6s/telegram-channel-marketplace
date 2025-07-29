@@ -15,12 +15,14 @@ import { type Channel } from "@shared/schema";
 
 const categories = [
   { id: '', name: 'allCategories', icon: '📂' },
-  { id: 'business', name: 'business', icon: '💼' },
-  { id: 'crypto', name: 'technology', icon: '🪙' },
-  { id: 'news', name: 'news', icon: '📰' },
-  { id: 'gaming', name: 'entertainment', icon: '🎮' },
-  { id: 'education', name: 'education', icon: '🎓' },
-  { id: 'lifestyle', name: 'lifestyle', icon: '✨' },
+  { id: 'statueOfLiberty', name: 'statueOfLiberty', icon: '🗽' },
+  { id: 'torchOfFreedom', name: 'torchOfFreedom', icon: '🔥' },
+  { id: 'goldenEagle', name: 'goldenEagle', icon: '🦅' },
+  { id: 'diamondHands', name: 'diamondHands', icon: '💎' },
+  { id: 'cryptoPunk', name: 'cryptoPunk', icon: '👾' },
+  { id: 'moonWalker', name: 'moonWalker', icon: '🌙' },
+  { id: 'rocketShip', name: 'rocketShip', icon: '🚀' },
+  { id: 'unicornMagic', name: 'unicornMagic', icon: '🦄' },
   { id: 'guarantors', name: 'guarantors', icon: '🛡️' },
 ];
 
@@ -234,6 +236,7 @@ export default function EnhancedMarketplace() {
                 channel={channel}
                 onViewDetails={handleViewDetails}
                 onBuyNow={handleBuyNow}
+                currentUser={{ username: "Os6s7" }} // Mock user for admin testing
               />
             ))}
           </div>
@@ -247,7 +250,12 @@ export default function EnhancedMarketplace() {
       </div>
 
       {/* Settings Modal */}
-      <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
+      {showSettings && (
+        <SettingsModal 
+          open={showSettings} 
+          onOpenChange={setShowSettings} 
+        />
+      )}
     </div>
   );
 }

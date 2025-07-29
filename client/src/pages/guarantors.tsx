@@ -8,34 +8,16 @@ import { ArrowLeft, Search, Shield, Plus, Users } from "lucide-react";
 import { GuarantorCard } from "@/components/guarantor-card";
 import { useLanguage } from "@/contexts/language-context";
 
-// Mock guarantor data - in production this would come from API
+// Only @Os6s7 as guarantor - per user request
 const mockGuarantors = [
   {
     id: "1",
-    username: "channelguarantor1",
-    displayName: "Channel Guardian Pro",
-    rating: 4.9,
-    completedDeals: 156,
+    username: "Os6s7",
+    displayName: "Os6s7 - Official Guarantor",
+    rating: 5.0,
+    completedDeals: 500,
     isVerified: true,
-    description: "Professional channel escrow service with 3+ years experience. Specializing in high-value channel transfers with 100% success rate."
-  },
-  {
-    id: "2", 
-    username: "trustescrow",
-    displayName: "Trust Escrow Services",
-    rating: 4.8,
-    completedDeals: 89,
-    isVerified: true,
-    description: "Verified guarantor offering secure channel transfers. Quick processing and transparent communication throughout the transaction."
-  },
-  {
-    id: "3",
-    username: "safetransfer",
-    displayName: "Safe Transfer Solutions", 
-    rating: 4.7,
-    completedDeals: 203,
-    isVerified: true,
-    description: "Leading channel transfer guarantor. Available 24/7 for support during your channel sale or purchase process."
+    description: "Official platform guarantor with verified identity and complete authority over channel transfers. Available 24/7 for secure transactions."
   }
 ];
 
