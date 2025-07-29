@@ -32,7 +32,6 @@ const translations: Record<Language, Translations> = {
     technology: "Technology",
     lifestyle: "Lifestyle",
     news: "News",
-    guarantors: "Guarantors",
     
     // Filters
     minSubscribers: "Min Subscribers",
@@ -96,7 +95,6 @@ const translations: Record<Language, Translations> = {
     technology: "التكنولوجيا",
     lifestyle: "نمط الحياة",
     news: "الأخبار",
-    guarantors: "الضامنين",
     
     // Filters
     minSubscribers: "الحد الأدنى للمشتركين",
