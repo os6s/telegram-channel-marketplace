@@ -4,11 +4,13 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TelegramApp } from "@/components/telegram-app";
+import { ThemeProvider } from "@/contexts/theme-context";
+import { LanguageProvider } from "@/contexts/language-context";
 import { lazy, Suspense } from "react";
 
 // Lazy load pages for better performance
-const Marketplace = lazy(() => import("@/pages/marketplace"));
-const SellChannel = lazy(() => import("@/pages/sell-channel"));
+const Marketplace = lazy(() => import("@/components/enhanced-marketplace"));
+const SellChannel = lazy(() => import("@/pages/enhanced-sell-channel"));
 const Escrows = lazy(() => import("@/pages/escrows"));
 const Profile = lazy(() => import("@/pages/profile"));
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -37,27 +39,29 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <TelegramApp>
-          <Toaster />
-          <Router />
+      <ThemeProvider>
+        <LanguageProvider>
+          <TooltipProvider>
+            <TelegramApp>
+              <Toaster />
+              <Router />
           
           {/* Bottom Navigation */}
-          <div className="bg-white border-t border-gray-200 px-4 py-2 sticky bottom-0 z-50">
+          <div className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 px-4 py-2 sticky bottom-0 z-50">
             <div className="grid grid-cols-4 gap-1">
               <a 
                 href="/"
-                className="flex flex-col items-center py-2 text-telegram-500"
+                className="flex flex-col items-center py-2 text-telegram-500 dark:text-telegram-400"
               >
                 <svg className="w-5 h-5 mb-1" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M19 7h-3V6a4 4 0 0 0-8 0v1H5a1 1 0 0 0-1 1v11a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V8a1 1 0 0 0-1-1zM10 6a2 2 0 0 1 4 0v1h-4V6zm6 16H8a1 1 0 0 1-1-1V9h2v1a1 1 0 0 0 2 0V9h2v1a1 1 0 0 0 2 0V9h2v12a1 1 0 0 1-1 1z"/>
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
                 </svg>
                 <span className="text-xs font-medium">Marketplace</span>
               </a>
               
               <a 
                 href="/sell"
-                className="flex flex-col items-center py-2 text-gray-400 hover:text-telegram-500"
+                className="flex flex-col items-center py-2 text-gray-400 dark:text-gray-500 hover:text-telegram-500 dark:hover:text-telegram-400"
               >
                 <svg className="w-5 h-5 mb-1" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/>
@@ -86,8 +90,10 @@ function App() {
               </a>
             </div>
           </div>
-        </TelegramApp>
-      </TooltipProvider>
+            </TelegramApp>
+          </TooltipProvider>
+        </LanguageProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
