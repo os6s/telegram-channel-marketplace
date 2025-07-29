@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Edit3, Wallet, Plus, Settings, TrendingUp, Users, DollarSign } from "lucide-react";
 import { WalletConnect } from "@/components/wallet-connect";
 import { ChannelCard } from "@/components/channel-card";
+import { SettingsModal } from "@/components/settings-modal";
 import { telegramWebApp } from "@/lib/telegram";
 import { tonConnect, type TonWallet } from "@/lib/ton-connect";
 import { type Channel, type User } from "@shared/schema";
@@ -16,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Profile() {
   const [connectedWallet, setConnectedWallet] = useState<TonWallet | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
@@ -137,7 +139,7 @@ export default function Profile() {
                 <p className="text-xs text-muted-foreground">Manage your account and listings</p>
               </div>
             </div>
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" onClick={() => setShowSettings(true)}>
               <Settings className="w-4 h-4" />
             </Button>
           </div>
@@ -322,6 +324,9 @@ export default function Profile() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Settings Modal */}
+      <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
     </div>
   );
 }
