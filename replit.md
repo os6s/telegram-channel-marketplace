@@ -6,15 +6,17 @@ This is a full-stack Telegram mini app that allows users to buy and sell Telegra
 
 ## Recent Changes
 
-### January 29, 2025 - Deployment Configuration Fixes
-- ✓ Fixed port mismatch: Updated server default port from 10000 to 5000 to match .replit configuration
-- ✓ Added SESSION_SECRET environment variable handling with fallback defaults for production
-- ✓ Fixed LSP diagnostics errors in server/routes.ts related to bot references
-- ✓ Created DEPLOYMENT_README.md with comprehensive deployment guidance
-- ✓ Enhanced environment variable validation for production deployments
-- ✓ Configured Telegram bot token (8229929028) and enabled bot functionality
-- ✓ Implemented polling system for development mode - bot now responds to messages
-- ✓ Bot successfully tested and working with /start command and marketplace integration
+### January 29, 2025 - Major UI/UX Enhancement Update
+- ✓ Implemented dark mode with automatic Telegram theme detection and synchronization
+- ✓ Added comprehensive English/Arabic language switching with RTL layout support
+- ✓ Enhanced marketplace with improved category navigation (no page reloads, smooth transitions)
+- ✓ Created multi-step channel selling process with verification and enhanced UX
+- ✓ Integrated TON wallet connection functionality with mock implementation for development
+- ✓ Made app fully compatible with Telegram Mini App standards and WebApp API
+- ✓ Fixed navigation system to use proper client-side routing instead of page reloads
+- ✓ Added theme and settings modal with user-friendly controls
+- ✓ Implemented internationalization system with context providers for theme and language
+- ✓ Enhanced UI components with proper dark mode support and responsive design
 
 ## User Preferences
 
