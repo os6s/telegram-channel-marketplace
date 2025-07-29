@@ -34,56 +34,28 @@ export default function EnhancedSellChannel() {
   const { t, language } = useLanguage();
 
   const form = useForm<InsertChannel>({
-    resolver: zodResolver(insertChannelSchema.omit({ 
-      id: true, 
-      sellerId: true, 
-      createdAt: true, 
-      updatedAt: true, 
-      isActive: true, 
-      isVerified: true 
-    })),
+    resolver: zodResolver(insertChannelSchema),
     defaultValues: {
       name: "",
       username: "",
       description: "",
       category: "",
-      subscriberCount: 0,
+      subscribers: 0,
+      engagement: "0",
+      growth: "0",
       price: "0",
-      botToken: "",
     },
   });
 
   const createChannelMutation = useMutation({
     mutationFn: async (data: InsertChannel) => {
-      // Get current user from Telegram WebApp
-      const telegramUser = typeof window !== 'undefined' && window.Telegram?.WebApp?.initDataUnsafe?.user;
-      if (!telegramUser) {
-        // Fallback for development/testing
-        const mockUser = { id: 391391714, first_name: 'Test', username: 'testuser' };
-        console.log('Using mock user for development');
-        return apiRequest({
-          url: '/api/channels',
-          method: 'POST',
-          body: { ...data, sellerId: 'mock-user-id' },
-        });
-      }
-
-      // Create or get user first
-      const userResponse = await apiRequest({
-        url: '/api/users',
-        method: 'POST',
-        body: {
-          telegramId: telegramUser.id.toString(),
-          username: telegramUser.username || '',
-          firstName: telegramUser.first_name || '',
-          lastName: telegramUser.last_name || '',
-        },
-      });
-
-      // Create channel with user ID
+      // For development/testing with mock data
+      console.log('Creating channel listing:', data);
+      
+      // Create channel with mock seller ID for development
       const channelData = {
         ...data,
-        sellerId: userResponse.id,
+        sellerId: 'mock-user-id',
       };
 
       return apiRequest({
@@ -284,7 +256,7 @@ export default function EnhancedSellChannel() {
 
                     <FormField
                       control={form.control}
-                      name="subscriberCount"
+                      name="subscribers"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{t('subscriberCount')}</FormLabel>
@@ -358,27 +330,49 @@ export default function EnhancedSellChannel() {
                       <Alert className="mb-4">
                         <Bot className="h-4 w-4" />
                         <AlertDescription>
-                          To verify ownership, please provide a bot token that has admin access to your channel. This will be used only for verification.
+                          Channel verification will be done automatically after listing. Make sure you have admin access to add our verification bot.
                         </AlertDescription>
                       </Alert>
 
-                      <FormField
-                        control={form.control}
-                        name="botToken"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('botToken')}</FormLabel>
-                            <FormControl>
-                              <Input 
-                                type="password"
-                                placeholder="1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="engagement"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Engagement Rate (%)</FormLabel>
+                              <FormControl>
+                                <Input 
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="5.25"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="growth"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Growth Rate (%)</FormLabel>
+                              <FormControl>
+                                <Input 
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="2.5"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
                     </CardContent>
                   </Card>
                 </div>

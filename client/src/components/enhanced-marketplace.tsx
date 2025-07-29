@@ -42,6 +42,9 @@ export default function EnhancedMarketplace() {
     queryKey: ['/api/stats'],
   });
 
+  // Type-safe stats with fallback
+  const safeStats = stats || { activeListings: 0, totalVolume: '0.00', activeEscrows: 0 };
+
   // Fetch channels with filters - use useCallback to prevent recreation
   const { data: channels = [], isLoading: channelsLoading, refetch } = useQuery({
     queryKey: ['/api/channels', selectedCategory, searchQuery, filters],
@@ -113,23 +116,23 @@ export default function EnhancedMarketplace() {
           </div>
 
           {/* Stats Cards */}
-          {!statsLoading && stats && (
+          {!statsLoading && (
             <div className="grid grid-cols-3 gap-3 mt-4">
               <Card className="bg-primary/5 border-primary/20">
                 <CardContent className="p-3 text-center">
-                  <div className="text-lg font-bold text-primary">{stats.activeListings}</div>
+                  <div className="text-lg font-bold text-primary">{safeStats.activeListings}</div>
                   <div className="text-xs text-muted-foreground">Active Listings</div>
                 </CardContent>
               </Card>
               <Card className="bg-green-500/5 border-green-500/20">
                 <CardContent className="p-3 text-center">
-                  <div className="text-lg font-bold text-green-600">{stats.totalVolume}</div>
+                  <div className="text-lg font-bold text-green-600">{safeStats.totalVolume}</div>
                   <div className="text-xs text-muted-foreground">TON Volume</div>
                 </CardContent>
               </Card>
               <Card className="bg-blue-500/5 border-blue-500/20">
                 <CardContent className="p-3 text-center">
-                  <div className="text-lg font-bold text-blue-600">{stats.activeEscrows}</div>
+                  <div className="text-lg font-bold text-blue-600">{safeStats.activeEscrows}</div>
                   <div className="text-xs text-muted-foreground">Active Escrows</div>
                 </CardContent>
               </Card>
