@@ -58,11 +58,7 @@ export default function EnhancedSellChannel() {
         sellerId: 'mock-user-id',
       };
 
-      return apiRequest({
-        url: '/api/channels',
-        method: 'POST',
-        body: channelData,
-      });
+      return apiRequest('POST', '/api/channels', channelData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/channels'] });

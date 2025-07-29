@@ -47,7 +47,7 @@ export default function Profile() {
             lastName: telegramUser.last_name,
             tonWallet: connectedWallet?.address,
           });
-          return createResponse.json() as User;
+          return await createResponse.json() as User;
         }
       } catch (error) {
         console.error('Failed to fetch/create user:', error);
@@ -72,7 +72,7 @@ export default function Profile() {
       const response = await apiRequest('PATCH', `/api/users/${userId}`, {
         tonWallet: walletAddress,
       });
-      return response.json();
+      return await response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users', userId] });
@@ -123,9 +123,9 @@ export default function Profile() {
   const stats = getProfileStats();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+      <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -133,8 +133,8 @@ export default function Profile() {
                 <ArrowLeft className="w-4 h-4" />
               </Button>
               <div>
-                <h1 className="text-lg font-semibold text-gray-900">Profile</h1>
-                <p className="text-xs text-gray-500">Manage your account and listings</p>
+                <h1 className="text-lg font-semibold text-foreground">Profile</h1>
+                <p className="text-xs text-muted-foreground">Manage your account and listings</p>
               </div>
             </div>
             <Button variant="ghost" size="sm">
@@ -156,11 +156,11 @@ export default function Profile() {
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
-                <h2 className="text-xl font-semibold text-gray-900">
+                <h2 className="text-xl font-semibold text-foreground">
                   {telegramUser?.first_name} {telegramUser?.last_name}
                 </h2>
                 {telegramUser?.username && (
-                  <p className="text-gray-600">@{telegramUser.username}</p>
+                  <p className="text-muted-foreground">@{telegramUser.username}</p>
                 )}
                 <div className="flex items-center space-x-2 mt-2">
                   {telegramUser?.is_premium && (
@@ -176,16 +176,16 @@ export default function Profile() {
             </div>
             
             {/* Wallet Status */}
-            <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="mt-4 pt-4 border-t border-border">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <Wallet className="w-5 h-5 text-gray-400" />
-                  <span className="text-sm text-gray-600">TON Wallet</span>
+                  <Wallet className="w-5 h-5 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">TON Wallet</span>
                 </div>
                 <WalletConnect onWalletConnect={handleWalletConnect} />
               </div>
               {connectedWallet && (
-                <div className="mt-2 text-sm text-gray-500">
+                <div className="mt-2 text-sm text-muted-foreground">
                   Balance: {connectedWallet.balance} TON
                 </div>
               )}
@@ -200,8 +200,8 @@ export default function Profile() {
               <div className="flex items-center justify-center mb-2">
                 <Plus className="w-5 h-5 text-telegram-500" />
               </div>
-              <div className="text-2xl font-bold text-gray-900">{stats.activeChannels}</div>
-              <div className="text-sm text-gray-500">Active Listings</div>
+              <div className="text-2xl font-bold text-foreground">{stats.activeChannels}</div>
+              <div className="text-sm text-muted-foreground">Active Listings</div>
             </CardContent>
           </Card>
           
@@ -210,8 +210,8 @@ export default function Profile() {
               <div className="flex items-center justify-center mb-2">
                 <DollarSign className="w-5 h-5 text-green-500" />
               </div>
-              <div className="text-2xl font-bold text-gray-900">{stats.totalValue}</div>
-              <div className="text-sm text-gray-500">Total Value (TON)</div>
+              <div className="text-2xl font-bold text-foreground">{stats.totalValue}</div>
+              <div className="text-sm text-muted-foreground">Total Value (TON)</div>
             </CardContent>
           </Card>
           
@@ -220,12 +220,12 @@ export default function Profile() {
               <div className="flex items-center justify-center mb-2">
                 <Users className="w-5 h-5 text-blue-500" />
               </div>
-              <div className="text-2xl font-bold text-gray-900">
+              <div className="text-2xl font-bold text-foreground">
                 {stats.totalSubscribers > 1000 
                   ? `${(stats.totalSubscribers / 1000).toFixed(1)}K` 
                   : stats.totalSubscribers}
               </div>
-              <div className="text-sm text-gray-500">Total Reach</div>
+              <div className="text-sm text-muted-foreground">Total Reach</div>
             </CardContent>
           </Card>
         </div>
@@ -239,7 +239,7 @@ export default function Profile() {
           
           <TabsContent value="channels" className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">My Channel Listings</h3>
+              <h3 className="text-lg font-semibold text-foreground">My Channel Listings</h3>
               <Button 
                 size="sm"
                 className="bg-telegram-500 hover:bg-telegram-600"
@@ -260,10 +260,10 @@ export default function Profile() {
                     <Card key={i}>
                       <CardContent className="p-4">
                         <div className="flex items-center space-x-3">
-                          <div className="w-12 h-12 bg-gray-200 rounded-full"></div>
+                          <div className="w-12 h-12 bg-muted rounded-full"></div>
                           <div className="flex-1 space-y-2">
-                            <div className="h-4 bg-gray-200 rounded w-1/3"></div>
-                            <div className="h-3 bg-gray-200 rounded w-1/4"></div>
+                            <div className="h-4 bg-muted rounded w-1/3"></div>
+                            <div className="h-3 bg-muted rounded w-1/4"></div>
                           </div>
                         </div>
                       </CardContent>
@@ -274,9 +274,9 @@ export default function Profile() {
             ) : userChannels.length === 0 ? (
               <Card>
                 <CardContent className="p-8 text-center">
-                  <div className="text-gray-400 text-6xl mb-4">📺</div>
-                  <h3 className="font-medium text-gray-900 mb-2">No channels listed yet</h3>
-                  <p className="text-sm text-gray-500 mb-4">
+                  <div className="text-muted-foreground text-6xl mb-4">📺</div>
+                  <h3 className="font-medium text-foreground mb-2">No channels listed yet</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
                     Start selling your Telegram channels on the marketplace
                   </p>
                   <Button className="bg-telegram-500 hover:bg-telegram-600">
@@ -312,9 +312,9 @@ export default function Profile() {
           <TabsContent value="activity" className="space-y-4">
             <Card>
               <CardContent className="p-8 text-center">
-                <div className="text-gray-400 text-6xl mb-4">📊</div>
-                <h3 className="font-medium text-gray-900 mb-2">Activity Coming Soon</h3>
-                <p className="text-sm text-gray-500">
+                <div className="text-muted-foreground text-6xl mb-4">📊</div>
+                <h3 className="font-medium text-foreground mb-2">Activity Coming Soon</h3>
+                <p className="text-sm text-muted-foreground">
                   View your transaction history, earnings, and marketplace activity here.
                 </p>
               </CardContent>
