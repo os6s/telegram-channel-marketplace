@@ -1,0 +1,33 @@
+# Commands to Publish Telegram Channel Marketplace to GitHub
+
+# Step 1: Initialize Git Repository
+git init
+git add .
+git commit -m "Initial commit: Telegram Channel Marketplace with bug fixes and security improvements"
+
+# Step 2: Create GitHub Repository
+# Go to https://github.com/new and create a repository named: telegram-channel-marketplace
+# Description: A sophisticated Telegram web app marketplace for secure channel trading using TON cryptocurrency
+# Choose Public/Private as desired
+# DO NOT initialize with README, .gitignore, or license
+
+# Step 3: Connect to GitHub (replace 'yourusername' with your GitHub username)
+git remote add origin https://github.com/yourusername/telegram-channel-marketplace.git
+git branch -M main
+git push -u origin main
+
+# Step 4: Update README for GitHub
+mv README_GITHUB.md README.md
+git add README.md
+git commit -m "docs: update README for GitHub publication"
+git push
+
+# Step 5: Add repository topics (do this on GitHub website)
+# Go to your repository → About section → Settings gear icon
+# Add topics: telegram, marketplace, ton, cryptocurrency, escrow, react, typescript, nodejs, express, postgresql
+
+# Optional: Tag first release
+git tag -a v1.0.0 -m "Initial release with marketplace, escrow system, and bot integration"
+git push origin v1.0.0
+
+echo "✅ Your Telegram Channel Marketplace is now published on GitHub!"
