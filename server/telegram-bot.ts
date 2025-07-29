@@ -195,7 +195,16 @@ export function registerBotRoutes(app: express.Express) {
 
   const bot = new TelegramBot(botToken);
 
-  // Webhook endpoint for Telegram
+  // In development, use polling instead of webhooks
+  if (process.env.NODE_ENV === 'development') {
+    // Remove any existing webhook for development
+    bot.setWebhook('').then(() => {
+      console.log('Webhook removed for development mode');
+      startPolling(bot);
+    });
+  }
+
+  // Webhook endpoint for Telegram (for production)
   app.post('/webhook/telegram', (req, res) => {
     try {
       const update: TelegramUpdate = req.body;
@@ -207,7 +216,7 @@ export function registerBotRoutes(app: express.Express) {
     }
   });
 
-  // Setup webhook (call this once)
+  // Setup webhook (for production deployment)
   app.post('/setup-webhook', async (req, res) => {
     try {
       const webhookUrl = `${req.protocol}://${req.get('host')}/webhook/telegram`;
@@ -220,4 +229,29 @@ export function registerBotRoutes(app: express.Express) {
   });
 
   console.log('Telegram bot routes registered');
+}
+
+async function startPolling(bot: TelegramBot) {
+  let offset = 0;
+  
+  const poll = async () => {
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getUpdates?offset=${offset}&timeout=30`);
+      const data = await response.json();
+      
+      if (data.ok && data.result.length > 0) {
+        for (const update of data.result) {
+          bot.handleUpdate(update);
+          offset = update.update_id + 1;
+        }
+      }
+    } catch (error) {
+      console.error('Polling error:', error);
+    }
+    
+    setTimeout(poll, 1000); // Poll every second
+  };
+  
+  console.log('Starting Telegram bot polling...');
+  poll();
 }
