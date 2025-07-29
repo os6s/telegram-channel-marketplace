@@ -6,6 +6,34 @@ import { z } from "zod";
 import { registerBotRoutes } from "./telegram-bot";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Redirect external visitors to Telegram bot
+  app.get("/redirect-to-bot", (req, res) => {
+    res.redirect(301, 'https://t.me/giftspremarketbot');
+  });
+
+  // Middleware to detect external visitors and redirect them
+  app.use((req, res, next) => {
+    // Only check root path requests
+    if (req.path === "/" || req.path === "/index.html") {
+      const userAgent = req.get('User-Agent') || '';
+      const referer = req.get('Referer') || '';
+      
+      // Check if request is from Telegram WebApp
+      const isTelegramWebApp = userAgent.includes('TelegramBot') || 
+                              userAgent.includes('Telegram') ||
+                              referer.includes('telegram') ||
+                              req.query.tgWebAppPlatform ||
+                              req.headers['x-telegram-bot-api-secret-token'];
+      
+      // If not from Telegram, redirect to bot
+      if (!isTelegramWebApp) {
+        return res.redirect(301, 'https://t.me/giftspremarketbot');
+      }
+    }
+    
+    next();
+  });
+
   // Register Telegram bot routes
   registerBotRoutes(app);
   // User routes
