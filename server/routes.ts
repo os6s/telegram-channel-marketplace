@@ -53,14 +53,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Middleware to detect external visitors and redirect them
   app.use((req, res, next) => {
-    // Skip middleware for webhook and API routes
+    // CRITICAL: Skip middleware for webhook and API routes to prevent Telegram validation issues
     if (req.path.startsWith('/webhook/') || req.path.startsWith('/api/')) {
+      console.log(`Bypassing redirect for: ${req.path}`);
+      return next();
+    }
+    
+    // Also skip for bot validation requests
+    const userAgent = req.get('User-Agent') || '';
+    if (userAgent.includes('TelegramBot') && !req.path.startsWith('/')) {
+      console.log(`Bypassing redirect for Telegram bot request: ${req.path}`);
       return next();
     }
     
     // Only check root path requests
     if (req.path === "/" || req.path === "/index.html") {
-      const userAgent = req.get('User-Agent') || '';
       const referer = req.get('Referer') || '';
       
       // Check if request is from Telegram WebApp
@@ -72,6 +79,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // If not from Telegram, redirect to bot
       if (!isTelegramWebApp) {
+        console.log(`Redirecting external visitor to bot, User-Agent: ${userAgent}`);
         return res.redirect(301, 'https://t.me/giftspremarketbot');
       }
     }
