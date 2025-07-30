@@ -82,7 +82,8 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
    - Added inline web app button to /start command for direct marketplace access
    - Configured proper web_app parameter for Telegram Mini App functionality
    - Enhanced Telegram WebApp detection to prevent redirect issues
-   - Fixed middleware to properly allow Telegram Mini App requests while redirecting external visitors
+   - Fixed middleware redirect logic to only trigger for external browsers, not internal Telegram requests
+   - Added comprehensive debug logging to troubleshoot detection accuracy
    
 4. **Environment Variable Requirements**:
    - TELEGRAM_BOT_TOKEN must be set in Render dashboard

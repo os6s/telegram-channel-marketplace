@@ -199,33 +199,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     // Only check root path requests
     if (req.path === "/" || req.path === "/index.html") {
-      // Enhanced Telegram Mini App detection
+      // Enhanced Telegram Mini App detection - MORE RESTRICTIVE
       const isTelegramWebApp = 
+        // Direct Telegram Bot/WebApp user agents
         userAgent.includes('TelegramBot') || 
-        userAgent.includes('Telegram') ||
+        userAgent.toLowerCase().includes('telegram') ||
+        // Telegram referrers (most reliable indicator)
         referer.includes('telegram.org') ||
         referer.includes('t.me') ||
         referer.includes('web.telegram.org') ||
+        referer.includes('tdesktop') ||
         // Telegram Mini App specific headers and parameters
         req.query.tgWebAppPlatform ||
         req.query.tgWebAppData ||
         req.headers['x-telegram-bot-api-secret-token'] ||
         req.headers['tg-web-app-data'] ||
-        // Check for Telegram WebView specific characteristics
-        req.headers['sec-fetch-site'] === 'cross-site' ||
-        // iOS Telegram WebView
-        (userAgent.includes('Mobile/') && userAgent.includes('AppleWebKit') && referer.includes('telegram'));
+        // DISABLE cross-site check as it's too broad
+        // req.headers['sec-fetch-site'] === 'cross-site' ||
+        // More specific iOS Telegram detection
+        (userAgent.includes('Mobile/') && userAgent.includes('AppleWebKit') && 
+         (referer.includes('telegram') || referer.includes('t.me')));
       
-      // Log detailed information for debugging
-      console.log('🔍 Checking request:', {
+      // Enhanced logging for debugging
+      console.log('🔍 Request Analysis:', {
         path: req.path,
-        userAgent: userAgent.substring(0, 100),
+        userAgent: userAgent.substring(0, 150),
         referer: referer,
         isTelegramWebApp: isTelegramWebApp,
-        headers: {
-          'sec-fetch-site': req.headers['sec-fetch-site'],
-          'tg-web-app-data': !!req.headers['tg-web-app-data']
-        }
+        detectionReasons: {
+          hasUserAgentTelegram: userAgent.toLowerCase().includes('telegram'),
+          hasUserAgentBot: userAgent.includes('TelegramBot'),
+          hasTelegramReferer: referer.includes('telegram') || referer.includes('t.me'),
+          hasWebAppParams: !!(req.query.tgWebAppPlatform || req.query.tgWebAppData),
+          hasWebAppHeaders: !!(req.headers['tg-web-app-data'] || req.headers['x-telegram-bot-api-secret-token'])
+        },
+        allHeaders: Object.keys(req.headers).filter(h => h.includes('tg') || h.includes('telegram'))
       });
       
       // If not from Telegram, redirect to bot

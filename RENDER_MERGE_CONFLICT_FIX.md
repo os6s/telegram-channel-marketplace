@@ -1,45 +1,59 @@
-# 🔧 Render Merge Conflict Resolved
+# 🔧 Telegram Detection Fix - Stop Internal Redirects
 
-## Issue: Package.json Merge Conflict
+## Root Cause Identified ✅
+The redirect middleware is **incorrectly identifying Telegram Mini App requests as external visitors**, causing redirects inside Telegram instead of only for external browsers.
+
+## Issue Analysis
+From Render logs: `🔄 Redirecting external visitor to bot`
+This happens when clicking the Mini App button **inside Telegram**, which should never trigger a redirect.
+
+## Fix Applied
+
+### 1. **More Restrictive Detection**
+- Removed overly broad `sec-fetch-site === 'cross-site'` check
+- Added more specific Telegram referrer patterns
+- Enhanced user agent detection with case-insensitive matching
+
+### 2. **Enhanced Debug Logging**
+- Added detailed detection reasons breakdown
+- Shows exactly why request is/isn't considered Telegram
+- Logs all Telegram-related headers for debugging
+
+### 3. **Specific Telegram Indicators**
+Now only considers requests as Telegram if they have:
+```javascript
+// Explicit Telegram user agents
+userAgent.includes('TelegramBot') || userAgent.toLowerCase().includes('telegram')
+
+// Telegram referrers (most reliable)
+referer.includes('telegram.org') || referer.includes('t.me') || referer.includes('web.telegram.org')
+
+// Telegram WebApp parameters/headers
+req.query.tgWebAppPlatform || req.headers['tg-web-app-data']
 ```
-npm error code EJSONPARSE  
-npm error path /opt/render/project/src/package.json
-npm error Merge conflict detected in your package.json.
+
+## Expected Results After Deploy
+
+### Telegram Mini App Access:
+```
+🔍 Request Analysis: {
+  userAgent: "Mozilla/5.0... (from Telegram)",
+  referer: "https://web.telegram.org/...",
+  isTelegramWebApp: true,
+  detectionReasons: { hasTelegramReferer: true }
+}
+✅ Telegram Mini App access allowed
 ```
 
-## Root Cause
-- Git merge conflict markers in package.json
-- Invalid JSON syntax preventing npm from parsing the file
-- Conflicting versions of typescript and duplicate vite entries
+### External Browser Access:
+```
+🔍 Request Analysis: {
+  userAgent: "Mozilla/5.0... (Chrome/Safari)",
+  referer: "",
+  isTelegramWebApp: false,
+  detectionReasons: { /* all false */ }
+}
+🔄 Redirecting external visitor to bot
+```
 
-## Solution Applied
-### 1. Merge Conflict Resolved
-- Removed git conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>> hash`)
-- Cleaned up duplicate entries for vite and typescript
-- Selected appropriate versions: typescript ^5.6.3
-
-### 2. Dependencies Reorganized
-**Production Dependencies** (available during Render build):
-- ✅ vite ^5.4.19
-- ✅ esbuild ^0.25.8  
-- ✅ @tailwindcss/typography ^0.5.16
-- ✅ typescript ^5.6.3
-- ✅ autoprefixer, postcss, tailwindcss
-
-**Development Dependencies** (Replit-specific):
-- ✅ @replit/vite-plugin-cartographer
-- ✅ @types/* packages
-- ✅ tsx, drizzle-kit
-
-### 3. JSON Validation
-- ✅ Valid JSON syntax confirmed
-- ✅ No trailing commas or syntax errors
-- ✅ Proper dependency structure
-
-## Current Status
-- ✅ Application running successfully
-- ✅ Package.json is valid JSON
-- ✅ All build dependencies available in production
-- ✅ Ready for Render deployment
-
-**Next**: Render build should now succeed without merge conflict errors.
+This should fix the internal redirect issue while maintaining external visitor redirection.
