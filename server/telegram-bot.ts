@@ -63,16 +63,26 @@ export class TelegramBot {
         },
         body: JSON.stringify({
           url: webhookUrl,
-          allowed_updates: ['message', 'callback_query']
+          allowed_updates: ['message', 'callback_query'],
+          drop_pending_updates: true
         }),
       });
 
       const result = await response.json();
-      console.log('Webhook setup result:', result);
       return result;
     } catch (error) {
       console.error('Error setting webhook:', error);
       throw error;
+    }
+  }
+
+  async getWebhookInfo() {
+    try {
+      const response = await fetch(`${this.baseUrl}/getWebhookInfo`);
+      return await response.json();
+    } catch (error) {
+      console.error('Error getting webhook info:', error);
+      return null;
     }
   }
 
@@ -84,6 +94,9 @@ export class TelegramBot {
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          drop_pending_updates: true
+        }),
       });
 
       const result = await response.json();
@@ -326,18 +339,31 @@ export function registerBotRoutes(app: express.Express) {
     // In production, set up webhook after routes are registered
     setTimeout(async () => {
       const webhookUrl = `${process.env.WEBAPP_URL}/webhook/telegram`;
-      console.log(`Production mode - setting up webhook: ${webhookUrl}`);
-      
-      // First test if the endpoint is reachable
-      try {
-        const testResponse = await fetch(webhookUrl.replace('/webhook/telegram', '/api/health'));
-        console.log('Health check status:', testResponse.status);
-      } catch (testError) {
-        console.error('Health check failed:', testError);
-      }
+      console.log(`Setting webhook to: ${webhookUrl}`);
       
       try {
+        // Test POST request to webhook endpoint first
+        const testPost = await fetch(webhookUrl, { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ test: 'webhook_test' })
+        });
+        console.log('POST test status:', testPost.status);
+        
+        // Get webhook info first to debug
+        const webhookInfo = await bot.getWebhookInfo();
+        console.log('Current webhook info:', webhookInfo);
+        
+        // Delete existing webhook first
+        await bot.removeWebhook();
+        
+        // Wait a moment for the deletion to take effect
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Now try to set the webhook using the bot method
         const result = await bot.setWebhook(webhookUrl);
+        console.log('Webhook setup result:', result);
+        
         if (result.ok) {
           console.log('✅ Webhook configured successfully for production');
         } else {

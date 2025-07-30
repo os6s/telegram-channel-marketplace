@@ -61,12 +61,18 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
    - Contributing guidelines and development setup
 
 ### Render Bot Configuration Fix (July 30, 2025)
-1. **Webhook Setup Fixed**:
-   - Automatic webhook configuration for production environment
-   - Bot switches from polling to webhook mode on Render deployment
-   - Enhanced error logging for webhook setup debugging
+1. **Webhook Route Priority Fixed**:
+   - Webhook route registered with absolute priority before any middleware
+   - Resolved static file serving intercepting webhook requests
+   - Added comprehensive webhook debugging and validation
    
-2. **Environment Variable Requirements**:
+2. **Enhanced Webhook Setup**:
+   - Automatic webhook configuration for production environment
+   - Force delete existing webhook before setting new one
+   - Added webhook info debugging and POST endpoint testing
+   - Proper error handling and detailed logging
+   
+3. **Environment Variable Requirements**:
    - TELEGRAM_BOT_TOKEN must be set in Render dashboard
    - Webhook URL automatically uses WEBAPP_URL environment variable
    - Production mode detection properly implemented
