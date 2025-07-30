@@ -29,9 +29,13 @@ export function EnhancedWalletConnect() {
 
   const initializeTonConnect = async () => {
     try {
+      // Use production URL for TON Connect manifest in Mini App
+      const manifestUrl = import.meta.env.VITE_TON_MANIFEST_URL || 
+                         'https://telegram-channel-marketplace.onrender.com/tonconnect-manifest.json';
+      
       // Initialize real TON Connect UI
       const tonConnectUI = new TonConnectUI({
-        manifestUrl: window.location.origin + '/tonconnect-manifest.json',
+        manifestUrl: manifestUrl,
       });
       
       setTonConnectUI(tonConnectUI);

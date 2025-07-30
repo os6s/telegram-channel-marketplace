@@ -116,6 +116,7 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
 ### Current Working Configuration
 1. **Mini App Access**: Working perfectly - opens directly in Telegram without redirects
 2. **External Redirect**: External browsers accessing Render URL are properly redirected to bot
+3. **TON Wallet Fixed**: Updated all URLs from Replit to Render for proper wallet connection
 2. **Data Persistence**: Currently using in-memory storage - need migration to PostgreSQL
 3. **Payment Integration**: TON wallet integration is UI-only, needs blockchain connection
 4. **Bot Token Verification**: Channel verification endpoint has TODO - needs implementation
