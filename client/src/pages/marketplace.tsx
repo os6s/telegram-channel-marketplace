@@ -11,12 +11,13 @@ import { WalletConnect } from "@/components/wallet-connect";
 import { type Channel } from "@shared/schema";
 
 const categories = [
-  { id: 'crypto', name: 'Crypto', icon: '🪙' },
-  { id: 'news', name: 'News', icon: '📰' },
-  { id: 'gaming', name: 'Gaming', icon: '🎮' },
-  { id: 'entertainment', name: 'Entertainment', icon: '🎬' },
-  { id: 'education', name: 'Education', icon: '🎓' },
-  { id: 'business', name: 'Business', icon: '💼' },
+  { id: 'Cryptocurrency', name: 'Cryptocurrency', icon: '🪙' },
+  { id: 'NFT Collection', name: 'NFT Collection', icon: '🎁' },
+  { id: 'Technology', name: 'Technology', icon: '💻' },
+  { id: 'Gaming', name: 'Gaming', icon: '🎮' },
+  { id: 'Entertainment', name: 'Entertainment', icon: '🎬' },
+  { id: 'Education', name: 'Education', icon: '🎓' },
+  { id: 'Business', name: 'Business', icon: '💼' },
 ];
 
 export default function Marketplace() {

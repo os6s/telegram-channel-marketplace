@@ -13,25 +13,25 @@ interface ChannelCardProps {
 }
 
 const categoryIcons: Record<string, string> = {
-  statueOfLiberty: "🗽",
-  torchOfFreedom: "🔥",
-  goldenEagle: "🦅",
-  diamondHands: "💎",
-  cryptoPunk: "👾",
-  moonWalker: "🌙",
-  rocketShip: "🚀",
-  unicornMagic: "🦄"
+  "Cryptocurrency": "🪙",
+  "NFT Collection": "🎁", 
+  "Technology": "💻",
+  "Gaming": "🎮",
+  "Entertainment": "🎬",
+  "Education": "🎓",
+  "Business": "💼",
+  "News": "📰"
 };
 
 const categoryColors: Record<string, string> = {
-  statueOfLiberty: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-  torchOfFreedom: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
-  goldenEagle: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-  diamondHands: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  cryptoPunk: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
-  moonWalker: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200",
-  rocketShip: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  unicornMagic: "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200"
+  "Cryptocurrency": "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  "NFT Collection": "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+  "Technology": "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200", 
+  "Gaming": "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  "Entertainment": "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200",
+  "Education": "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200",
+  "Business": "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
+  "News": "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
 };
 
 export function ChannelCard({ channel, onViewDetails, onBuyNow, currentUser }: ChannelCardProps) {

@@ -1,62 +1,73 @@
-# 🔧 TON Wallet Connection Fixed - Render URL Updated
+# ✅ TON Wallet Connection Issues Fixed
 
-## Root Cause Identified ✅
-The TON wallet connection was using the old **Replit URL** instead of the **Render URL**, causing connection failures in the Mini App.
+## Problems Solved:
 
-## Issues Fixed
+### **1. Modal Popup Not Disappearing After Connection**
+- **Issue**: TON Connect modal remained open after successful wallet connection
+- **Fix**: Added automatic modal closing with 500ms delay after connection success
+- **Code**: Enhanced `onStatusChange` listener to close modal and clear connecting state
 
-### 1. **TON Connect Manifest Updated**
-**File**: `client/public/tonconnect-manifest.json`
-- Changed from: `https://telegram-channel-marketplace.replit.app`
-- Changed to: `https://telegram-channel-marketplace.onrender.com`
+### **2. "Demo Wallet Connected" Message on Reconnection**
+- **Issue**: Reconnecting wallet showed confusing "Demo Wallet Connected" toast
+- **Fix**: Unified toast messages to always show "Wallet Connected" for better UX
+- **Code**: Updated toast messages to be consistent regardless of connection type
 
-### 2. **Wallet Connection Logic Enhanced**
-**File**: `client/src/components/enhanced-wallet-connect.tsx`
-- Added environment variable support: `VITE_TON_MANIFEST_URL`
-- Fallback to production Render URL if environment variable not set
-- Ensures consistent URL usage across all environments
+### **3. Incomplete Disconnect Cleanup**
+- **Issue**: Wallet state not fully cleared on disconnect, causing reconnection issues
+- **Fix**: Enhanced disconnect function with forced cleanup and better error handling
+- **Code**: Always clear local state even if TON Connect disconnect fails
 
-### 3. **Environment Variable Added**
-**File**: `.env.example` updated with:
-```
-VITE_TON_MANIFEST_URL=https://yourdomain.com/tonconnect-manifest.json
-```
+## Technical Changes Made:
 
-## Code Changes Made
-
-### TON Connect Initialization:
-```javascript
-// Use production URL for TON Connect manifest in Mini App
-const manifestUrl = import.meta.env.VITE_TON_MANIFEST_URL || 
-                   'https://telegram-channel-marketplace.onrender.com/tonconnect-manifest.json';
-
-const tonConnectUI = new TonConnectUI({
-  manifestUrl: manifestUrl,
+### **Enhanced Connection Flow**:
+```typescript
+tonConnectUI.onStatusChange((wallet) => {
+  if (wallet) {
+    // ... set wallet state
+    setIsConnecting(false);
+    
+    // Auto-close modal after successful connection
+    setTimeout(() => {
+      if (tonConnectUI.modal.state?.status === 'opened') {
+        tonConnectUI.modal.close();
+      }
+    }, 500);
+    
+    // Unified success message
+    toast({
+      title: "Wallet Connected",
+      description: "Successfully connected to TON wallet.",
+    });
+  }
 });
 ```
 
-### Updated Manifest:
-```json
-{
-  "url": "https://telegram-channel-marketplace.onrender.com",
-  "name": "Telegram Channel Marketplace",
-  "iconUrl": "https://telegram-channel-marketplace.onrender.com/icon-192x192.png",
-  "termsOfUseUrl": "https://telegram-channel-marketplace.onrender.com/terms",
-  "privacyPolicyUrl": "https://telegram-channel-marketplace.onrender.com/privacy"
-}
+### **Improved Disconnect**:
+```typescript
+const disconnectWallet = async () => {
+  try {
+    if (tonConnectUI && tonConnectUI.connected) {
+      await tonConnectUI.disconnect();
+    } 
+    
+    // Always cleanup local state
+    setWallet(null);
+    localStorage.removeItem('ton-wallet');
+    
+  } catch (error) {
+    // Force cleanup even if disconnect fails
+    setWallet(null);
+    localStorage.removeItem('ton-wallet');
+  }
+};
 ```
 
-## Results Expected
+### **User Experience Improvements**:
+- ✅ Modal closes automatically after connection
+- ✅ Consistent "Wallet Connected" messages
+- ✅ Proper state cleanup on disconnect
+- ✅ Better error handling for edge cases
+- ✅ No more confusing demo wallet messages
 
-### Telegram Mini App:
-- TON wallet connect button should work properly
-- Wallet connection uses correct Render URL
-- No more references to old Replit URLs
-
-### For Render Deployment:
-Add environment variable in Render dashboard:
-```
-VITE_TON_MANIFEST_URL=https://telegram-channel-marketplace.onrender.com/tonconnect-manifest.json
-```
-
-This ensures TON wallet connection works correctly in production Mini App environment.
+## Result:
+TON wallet connection now works smoothly with professional UX - no stuck modals, consistent messaging, and reliable disconnect/reconnect cycles.

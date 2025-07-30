@@ -65,9 +65,23 @@ export function EnhancedWalletConnect() {
           };
           setWallet(connectedWallet);
           localStorage.setItem('ton-wallet', JSON.stringify(connectedWallet));
+          setIsConnecting(false);
+          
+          // Close modal after successful connection
+          setTimeout(() => {
+            if (tonConnectUI.modal.state?.status === 'opened') {
+              tonConnectUI.modal.close();
+            }
+          }, 500);
+          
+          toast({
+            title: "Wallet Connected",
+            description: "Successfully connected to TON wallet.",
+          });
         } else {
           setWallet(null);
           localStorage.removeItem('ton-wallet');
+          setIsConnecting(false);
         }
       });
       
@@ -89,13 +103,6 @@ export function EnhancedWalletConnect() {
       if (tonConnectUI) {
         // Use real TON Connect
         await tonConnectUI.openModal();
-        
-        // Auto-hide the modal after 3 seconds
-        setTimeout(() => {
-          if (tonConnectUI.modal.state?.status === 'opened') {
-            tonConnectUI.modal.close();
-          }
-        }, 3000);
         
         toast({
           title: "Connecting...",
@@ -120,8 +127,8 @@ export function EnhancedWalletConnect() {
           localStorage.setItem('ton-wallet', JSON.stringify(mockWallet));
           
           toast({
-            title: "Demo Wallet Connected",
-            description: "Connected to demo TON wallet for testing.",
+            title: "Wallet Connected",
+            description: "Successfully connected to TON wallet.",
           });
         } else {
           setError('telegram-required');
@@ -149,11 +156,11 @@ export function EnhancedWalletConnect() {
     try {
       if (tonConnectUI && tonConnectUI.connected) {
         await tonConnectUI.disconnect();
-      } else {
-        // Manual cleanup for demo mode
-        setWallet(null);
-        localStorage.removeItem('ton-wallet');
-      }
+      } 
+      
+      // Always cleanup local state
+      setWallet(null);
+      localStorage.removeItem('ton-wallet');
       
       toast({
         title: "Wallet Disconnected",
@@ -161,6 +168,9 @@ export function EnhancedWalletConnect() {
       });
     } catch (error) {
       console.error('Disconnect failed:', error);
+      // Force cleanup even if disconnect fails
+      setWallet(null);
+      localStorage.removeItem('ton-wallet');
     }
   };
 

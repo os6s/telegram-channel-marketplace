@@ -1,0 +1,55 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="wineGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B0000;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#DC143C;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="glassGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F0F8FF;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#E6F3FF;stop-opacity:0.7" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background Circle -->
+  <circle cx="60" cy="60" r="58" fill="#2F1B14" stroke="#D2691E" stroke-width="2"/>
+  
+  <!-- Wine Glass Base -->
+  <rect x="57" y="90" width="6" height="8" fill="#4A4A4A"/>
+  <ellipse cx="60" cy="98" rx="12" ry="3" fill="#4A4A4A"/>
+  
+  <!-- Glass Stem -->
+  <rect x="59" y="75" width="2" height="15" fill="#E6E6FA"/>
+  
+  <!-- Wine Glass Bowl -->
+  <path d="M40 75 Q40 45 60 45 Q80 45 80 75 Q80 85 60 85 Q40 85 40 75 Z" fill="url(#glassGrad)" stroke="#E6E6FA" stroke-width="1"/>
+  
+  <!-- Wine -->
+  <path d="M42 73 Q42 47 60 47 Q78 47 78 73 Q78 82 60 82 Q42 82 42 73 Z" fill="url(#wineGrad)"/>
+  
+  <!-- Wine Surface -->
+  <ellipse cx="60" cy="47" rx="17" ry="2" fill="#A0522D"/>
+  
+  <!-- Steam/Aroma -->
+  <path d="M50 40 Q52 35 50 30 Q48 25 50 20" stroke="#D3D3D3" stroke-width="2" fill="none" opacity="0.6"/>
+  <path d="M60 42 Q62 37 60 32 Q58 27 60 22" stroke="#D3D3D3" stroke-width="2" fill="none" opacity="0.6"/>
+  <path d="M70 40 Q72 35 70 30 Q68 25 70 20" stroke="#D3D3D3" stroke-width="2" fill="none" opacity="0.6"/>
+  
+  <!-- Spices Floating -->
+  <circle cx="55" cy="65" r="1.5" fill="#8B4513"/>
+  <circle cx="65" cy="58" r="1" fill="#CD853F"/>
+  <circle cx="58" cy="72" r="1" fill="#A0522D"/>
+  
+  <!-- Cinnamon Stick -->
+  <rect x="75" y="50" width="12" height="3" fill="#D2691E" rx="1.5" transform="rotate(45 81 51.5)"/>
+  <rect x="74.5" y="49.5" width="13" height="4" fill="none" stroke="#8B4513" stroke-width="0.5" rx="2" transform="rotate(45 81 52)"/>
+  
+  <!-- Star Anise -->
+  <g transform="translate(85,70) scale(0.8)">
+    <path d="M0,-8 L2,0 L8,0 L3,5 L5,12 L0,8 L-5,12 L-3,5 L-8,0 L-2,0 Z" fill="#8B4513"/>
+  </g>
+  
+  <!-- Sparkles -->
+  <path d="M30 25 L32 27 L30 29 L28 27 Z" fill="#FFD700"/>
+  <path d="M90 35 L92 37 L90 39 L88 37 Z" fill="#FFD700"/>
+  <path d="M25 80 L27 82 L25 84 L23 82 Z" fill="#FFD700"/>
+</svg>

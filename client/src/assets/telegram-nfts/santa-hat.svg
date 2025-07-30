@@ -1,0 +1,56 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="hatGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#DC143C;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#B22222;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="furGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FFFFFF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F0F0F0;stop-opacity:1" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Background Circle -->
+  <circle cx="60" cy="60" r="58" fill="#0F4C75" stroke="#FFD700" stroke-width="2"/>
+  
+  <!-- Snow Background -->
+  <circle cx="30" cy="30" r="2" fill="#FFF" opacity="0.8"/>
+  <circle cx="85" cy="25" r="1.5" fill="#FFF" opacity="0.6"/>
+  <circle cx="25" cy="80" r="1" fill="#FFF" opacity="0.7"/>
+  <circle cx="90" cy="85" r="2.5" fill="#FFF" opacity="0.5"/>
+  
+  <!-- Santa Hat Main Body -->
+  <path d="M30 85 Q30 50 45 30 Q60 15 75 25 Q85 35 88 50 Q90 65 85 75" fill="url(#hatGrad)"/>
+  
+  <!-- Hat Brim -->
+  <ellipse cx="60" cy="85" rx="35" ry="8" fill="url(#furGrad)"/>
+  
+  <!-- Hat Tip Fold -->
+  <path d="M85 75 Q95 70 100 60 Q98 55 90 58 Q85 65 85 75" fill="url(#hatGrad)"/>
+  
+  <!-- Pompom -->
+  <circle cx="95" cy="55" r="8" fill="url(#furGrad)"/>
+  <circle cx="93" cy="53" r="3" fill="#E6E6E6"/>
+  <circle cx="97" cy="57" r="2.5" fill="#E6E6E6"/>
+  <circle cx="95" cy="50" r="2" fill="#E6E6E6"/>
+  
+  <!-- Hat Highlights -->
+  <path d="M35 75 Q35 55 45 40 Q50 35 55 40" stroke="#FF6B6B" stroke-width="2" fill="none" opacity="0.6"/>
+  
+  <!-- Fur Texture on Brim -->
+  <ellipse cx="60" cy="82" rx="32" ry="5" fill="#F8F8FF"/>
+  <path d="M25 85 Q30 80 35 85 Q40 80 45 85 Q50 80 55 85 Q60 80 65 85 Q70 80 75 85 Q80 80 85 85 Q90 80 95 85" stroke="#E6E6E6" stroke-width="1.5" fill="none"/>
+  
+  <!-- Sparkles -->
+  <path d="M40 40 L42 42 L40 44 L38 42 Z" fill="#FFD700"/>
+  <path d="M75 60 L77 62 L75 64 L73 62 Z" fill="#FFD700"/>
+  <path d="M50 70 L52 72 L50 74 L48 72 Z" fill="#FFD700"/>
+  <path d="M20 60 L22 62 L20 64 L18 62 Z" fill="#FFD700"/>
+  
+  <!-- Holly Decoration -->
+  <g transform="translate(70,75) scale(0.6)">
+    <path d="M0,0 Q-3,-5 -8,-3 Q-5,0 -8,3 Q-3,5 0,0 Q3,5 8,3 Q5,0 8,-3 Q3,-5 0,0" fill="#228B22"/>
+    <circle cx="-2" cy="1" r="1.5" fill="#DC143C"/>
+    <circle cx="2" cy="-1" r="1.5" fill="#DC143C"/>
+  </g>
+</svg>

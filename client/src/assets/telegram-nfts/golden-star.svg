@@ -1,0 +1,59 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFD700;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#FFA500;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FF8C00;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="glowGrad" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" style="stop-color:#FFFF00;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#FFD700;stop-opacity:0.2" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Background Circle -->
+  <circle cx="60" cy="60" r="58" fill="#1A1A2E" stroke="#FFD700" stroke-width="2"/>
+  
+  <!-- Outer Glow -->
+  <circle cx="60" cy="60" r="45" fill="url(#glowGrad)" opacity="0.6"/>
+  
+  <!-- Main Star -->
+  <path d="M60 20 L67 45 L92 45 L73 60 L80 85 L60 70 L40 85 L47 60 L28 45 L53 45 Z" fill="url(#goldGrad)" stroke="#B8860B" stroke-width="1"/>
+  
+  <!-- Inner Star -->
+  <path d="M60 30 L64 48 L82 48 L69 58 L73 76 L60 66 L47 76 L51 58 L38 48 L56 48 Z" fill="#FFFF99"/>
+  
+  <!-- Center Jewel -->
+  <circle cx="60" cy="60" r="8" fill="#FF6347"/>
+  <circle cx="60" cy="60" r="5" fill="#FFE4E1"/>
+  <circle cx="58" cy="57" r="2" fill="#FFF"/>
+  
+  <!-- Star Points Highlights -->
+  <path d="M60 20 L62 35 L58 35 Z" fill="#FFFF00"/>
+  <path d="M92 45 L77 47 L77 43 Z" fill="#FFFF00"/>
+  <path d="M80 85 L65 70 L69 74 Z" fill="#FFFF00"/>
+  <path d="M40 85 L55 70 L51 74 Z" fill="#FFFF00"/>
+  <path d="M28 45 L43 47 L43 43 Z" fill="#FFFF00"/>
+  
+  <!-- Surrounding Small Stars -->
+  <g fill="#FFD700">
+    <path d="M25 25 L27 30 L32 30 L28 33 L30 38 L25 35 L20 38 L22 33 L18 30 L23 30 Z" opacity="0.8"/>
+    <path d="M95 25 L97 30 L102 30 L98 33 L100 38 L95 35 L90 38 L92 33 L88 30 L93 30 Z" opacity="0.8"/>
+    <path d="M25 95 L27 100 L32 100 L28 103 L30 108 L25 105 L20 108 L22 103 L18 100 L23 100 Z" opacity="0.8"/>
+    <path d="M95 95 L97 100 L102 100 L98 103 L100 108 L95 105 L90 108 L92 103 L88 100 L93 100 Z" opacity="0.8"/>
+  </g>
+  
+  <!-- Sparkle Effects -->
+  <g fill="#FFFF00" opacity="0.9">
+    <circle cx="35" cy="40" r="1"/>
+    <circle cx="85" cy="35" r="1.5"/>
+    <circle cx="30" cy="80" r="1"/>
+    <circle cx="90" cy="75" r="1.5"/>
+    <circle cx="45" cy="25" r="0.8"/>
+    <circle cx="75" cy="95" r="1.2"/>
+  </g>
+  
+  <!-- Animated Glow Rings -->
+  <circle cx="60" cy="60" r="50" fill="none" stroke="#FFD700" stroke-width="0.5" opacity="0.3"/>
+  <circle cx="60" cy="60" r="55" fill="none" stroke="#FFFF00" stroke-width="0.3" opacity="0.2"/>
+</svg>

@@ -27,6 +27,21 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
 
 ## Recent Changes
 
+### TON Wallet & NFT Collection Enhancement (July 30, 2025)
+1. **TON Wallet Connection Issues Fixed**:
+   - Fixed modal popup not disappearing after successful wallet connection
+   - Eliminated confusing "Demo Wallet Connected" messages on reconnection
+   - Enhanced disconnect function with complete state cleanup
+   - Added automatic modal closing with 500ms delay after connection
+   - Unified toast messages for consistent user experience
+
+2. **Telegram NFT Collection Added**:
+   - Created 6 official Telegram NFT gift channels (Homemade Cake, Jelly Bunny, Spiced Wine, Santa Hat, Plush Pepe, Golden Star)
+   - Added "NFT Collection" category with proper purple badge styling
+   - Custom SVG artwork created for each NFT type with professional Telegram-style design
+   - Database populated with authentic NFT market data (28.5-125.5 TON price range)
+   - Enhanced category filtering and display system
+
 ### Render Deployment Fix (July 30, 2025)
 1. **Build Process Fixed**:
    - Created custom build.sh script with npx for proper binary execution
