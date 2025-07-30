@@ -18,9 +18,9 @@ if ! command -v npx esbuild &> /dev/null; then
     npm install -g esbuild
 fi
 
-# Run the build
-echo "Building frontend..."
-npx vite build
+# Run the build with production config
+echo "Building frontend with production config..."
+npx vite build --config vite.config.production.ts
 
 echo "Building backend..."
 npx esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist

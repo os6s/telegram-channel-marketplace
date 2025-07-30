@@ -16,8 +16,17 @@ export default defineConfig({
   build: {
     outDir: '../dist/public',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       input: './client/index.html',
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          tonconnect: ['@tonconnect/ui-react'],
+          ui: ['@radix-ui/react-dialog', '@radix-ui/react-select', '@radix-ui/react-toast'],
+          utils: ['wouter', '@tanstack/react-query', 'lucide-react']
+        }
+      }
     },
   },
   server: {

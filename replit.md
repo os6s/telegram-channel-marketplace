@@ -27,7 +27,7 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
 
 ## Recent Changes
 
-### Database & TON Wallet Final Fix (July 30, 2025)
+### Database & TON Wallet & Build Final Fix (July 30, 2025)
 1. **Database Schema Completely Fixed**:
    - Fixed PostgreSQL "relation channels does not exist" error  
    - Added missing owner_id and image_url columns to channels table
@@ -44,6 +44,12 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
    - Real balance fetching from TON blockchain via toncenter.com API
    - Proper connection/disconnection flow with error handling
    - Fully compliant with official Telegram Mini App requirements
+
+3. **Render Build Optimization Fixed**:
+   - Updated vite.config.production.ts with chunkSizeWarningLimit: 1000
+   - Added manual chunk splitting for vendor, tonconnect, ui, and utils
+   - Modified build.sh to use production config for Render deployment
+   - Eliminates "Adjust chunk size limit" warning on Render
 
 2. **Telegram NFT Collection Added**:
    - Created 6 official Telegram NFT gift channels (Homemade Cake, Jelly Bunny, Spiced Wine, Santa Hat, Plush Pepe, Golden Star)
