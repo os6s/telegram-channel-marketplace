@@ -67,6 +67,8 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
    - Added proper viewport change and theme change listeners
    - Fixed navigation styling to use theme-aware colors
    - Created utility functions for Telegram environment validation
+   - Updated TON Connect manifest to use Render deployment URL (telegram-channel-marketplace.onrender.com)
+   - Fixed TonConnectUIProvider configuration with environment-aware manifest URLs
 
 2. **Telegram NFT Collection Added**:
    - Created 6 official Telegram NFT gift channels (Homemade Cake, Jelly Bunny, Spiced Wine, Santa Hat, Plush Pepe, Golden Star)

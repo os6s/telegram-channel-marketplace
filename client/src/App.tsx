@@ -117,7 +117,13 @@ function BottomNavigation() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TonConnectUIProvider manifestUrl="/tonconnect-manifest.json">
+      <TonConnectUIProvider 
+        manifestUrl={
+          window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? '/tonconnect-manifest.json'
+            : 'https://telegram-channel-marketplace.onrender.com/tonconnect-manifest.json'
+        }
+      >
         <ThemeProvider>
           <LanguageProvider>
             <TooltipProvider>
