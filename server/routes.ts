@@ -25,9 +25,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const user = update.message.from;
         
         console.log(`📨 Message from ${user.first_name} (${user.id}): ${text}`);
+        console.log(`💬 Chat ID: ${chatId}, Message ID: ${update.message.message_id}`);
         
         // Handle /start command
         if (text === '/start') {
+          console.log('🎯 Processing /start command');
           await sendTelegramMessage(chatId, 
             `🎉 Welcome to Telegram Channel Marketplace!\n\n` +
             `🔥 Buy and sell Telegram channels securely with escrow protection.\n\n` +
@@ -40,6 +42,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             `📱 Start trading channels safely today!`
           );
         } else {
+          console.log('💬 Processing regular message');
           // Handle other messages
           await sendTelegramMessage(chatId,
             `👋 Hi ${user.first_name}!\n\n` +
@@ -47,6 +50,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             `🌐 Direct link: https://telegram-channel-marketplace.onrender.com`
           );
         }
+      } else {
+        console.log('⚠️ No text message found in update');
       }
       
       // Handle callback queries (inline keyboard buttons)
@@ -72,18 +77,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Helper function to send Telegram messages
   async function sendTelegramMessage(chatId: number, text: string) {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    console.log(`🤖 Attempting to send message to chat ${chatId}`);
+    console.log(`🔑 Bot token available: ${!!botToken}, length: ${botToken?.length}`);
+    
     try {
-      const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+      const payload = {
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'HTML'
+      };
+      
+      console.log(`📤 Sending to: ${url}`);
+      console.log(`📦 Payload:`, JSON.stringify(payload, null, 2));
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: text,
-          parse_mode: 'HTML'
-        })
+        body: JSON.stringify(payload)
       });
       
+      console.log(`📥 Response status: ${response.status} ${response.statusText}`);
       const result = await response.json();
+      console.log(`📄 Response body:`, JSON.stringify(result, null, 2));
+      
       if (result.ok) {
         console.log('✅ Message sent successfully');
       } else {

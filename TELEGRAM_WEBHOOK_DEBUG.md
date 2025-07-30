@@ -1,39 +1,44 @@
 # 🔍 Telegram Webhook Debug Analysis
 
 ## Current Status
-✅ **Webhook endpoint is accessible**: POST request returns 200 OK  
-✅ **SSL certificate is valid**: TLS 1.3 with proper certificate chain  
-✅ **Domain resolves correctly**: telegram-channel-marketplace.onrender.com  
-❌ **Telegram webhook setup fails**: 404 "Not Found" error
+✅ **Webhook Endpoint**: Responds 200 OK to POST requests  
+✅ **Webhook URL**: Properly set in Telegram  
+✅ **Bot Token**: Valid and authenticated  
+❓ **Message Processing**: Need to verify if webhooks are reaching the server  
 
-## Technical Analysis
+## Diagnostic Steps Added
 
-### Curl Test Results
+### Enhanced Logging
+Added comprehensive debugging to track:
+1. **Request Reception**: Full webhook payload logging
+2. **Message Processing**: Step-by-step command handling
+3. **API Calls**: Detailed Telegram API request/response logging
+4. **Error Tracking**: Specific error messages for failed operations
+
+### Expected Debug Output
+When a user sends `/start`, should see:
 ```
-POST /webhook/telegram HTTP/2
-Host: telegram-channel-marketplace.onrender.com
-SSL: TLS 1.3 / TLS_AES_256_GCM_SHA384
-Certificate: CN=onrender.com (*.onrender.com) ✅
-Response: 200 OK
-```
-
-### Possible Root Causes
-1. **Bot Token Issue**: Invalid or expired token
-2. **Telegram Cache**: Old webhook info cached
-3. **URL Validation**: Telegram's strict URL validation
-4. **Rate Limiting**: Too many webhook setup attempts
-
-## Debug Enhancement Applied
-- **Webhook Info Check**: Get current webhook status
-- **Force Delete**: Remove existing webhook first  
-- **Clean Setup**: Wait before setting new webhook
-- **Better Logging**: Detailed response analysis
-
-## Expected Debug Output
-```
-Current webhook info: { url: "old_url", has_custom_certificate: false }
-Delete webhook result: { ok: true, result: true }  
-Webhook setup result: { ok: true, result: true, description: "Webhook was set" }
+POST /webhook/telegram - Telegram update received
+Request body: { "update_id": xxx, "message": {...} }
+📨 Message from [User] (12345): /start
+💬 Chat ID: 12345, Message ID: 1
+🎯 Processing /start command
+🤖 Attempting to send message to chat 12345
+📤 Sending to: https://api.telegram.org/bot[TOKEN]/sendMessage
+📥 Response status: 200 OK
+✅ Message sent successfully
 ```
 
-The webhook endpoint is working correctly - the issue is with Telegram's webhook validation process.
+## Possible Issues Being Investigated
+1. **Environment Variables**: Bot token not available on Render server
+2. **Network Issues**: API calls failing due to connectivity
+3. **Webhook Delivery**: Telegram not actually sending webhooks
+4. **Message Format**: Telegram webhook format different than expected
+
+## Next Steps
+1. Test with real `/start` message to @Giftspremarketbot
+2. Check Render logs for detailed webhook processing
+3. Verify bot token environment variable on production server
+4. Confirm webhook is actually receiving real Telegram updates
+
+The enhanced logging will show exactly where the process is failing.
