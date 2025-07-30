@@ -100,11 +100,12 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
    - Proper handling of empty filter values
 
 ### Known Issues to Address
-1. **Data Persistence**: Currently using in-memory storage - need migration to PostgreSQL
-2. **Payment Integration**: TON wallet integration is UI-only, needs blockchain connection
-3. **Bot Token Verification**: Channel verification endpoint has TODO - needs implementation
-4. **Escrow Processing**: No actual payment processing or smart contract integration
-5. **Error Boundaries**: React components lack error boundaries for crash prevention
+1. **URGENT - Bot Token Issue**: TELEGRAM_BOT_TOKEN in Render environment returns 404 errors - needs verification/replacement
+2. **Data Persistence**: Currently using in-memory storage - need migration to PostgreSQL
+3. **Payment Integration**: TON wallet integration is UI-only, needs blockchain connection
+4. **Bot Token Verification**: Channel verification endpoint has TODO - needs implementation
+5. **Escrow Processing**: No actual payment processing or smart contract integration
+6. **Error Boundaries**: React components lack error boundaries for crash prevention
 
 ## User Preferences
 - Language: Simple, non-technical explanations

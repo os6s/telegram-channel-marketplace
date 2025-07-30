@@ -358,9 +358,28 @@ export function registerBotRoutes(app: express.Express) {
         
         // Validate bot token first
         console.log('Validating bot token...');
-        const botInfoResult = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getMe`);
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        console.log('Bot token format check:', {
+          present: !!botToken,
+          length: botToken?.length,
+          startsWithNumber: botToken ? /^\d/.test(botToken) : false,
+          containsColon: botToken ? botToken.includes(':') : false,
+          format: botToken ? `${botToken.substring(0, 10)}...${botToken.substring(botToken.length - 5)}` : 'missing'
+        });
+        
+        const botInfoResult = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
         const botInfo = await botInfoResult.json();
         console.log('Bot validation result:', botInfo);
+        
+        if (!botInfo.ok) {
+          console.error('🚨 CRITICAL: Bot token validation failed!');
+          console.error('This means the TELEGRAM_BOT_TOKEN environment variable is:');
+          console.error('1. Missing from Render dashboard');
+          console.error('2. Incorrect/corrupted format'); 
+          console.error('3. Bot was deleted from @BotFather');
+          console.error('Please check Render environment variables and bot status');
+          return;
+        }
         
         // Delete existing webhook first
         await bot.removeWebhook();
