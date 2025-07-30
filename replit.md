@@ -35,12 +35,14 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
    - Populated database with 10 sample channels including NFT collection
    - All API endpoints now working properly (/api/channels, /api/stats)
 
-2. **Official TON Connect Implementation**:
+2. **Official TON Connect Implementation COMPLETED**:
    - Implemented authentic TON Connect using @tonconnect/ui-react library
    - Added TonConnectUIProvider wrapper for proper initialization
    - Created tonconnect-manifest.json for Telegram Mini App compliance
-   - Real wallet connection with TonConnectButton (not demo/mock)
-   - Proper balance fetching from TON blockchain via toncenter.com API
+   - Custom connect button with proper wallet state detection (not TonConnectButton)
+   - Checks for wallet.account.walletStateInit !== "mock" to prevent demo connections
+   - Real balance fetching from TON blockchain via toncenter.com API
+   - Proper connection/disconnection flow with error handling
    - Fully compliant with official Telegram Mini App requirements
 
 2. **Telegram NFT Collection Added**:
