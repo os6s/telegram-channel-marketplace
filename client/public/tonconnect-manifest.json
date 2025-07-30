@@ -1,7 +1,7 @@
 {
-  "url": "https://telegram-channel-marketplace-production.up.railway.app",
-  "name": "Telegram Channel Marketplace",
-  "iconUrl": "https://telegram-channel-marketplace-production.up.railway.app/icon-192x192.png",
-  "termsOfUseUrl": "https://telegram-channel-marketplace-production.up.railway.app/terms",
-  "privacyPolicyUrl": "https://telegram-channel-marketplace-production.up.railway.app/privacy"
+  "url": "http://localhost:5000",
+  "name": "Telegram Channel Marketplace", 
+  "iconUrl": "http://localhost:5000/favicon.ico",
+  "termsOfUseUrl": "http://localhost:5000/terms",
+  "privacyPolicyUrl": "http://localhost:5000/privacy"
 }

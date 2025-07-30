@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Filter, Settings, Wallet } from "lucide-react";
 import { ChannelCard } from "@/components/channel-card";
-import { EnhancedWalletConnect } from "@/components/enhanced-wallet-connect";
+
 import { SettingsModal } from "@/components/settings-modal";
 import { useLanguage } from "@/contexts/language-context";
 import { useTheme } from "@/contexts/theme-context";
@@ -113,7 +113,6 @@ export default function EnhancedMarketplace() {
             </div>
             
             <div className="flex items-center space-x-2 rtl:space-x-reverse">
-              <EnhancedWalletConnect />
               <Button 
                 variant="ghost" 
                 size="sm"

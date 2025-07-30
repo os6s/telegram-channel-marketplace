@@ -51,6 +51,12 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
    - Modified build.sh to use production config for Render deployment
    - Eliminates "Adjust chunk size limit" warning on Render
 
+4. **TON Wallet Manifest & UI Changes**:
+   - Fixed tonconnect-manifest.json URL configuration for proper wallet loading
+   - Removed wallet connection from marketplace and sell channel pages
+   - Wallet connection now only available in profile section as requested
+   - Fixed "manifest load failed" error by updating localhost configuration
+
 2. **Telegram NFT Collection Added**:
    - Created 6 official Telegram NFT gift channels (Homemade Cake, Jelly Bunny, Spiced Wine, Santa Hat, Plush Pepe, Golden Star)
    - Added "NFT Collection" category with proper purple badge styling

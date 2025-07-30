@@ -12,7 +12,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
-import { EnhancedWalletConnect } from "@/components/enhanced-wallet-connect";
+
 import { ArrowLeft, Upload, Check, AlertCircle, Users, DollarSign, Shield, Bot } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -152,7 +152,6 @@ export default function EnhancedSellChannel() {
               </div>
               <h1 className="text-xl font-bold text-foreground">{t('sellChannelTitle')}</h1>
             </div>
-            <EnhancedWalletConnect />
           </div>
         </div>
       </header>
