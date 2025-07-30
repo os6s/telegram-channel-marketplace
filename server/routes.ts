@@ -6,7 +6,34 @@ import { z } from "zod";
 import { registerBotRoutes } from "./telegram-bot";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Register Telegram bot routes FIRST (highest priority)
+  // Register webhook route with absolute priority BEFORE any other middleware
+  console.log('Registering webhook route with highest priority...');
+  
+  // Webhook endpoint for Telegram (absolute priority)
+  app.post('/webhook/telegram', (req, res) => {
+    console.log('Webhook endpoint hit - processing update:', req.body);
+    try {
+      // Handle the Telegram update here directly
+      if (req.body && req.body.message) {
+        console.log('Received message from user:', req.body.message.from?.first_name);
+      }
+      res.sendStatus(200);
+    } catch (error) {
+      console.error('Error handling Telegram update:', error);
+      res.sendStatus(500);
+    }
+  });
+
+  // Test endpoint to verify webhook route exists
+  app.get('/webhook/telegram', (req, res) => {
+    res.json({ 
+      message: 'Webhook endpoint is active',
+      method: 'POST required for Telegram updates',
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // Register Telegram bot routes (for webhook setup and other functionality)
   registerBotRoutes(app);
 
   // Health check endpoint for Render

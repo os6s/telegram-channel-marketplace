@@ -358,27 +358,7 @@ export function registerBotRoutes(app: express.Express) {
     }, 3000); // Wait 2 seconds for server to be fully ready
   }
 
-  // Webhook endpoint for Telegram (for production)
-  app.post('/webhook/telegram', (req, res) => {
-    console.log('Webhook endpoint hit:', req.body);
-    try {
-      const update: TelegramUpdate = req.body;
-      bot.handleUpdate(update);
-      res.sendStatus(200);
-    } catch (error) {
-      console.error('Error handling Telegram update:', error);
-      res.sendStatus(500);
-    }
-  });
-
-  // Test endpoint to verify webhook route exists
-  app.get('/webhook/telegram', (req, res) => {
-    res.json({ 
-      message: 'Webhook endpoint is active',
-      method: 'POST required for Telegram updates',
-      timestamp: new Date().toISOString()
-    });
-  });
+  // Note: Webhook endpoint is now registered in routes.ts with absolute priority
 
   // Setup webhook (for production deployment)
   app.post('/setup-webhook', async (req, res) => {
