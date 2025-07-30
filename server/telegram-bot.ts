@@ -323,18 +323,21 @@ export function registerBotRoutes(app: express.Express) {
       startPolling(bot);
     });
   } else {
-    // In production, automatically set up webhook
-    const webhookUrl = `${process.env.WEBAPP_URL}/webhook/telegram`;
-    console.log(`Production mode - setting up webhook: ${webhookUrl}`);
-    bot.setWebhook(webhookUrl).then(result => {
-      if (result.ok) {
-        console.log('✅ Webhook configured successfully for production');
-      } else {
-        console.error('❌ Failed to configure webhook:', result);
+    // In production, set up webhook after routes are registered
+    setTimeout(async () => {
+      const webhookUrl = `${process.env.WEBAPP_URL}/webhook/telegram`;
+      console.log(`Production mode - setting up webhook: ${webhookUrl}`);
+      try {
+        const result = await bot.setWebhook(webhookUrl);
+        if (result.ok) {
+          console.log('✅ Webhook configured successfully for production');
+        } else {
+          console.error('❌ Failed to configure webhook:', result);
+        }
+      } catch (error) {
+        console.error('❌ Error configuring webhook:', error);
       }
-    }).catch(error => {
-      console.error('❌ Error configuring webhook:', error);
-    });
+    }, 2000); // Wait 2 seconds for server to be fully ready
   }
 
   // Webhook endpoint for Telegram (for production)
