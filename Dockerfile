@@ -13,8 +13,8 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Build the application
-RUN npm run build
+# Make build script executable and run build
+RUN chmod +x build.sh && ./build.sh
 
 # Remove dev dependencies after build
 RUN npm ci --only=production && npm cache clean --force

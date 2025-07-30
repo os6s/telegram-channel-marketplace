@@ -27,6 +27,19 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
 
 ## Recent Changes
 
+### Render Deployment Fix (July 30, 2025)
+1. **Build Process Fixed**:
+   - Created custom build.sh script with npx for proper binary execution
+   - Added .nvmrc for Node.js version specification
+   - Updated render.yaml and Dockerfile for new build process
+   - Resolved "vite: not found" error on Render platform
+
+2. **Production Optimization**:
+   - Build dependencies properly installed as production dependencies
+   - Custom build script with fallback installation
+   - Detailed logging for deployment debugging
+   - Successfully tested locally with full build process
+
 ### GitHub Publication Preparation (July 30, 2025)
 1. **Repository Files Created**:
    - Added comprehensive .gitignore for proper version control
