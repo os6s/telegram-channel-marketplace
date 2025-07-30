@@ -77,6 +77,11 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
    - Implemented sendTelegramMessage helper for bot responses
    - Added callback query handling for inline keyboards
    - Comprehensive error handling and logging for all message types
+
+4. **Mini App Integration**:
+   - Added inline web app button to /start command for direct marketplace access
+   - Configured proper web_app parameter for Telegram Mini App functionality
+   - Ready for BotFather Mini App configuration to enable web app button
    
 4. **Environment Variable Requirements**:
    - TELEGRAM_BOT_TOKEN must be set in Render dashboard

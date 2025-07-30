@@ -33,13 +33,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await sendTelegramMessage(chatId, 
             `🎉 Welcome to Telegram Channel Marketplace!\n\n` +
             `🔥 Buy and sell Telegram channels securely with escrow protection.\n\n` +
-            `🚀 Open our web app: https://telegram-channel-marketplace.onrender.com\n\n` +
             `💎 Features:\n` +
             `• Secure escrow transactions\n` +
             `• Channel verification\n` +
             `• TON cryptocurrency payments\n` +
             `• Trusted guarantor services\n\n` +
-            `📱 Start trading channels safely today!`
+            `📱 Start trading channels safely today!`,
+            {
+              inline_keyboard: [[
+                {
+                  text: "🚀 Open Marketplace",
+                  web_app: { url: "https://telegram-channel-marketplace.onrender.com" }
+                }
+              ]]
+            }
           );
         } else {
           console.log('💬 Processing regular message');
@@ -76,7 +83,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Helper function to send Telegram messages
-  async function sendTelegramMessage(chatId: number, text: string) {
+  async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: any) {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     console.log(`🤖 Attempting to send message to chat ${chatId}`);
     console.log(`🔑 Bot token available: ${!!botToken}, length: ${botToken?.length}`);
@@ -86,7 +93,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const payload = {
         chat_id: chatId,
         text: text,
-        parse_mode: 'HTML'
+        parse_mode: 'HTML',
+        ...(replyMarkup && { reply_markup: replyMarkup })
       };
       
       console.log(`📤 Sending to: ${url}`);
