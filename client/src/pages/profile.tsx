@@ -319,10 +319,18 @@ export default function Profile() {
             <Card>
               <CardContent className="p-8 text-center">
                 <div className="text-muted-foreground text-6xl mb-4">📊</div>
-                <h3 className="font-medium text-foreground mb-2">Activity Coming Soon</h3>
-                <p className="text-sm text-muted-foreground">
-                  View your transaction history, earnings, and marketplace activity here.
+                <h3 className="font-medium text-foreground mb-2">View Full Activity</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Access your complete transaction history and marketplace activity.
                 </p>
+                <Button 
+                  className="bg-telegram-500 hover:bg-telegram-600"
+                  onClick={() => {
+                    window.location.href = '/activity';
+                  }}
+                >
+                  Open Activity Page
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>

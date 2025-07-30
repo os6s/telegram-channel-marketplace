@@ -13,7 +13,7 @@ import { useTelegram } from "@/hooks/use-telegram";
 // Lazy load pages for better performance
 const Marketplace = lazy(() => import("@/components/enhanced-marketplace"));
 const SellChannel = lazy(() => import("@/pages/enhanced-sell-channel"));
-const Guarantors = lazy(() => import("@/pages/guarantors"));
+const Activity = lazy(() => import("@/pages/activity"));
 const Profile = lazy(() => import("@/pages/profile"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -29,7 +29,8 @@ function Router() {
       <Switch>
         <Route path="/" component={Marketplace} />
         <Route path="/sell" component={SellChannel} />
-        <Route path="/guarantors" component={Guarantors} />
+        <Route path="/sell-channel" component={SellChannel} />
+        <Route path="/activity" component={Activity} />
         <Route path="/profile" component={Profile} />
         {/* Fallback to 404 */}
         <Route component={NotFound} />
@@ -68,13 +69,13 @@ function BottomNavigation() {
       label: t('sellChannel')
     },
     {
-      path: "/guarantors",
+      path: "/activity",
       icon: (
         <svg className="w-5 h-5 mb-1" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M12,7C13.4,7 14.8,8.6 14.8,10V11H16V18H8V11H9.2V10C9.2,8.6 10.6,7 12,7M12,8.2C11.2,8.2 10.4,8.7 10.4,10V11H13.6V10C13.6,8.7 12.8,8.2 12,8.2Z"/>
+          <path d="M9,5V7H15V5H9M12,2A7,7 0 0,1 19,9C19,11.38 17.81,13.47 16,14.74V17A1,1 0 0,1 15,18H9A1,1 0 0,1 8,17V14.74C6.19,13.47 5,11.38 5,9A7,7 0 0,1 12,2M9,12H15A2,2 0 0,1 17,14V15H7V14A2,2 0 0,1 9,12Z"/>
         </svg>
       ),
-      label: t('guarantors')
+      label: t('activity')
     },
     {
       path: "/profile",

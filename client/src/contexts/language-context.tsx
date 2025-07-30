@@ -17,7 +17,7 @@ const translations: Record<Language, Translations> = {
     // Navigation
     marketplace: "Marketplace",
     sellChannel: "Sell Channel",
-    guarantors: "Guarantors",
+    activity: "Activity",
     profile: "Profile",
     
     // Marketplace
@@ -82,7 +82,7 @@ const translations: Record<Language, Translations> = {
     // Navigation
     marketplace: "السوق",
     sellChannel: "بيع قناة",
-    guarantors: "الضامنين",
+    activity: "النشاط",
     profile: "الملف الشخصي",
     
     // Marketplace
