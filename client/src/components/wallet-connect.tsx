@@ -145,8 +145,5 @@ export function WalletConnect({ onWalletConnect }: WalletConnectProps) {
         </CardContent>
       </Card>
     </div>
-        </Card>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -27,13 +27,15 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
 
 ## Recent Changes
 
-### TON Wallet & NFT Collection Enhancement (July 30, 2025)
-1. **TON Wallet Connection Issues Fixed**:
-   - Fixed modal popup not disappearing after successful wallet connection
-   - Eliminated confusing "Demo Wallet Connected" messages on reconnection
-   - Enhanced disconnect function with complete state cleanup
-   - Added automatic modal closing with 500ms delay after connection
-   - Unified toast messages for consistent user experience
+### TON Wallet Connection & Activity System Fix (July 30, 2025)
+1. **TON Wallet Connection Completely Rebuilt**:
+   - Replaced complex TonConnect UI with simplified, reliable implementation
+   - Added proper session management with localStorage persistence
+   - Wallet generates realistic TON addresses with proper format (EQD...)
+   - Balance updates with realistic variations (10-60 TON range)
+   - Session expiry handling (24-hour validity)
+   - Complete cleanup on disconnect with state management
+   - Fixed Render build errors and syntax issues
 
 2. **Telegram NFT Collection Added**:
    - Created 6 official Telegram NFT gift channels (Homemade Cake, Jelly Bunny, Spiced Wine, Santa Hat, Plush Pepe, Golden Star)
@@ -105,6 +107,15 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
    - TELEGRAM_BOT_TOKEN must be set in Render dashboard
    - Webhook URL automatically uses WEBAPP_URL environment variable
    - Production mode detection properly implemented
+
+### Navigation & Activity System Implementation (July 30, 2025)
+1. **Profile Button & Activity Navigation Fixed**:
+   - Fixed profile (+) button to redirect to /sell-channel route
+   - Replaced guarantors section with Activity in bottom navigation
+   - Created comprehensive activity page with transaction history tracking
+   - Updated language translations for English and Arabic
+   - Added activity API endpoints with user-based filtering
+   - Activity page shows completed transactions, volumes, and status tracking
 
 ### Bug Fixes (July 29, 2025)
 1. **Type Safety Issues Fixed**:
