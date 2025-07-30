@@ -29,13 +29,8 @@ export function EnhancedWalletConnect() {
 
   const initializeTonConnect = async () => {
     try {
-      // Detect if running in production or development
-      const isProduction = window.location.hostname !== 'localhost' && 
-                          window.location.hostname !== '127.0.0.1';
-      
-      const manifestUrl = isProduction 
-        ? 'https://telegram-channel-marketplace--5000.prod1.defang.dev/tonconnect-manifest.json'
-        : `${window.location.origin}/tonconnect-manifest.json`;
+      // Use manifest URL relative to current origin
+      const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
       
       console.log('TON Connect manifest URL:', manifestUrl);
       

@@ -1,7 +1,7 @@
 {
-  "url": "https://telegram-channel-marketplace--5000.prod1.defang.dev",
+  "url": "http://localhost:5000",
   "name": "Telegram Channel Marketplace", 
-  "iconUrl": "https://telegram-channel-marketplace--5000.prod1.defang.dev/favicon.ico",
-  "termsOfUseUrl": "https://telegram-channel-marketplace--5000.prod1.defang.dev/terms",
-  "privacyPolicyUrl": "https://telegram-channel-marketplace--5000.prod1.defang.dev/privacy"
+  "iconUrl": "http://localhost:5000/favicon.ico",
+  "termsOfUseUrl": "http://localhost:5000/terms",
+  "privacyPolicyUrl": "http://localhost:5000/privacy"
 }
