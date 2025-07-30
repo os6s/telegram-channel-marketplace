@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Channel, type InsertChannel, type Escrow, type InsertEscrow } from "@shared/schema";
+import { type User, type InsertUser, type Channel, type InsertChannel, type Activity, type InsertActivity } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PostgreSQLStorage } from "./db";
 
@@ -23,30 +23,30 @@ export interface IStorage {
   updateChannel(id: string, updates: Partial<Channel>): Promise<Channel | undefined>;
   deleteChannel(id: string): Promise<boolean>;
 
-  // Escrow operations
-  getEscrow(id: string): Promise<Escrow | undefined>;
-  getEscrowsByUser(userId: string): Promise<Escrow[]>;
-  getEscrowsByChannel(channelId: string): Promise<Escrow[]>;
-  createEscrow(escrow: InsertEscrow): Promise<Escrow>;
-  updateEscrow(id: string, updates: Partial<Escrow>): Promise<Escrow | undefined>;
+  // Activity operations
+  getActivity(id: string): Promise<Activity | undefined>;
+  getActivitiesByUser(userId: string): Promise<Activity[]>;
+  getActivitiesByChannel(channelId: string): Promise<Activity[]>;
+  createActivity(activity: InsertActivity): Promise<Activity>;
+  updateActivity(id: string, updates: Partial<Activity>): Promise<Activity | undefined>;
 
   // Statistics
   getMarketplaceStats(): Promise<{
     activeListings: number;
     totalVolume: string;
-    activeEscrows: number;
+    totalSales: number;
   }>;
 }
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private channels: Map<string, Channel>;
-  private escrows: Map<string, Escrow>;
+  private activities: Map<string, Activity>;
 
   constructor() {
     this.users = new Map();
     this.channels = new Map();
-    this.escrows = new Map();
+    this.activities = new Map();
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -153,66 +153,65 @@ export class MemStorage implements IStorage {
     return this.channels.delete(id);
   }
 
-  async getEscrow(id: string): Promise<Escrow | undefined> {
-    return this.escrows.get(id);
+  async getActivity(id: string): Promise<Activity | undefined> {
+    return this.activities.get(id);
   }
 
-  async getEscrowsByUser(userId: string): Promise<Escrow[]> {
-    return Array.from(this.escrows.values()).filter(
-      (escrow) => escrow.buyerId === userId || escrow.sellerId === userId,
+  async getActivitiesByUser(userId: string): Promise<Activity[]> {
+    return Array.from(this.activities.values()).filter(
+      (activity) => activity.buyerId === userId || activity.sellerId === userId,
     );
   }
 
-  async getEscrowsByChannel(channelId: string): Promise<Escrow[]> {
-    return Array.from(this.escrows.values()).filter(
-      (escrow) => escrow.channelId === channelId,
+  async getActivitiesByChannel(channelId: string): Promise<Activity[]> {
+    return Array.from(this.activities.values()).filter(
+      (activity) => activity.channelId === channelId,
     );
   }
 
-  async createEscrow(insertEscrow: InsertEscrow): Promise<Escrow> {
+  async createActivity(insertActivity: InsertActivity): Promise<Activity> {
     const id = randomUUID();
-    const channel = await this.getChannel(insertEscrow.channelId);
+    const channel = await this.getChannel(insertActivity.channelId);
     if (!channel) throw new Error("Channel not found");
     
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+    const completedAt = new Date().toISOString();
     
-    const escrow: Escrow = { 
-      ...insertEscrow, 
+    const activity: Activity = { 
+      ...insertActivity, 
       id,
       sellerId: channel.sellerId,
-      status: "pending",
-      expiresAt,
-      botToken: insertEscrow.botToken || null
+      status: "completed",
+      completedAt,
+      transactionHash: insertActivity.transactionHash || null
     };
-    this.escrows.set(id, escrow);
-    return escrow;
+    this.activities.set(id, activity);
+    return activity;
   }
 
-  async updateEscrow(id: string, updates: Partial<Escrow>): Promise<Escrow | undefined> {
-    const escrow = this.escrows.get(id);
-    if (!escrow) return undefined;
+  async updateActivity(id: string, updates: Partial<Activity>): Promise<Activity | undefined> {
+    const activity = this.activities.get(id);
+    if (!activity) return undefined;
     
-    const updatedEscrow = { ...escrow, ...updates };
-    this.escrows.set(id, updatedEscrow);
-    return updatedEscrow;
+    const updatedActivity = { ...activity, ...updates };
+    this.activities.set(id, updatedActivity);
+    return updatedActivity;
   }
 
   async getMarketplaceStats(): Promise<{
     activeListings: number;
     totalVolume: string;
-    activeEscrows: number;
+    totalSales: number;
   }> {
     const activeChannels = Array.from(this.channels.values()).filter(c => c.isActive);
-    const activeEscrowsList = Array.from(this.escrows.values()).filter(e => e.status !== "completed" && e.status !== "cancelled");
+    const completedActivities = Array.from(this.activities.values()).filter(a => a.status === "completed");
     
-    const totalVolume = Array.from(this.escrows.values())
-      .filter(e => e.status === "completed")
-      .reduce((sum, escrow) => sum + parseFloat(escrow.amount), 0);
+    const totalVolume = completedActivities
+      .reduce((sum, activity) => sum + parseFloat(activity.amount), 0);
 
     return {
       activeListings: activeChannels.length,
       totalVolume: totalVolume.toFixed(2),
-      activeEscrows: activeEscrowsList.length
+      totalSales: completedActivities.length
     };
   }
 }

@@ -28,15 +28,15 @@ export const channels = pgTable("channels", {
   avatarUrl: text("avatar_url"),
 });
 
-export const escrows = pgTable("escrows", {
+export const activities = pgTable("activities", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   channelId: varchar("channel_id").notNull(),
   buyerId: varchar("buyer_id").notNull(),
   sellerId: varchar("seller_id").notNull(),
   amount: decimal("amount", { precision: 18, scale: 9 }).notNull(),
-  status: text("status").notNull().default("pending"), // pending, verified, completed, cancelled
-  botToken: text("bot_token"), // For verification
-  expiresAt: text("expires_at").notNull(),
+  status: text("status").notNull().default("completed"), // completed, refunded
+  transactionHash: text("transaction_hash"),
+  completedAt: text("completed_at").notNull(),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({
@@ -55,16 +55,16 @@ export const insertChannelSchema = createInsertSchema(channels).omit({
   growth: z.string().regex(/^[+-]?\d+(\.\d{1,2})?$/, "Invalid growth rate"),
 });
 
-export const insertEscrowSchema = createInsertSchema(escrows).omit({
+export const insertActivitySchema = createInsertSchema(activities).omit({
   id: true,
   sellerId: true,
   status: true,
-  expiresAt: true,
+  completedAt: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertChannel = z.infer<typeof insertChannelSchema>;
 export type Channel = typeof channels.$inferSelect;
-export type InsertEscrow = z.infer<typeof insertEscrowSchema>;
-export type Escrow = typeof escrows.$inferSelect;
+export type InsertActivity = z.infer<typeof insertActivitySchema>;
+export type Activity = typeof activities.$inferSelect;

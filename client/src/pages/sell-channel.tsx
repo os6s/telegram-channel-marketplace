@@ -16,14 +16,14 @@ import { useToast } from "@/hooks/use-toast";
 import { telegramWebApp } from "@/lib/telegram";
 
 const categories = [
-  { value: 'crypto', label: '🪙 Crypto' },
-  { value: 'news', label: '📰 News' },
-  { value: 'gaming', label: '🎮 Gaming' },
-  { value: 'entertainment', label: '🎬 Entertainment' },
-  { value: 'education', label: '🎓 Education' },
-  { value: 'business', label: '💼 Business' },
-  { value: 'tech', label: '🔧 Technology' },
-  { value: 'lifestyle', label: '🌟 Lifestyle' },
+  { value: 'Cryptocurrency', label: '🪙 Cryptocurrency' },
+  { value: 'NFT Collection', label: '🎁 NFT Collection' },
+  { value: 'Technology', label: '💻 Technology' },
+  { value: 'Gaming', label: '🎮 Gaming' },
+  { value: 'Entertainment', label: '🎬 Entertainment' },
+  { value: 'Education', label: '🎓 Education' },
+  { value: 'Business', label: '💼 Business' },
+  { value: 'News', label: '📰 News' },
 ];
 
 export default function SellChannel() {
@@ -69,14 +69,56 @@ export default function SellChannel() {
     },
   });
 
-  const onSubmit = (data: InsertChannel) => {
-    // TODO: Get actual user ID from authentication
-    const sellerId = telegramWebApp.user?.id.toString() || 'temp-user-id';
-    
-    createChannelMutation.mutate({
-      ...data,
-      sellerId,
-    });
+  const onSubmit = async (data: InsertChannel) => {
+    if (!telegramWebApp.user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please open this app through Telegram to list channels",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Create or get user first
+    const telegramId = telegramWebApp.user.id.toString();
+    try {
+      let userId = telegramId;
+      
+      // Try to get existing user
+      const userResponse = await fetch(`/api/users?telegramId=${telegramId}`);
+      if (!userResponse.ok) {
+        // Create user if doesn't exist
+        const createUserResponse = await apiRequest('POST', '/api/users', {
+          telegramId: telegramId,
+          username: telegramWebApp.user.username,
+          firstName: telegramWebApp.user.first_name,
+          lastName: telegramWebApp.user.last_name,
+        });
+        
+        if (!createUserResponse.ok) {
+          throw new Error('Failed to create user account');
+        }
+        
+        const newUser = await createUserResponse.json();
+        userId = newUser.id;
+      } else {
+        const existingUser = await userResponse.json();
+        userId = existingUser.id;
+      }
+
+      // Now create the channel with the proper user ID
+      createChannelMutation.mutate({
+        ...data,
+        sellerId: userId,
+      });
+    } catch (error) {
+      console.error('Error creating channel:', error);
+      toast({
+        title: "Failed to List Channel",
+        description: error instanceof Error ? error.message : "Authentication error occurred",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleBack = () => {

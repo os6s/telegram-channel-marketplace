@@ -246,8 +246,7 @@ export default function Profile() {
                 size="sm"
                 className="bg-telegram-500 hover:bg-telegram-600"
                 onClick={() => {
-                  // TODO: Navigate to sell channel page
-                  console.log('Navigate to sell channel');
+                  window.location.href = '/sell-channel';
                 }}
               >
                 <Plus className="w-4 h-4 mr-1" />
@@ -281,7 +280,12 @@ export default function Profile() {
                   <p className="text-sm text-muted-foreground mb-4">
                     Start selling your Telegram channels on the marketplace
                   </p>
-                  <Button className="bg-telegram-500 hover:bg-telegram-600">
+                  <Button 
+                    className="bg-telegram-500 hover:bg-telegram-600"
+                    onClick={() => {
+                      window.location.href = '/sell-channel';
+                    }}
+                  >
                     <Plus className="w-4 h-4 mr-2" />
                     List Your First Channel
                   </Button>

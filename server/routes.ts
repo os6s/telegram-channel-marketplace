@@ -2,7 +2,7 @@ import type { Express } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertChannelSchema, insertEscrowSchema } from "@shared/schema";
+import { insertUserSchema, insertChannelSchema, insertActivitySchema } from "@shared/schema";
 import { z } from "zod";
 import { registerBotRoutes } from "./telegram-bot";
 
@@ -238,6 +238,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/users", async (req, res) => {
+    try {
+      const telegramId = req.query.telegramId as string;
+      if (!telegramId) {
+        return res.status(400).json({ error: "telegramId parameter required" });
+      }
+      
+      const user = await storage.getUserByTelegramId(telegramId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
   app.patch("/api/users/:id", async (req, res) => {
     try {
       const updates = req.body;
@@ -374,12 +391,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "You can only delete your own channels" });
       }
       
-      // Check if there are active escrows for this channel
-      const escrows = await storage.getEscrowsByChannel(req.params.id);
-      const activeEscrows = escrows.filter(e => e.status === "pending" || e.status === "paid");
+      // Check if there are recent activities for this channel (within 24 hours)
+      const activities = await storage.getActivitiesByChannel(req.params.id);
+      const recentActivities = activities.filter(a => {
+        const completedTime = new Date(a.completedAt);
+        const now = new Date();
+        const timeDiff = now.getTime() - completedTime.getTime();
+        const hoursDiff = timeDiff / (1000 * 3600);
+        return hoursDiff < 24;
+      });
       
-      if (activeEscrows.length > 0) {
-        return res.status(400).json({ error: "Cannot delete channel with active escrows" });
+      if (recentActivities.length > 0) {
+        return res.status(400).json({ error: "Cannot delete channel with recent sales activity" });
       }
       
       const success = await storage.deleteChannel(req.params.id);
@@ -389,69 +412,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Escrow routes
-  app.get("/api/escrows", async (req, res) => {
+  // Activity routes
+  app.get("/api/activities", async (req, res) => {
     try {
       const userId = req.query.userId as string;
       const channelId = req.query.channelId as string;
 
-      let escrows;
+      let activities;
       if (userId) {
-        escrows = await storage.getEscrowsByUser(userId);
+        activities = await storage.getActivitiesByUser(userId);
       } else if (channelId) {
-        escrows = await storage.getEscrowsByChannel(channelId);
+        activities = await storage.getActivitiesByChannel(channelId);
       } else {
         return res.status(400).json({ error: "userId or channelId required" });
       }
 
-      res.json(escrows);
+      res.json(activities);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
-  app.get("/api/escrows/:id", async (req, res) => {
+  app.get("/api/activities/:id", async (req, res) => {
     try {
-      const escrow = await storage.getEscrow(req.params.id);
-      if (!escrow) {
-        return res.status(404).json({ error: "Escrow not found" });
+      const activity = await storage.getActivity(req.params.id);
+      if (!activity) {
+        return res.status(404).json({ error: "Activity not found" });
       }
-      res.json(escrow);
+      res.json(activity);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
-  app.post("/api/escrows", async (req, res) => {
+  app.post("/api/activities", async (req, res) => {
     try {
-      const escrowData = insertEscrowSchema.parse(req.body);
+      const activityData = insertActivitySchema.parse(req.body);
 
       // Verify channel exists and is active
-      const channel = await storage.getChannel(escrowData.channelId);
+      const channel = await storage.getChannel(activityData.channelId);
       if (!channel || !channel.isActive) {
         return res.status(400).json({ error: "Channel not found or inactive" });
       }
 
       // Verify amount matches channel price
-      if (parseFloat(escrowData.amount) !== parseFloat(channel.price)) {
+      if (parseFloat(activityData.amount) !== parseFloat(channel.price)) {
         return res.status(400).json({ error: "Amount does not match channel price" });
       }
 
-      const escrow = await storage.createEscrow(escrowData);
-      res.json(escrow);
+      const activity = await storage.createActivity(activityData);
+      res.json(activity);
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
-  app.patch("/api/escrows/:id", async (req, res) => {
+  app.patch("/api/activities/:id", async (req, res) => {
     try {
       const updates = req.body;
-      const escrow = await storage.updateEscrow(req.params.id, updates);
-      if (!escrow) {
-        return res.status(404).json({ error: "Escrow not found" });
+      const activity = await storage.updateActivity(req.params.id, updates);
+      if (!activity) {
+        return res.status(404).json({ error: "Activity not found" });
       }
-      res.json(escrow);
+      res.json(activity);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
     }

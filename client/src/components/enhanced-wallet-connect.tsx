@@ -33,9 +33,11 @@ export function EnhancedWalletConnect() {
       const manifestUrl = import.meta.env.VITE_TON_MANIFEST_URL || 
                          'https://telegram-channel-marketplace.onrender.com/tonconnect-manifest.json';
       
-      // Initialize real TON Connect UI
+      // Initialize real TON Connect UI with standard configuration
       const tonConnectUI = new TonConnectUI({
         manifestUrl: manifestUrl,
+        restoreConnection: true,
+        // Use default wallet configuration to support user's preferred wallets
       });
       
       setTonConnectUI(tonConnectUI);
