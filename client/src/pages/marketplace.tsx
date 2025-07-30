@@ -181,10 +181,10 @@ export default function Marketplace() {
               {statsLoading ? (
                 <Skeleton className="h-6 w-12 bg-white/20 mx-auto" />
               ) : (
-                (stats as any)?.activeEscrows || 0
+                (stats as any)?.totalSales || 0
               )}
             </div>
-            <div className="text-sm opacity-90">Active Escrows</div>
+            <div className="text-sm opacity-90">Total Sales</div>
           </div>
         </div>
       </div>

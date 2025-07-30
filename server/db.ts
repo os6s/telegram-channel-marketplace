@@ -4,7 +4,7 @@ import * as schema from "@shared/schema";
 
 const { Pool } = pg;
 import { eq, and, ilike, gte, lte, sql } from "drizzle-orm";
-import type { User, Channel, Escrow, InsertUser, InsertChannel, InsertEscrow } from "@shared/schema";
+import type { User, Channel, Activity, InsertUser, InsertChannel, InsertActivity } from "@shared/schema";
 import type { IStorage } from "./storage";
 
 // PostgreSQL Database Implementation
@@ -120,48 +120,55 @@ export class PostgreSQLStorage implements IStorage {
     return (result.rowCount ?? 0) > 0;
   }
 
-  async getEscrow(id: string): Promise<Escrow | undefined> {
-    const result = await this.db.select().from(schema.escrows).where(eq(schema.escrows.id, id));
+  async getActivity(id: string): Promise<Activity | undefined> {
+    const result = await this.db.select().from(schema.activities).where(eq(schema.activities.id, id));
     return result[0];
   }
 
-  async getEscrowsByUser(userId: string): Promise<Escrow[]> {
-    return await this.db.select().from(schema.escrows).where(eq(schema.escrows.buyerId, userId));
+  async getActivitiesByUser(userId: string): Promise<Activity[]> {
+    const result = await this.db.select().from(schema.activities)
+      .where(sql`${schema.activities.buyerId} = ${userId} OR ${schema.activities.sellerId} = ${userId}`);
+    return result;
   }
 
-  async getEscrowsByChannel(channelId: string): Promise<Escrow[]> {
-    return await this.db.select().from(schema.escrows).where(eq(schema.escrows.channelId, channelId));
+  async getActivitiesByChannel(channelId: string): Promise<Activity[]> {
+    const result = await this.db.select().from(schema.activities).where(eq(schema.activities.channelId, channelId));
+    return result;
   }
 
-  async createEscrow(escrow: InsertEscrow): Promise<Escrow> {
-    // Add required fields for database insertion
-    const escrowWithRequired = { 
-      ...escrow, 
-      sellerId: '', // This will be set in routes
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours from now
+  async createActivity(activityData: InsertActivity): Promise<Activity> {
+    // Get channel to determine seller
+    const channel = await this.getChannel(activityData.channelId);
+    if (!channel) throw new Error("Channel not found");
+    
+    const activityWithSeller = {
+      ...activityData,
+      sellerId: channel.sellerId,
+      completedAt: new Date().toISOString(),
     };
-    const result = await this.db.insert(schema.escrows).values([escrowWithRequired]).returning();
+    
+    const result = await this.db.insert(schema.activities).values(activityWithSeller).returning();
     return result[0];
   }
 
-  async updateEscrow(id: string, updates: Partial<Escrow>): Promise<Escrow | undefined> {
-    const result = await this.db.update(schema.escrows).set(updates).where(eq(schema.escrows.id, id)).returning();
+  async updateActivity(id: string, updates: Partial<Activity>): Promise<Activity | undefined> {
+    const result = await this.db.update(schema.activities).set(updates).where(eq(schema.activities.id, id)).returning();
     return result[0];
   }
 
   async getMarketplaceStats(): Promise<{
     activeListings: number;
     totalVolume: string;
-    activeEscrows: number;
+    totalSales: number;
   }> {
-    const [listings] = await this.db.select({ count: sql<number>`count(*)` }).from(schema.channels);
-    const [escrows] = await this.db.select({ count: sql<number>`count(*)` }).from(schema.escrows).where(eq(schema.escrows.status, 'pending'));
-    const [volume] = await this.db.select({ sum: sql<string>`COALESCE(sum(${schema.escrows.amount}), '0')` }).from(schema.escrows);
+    const [listings] = await this.db.select({ count: sql<number>`count(*)` }).from(schema.channels).where(eq(schema.channels.isActive, true));
+    const [sales] = await this.db.select({ count: sql<number>`count(*)` }).from(schema.activities).where(eq(schema.activities.status, 'completed'));
+    const [volume] = await this.db.select({ sum: sql<string>`COALESCE(sum(${schema.activities.amount}), '0')` }).from(schema.activities).where(eq(schema.activities.status, 'completed'));
     
     return {
       activeListings: listings.count,
       totalVolume: volume.sum,
-      activeEscrows: escrows.count
+      totalSales: sales.count
     };
   }
 
