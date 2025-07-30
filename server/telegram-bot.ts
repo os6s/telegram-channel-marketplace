@@ -349,10 +349,18 @@ export function registerBotRoutes(app: express.Express) {
           body: JSON.stringify({ test: 'webhook_test' })
         });
         console.log('POST test status:', testPost.status);
+        const postResponse = await testPost.text();
+        console.log('POST test response:', postResponse);
         
         // Get webhook info first to debug
         const webhookInfo = await bot.getWebhookInfo();
         console.log('Current webhook info:', webhookInfo);
+        
+        // Validate bot token first
+        console.log('Validating bot token...');
+        const botInfoResult = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getMe`);
+        const botInfo = await botInfoResult.json();
+        console.log('Bot validation result:', botInfo);
         
         // Delete existing webhook first
         await bot.removeWebhook();
@@ -374,6 +382,41 @@ export function registerBotRoutes(app: express.Express) {
           try {
             const testWebhook = await fetch(webhookUrl, { method: 'GET' });
             console.log('Webhook endpoint test:', testWebhook.status, await testWebhook.text());
+            
+            // Also test if Telegram can reach it by checking the webhook info after failed setup
+            const finalWebhookInfo = await bot.getWebhookInfo();
+            console.log('Final webhook info after failed setup:', finalWebhookInfo);
+            
+            // Try alternative approach with minimal parameters
+            console.log('Trying simplified webhook setup...');
+            const simplifiedResult = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                url: webhookUrl
+              })
+            });
+            const simplifiedResponse = await simplifiedResult.json();
+            console.log('Simplified webhook setup result:', simplifiedResponse);
+            
+            // If that fails too, try diagnostics
+            if (!simplifiedResponse.ok) {
+              console.log('All webhook setup attempts failed. Running diagnostics...');
+              console.log('Bot token present:', !!process.env.TELEGRAM_BOT_TOKEN);
+              console.log('Bot token length:', process.env.TELEGRAM_BOT_TOKEN?.length);
+              console.log('Webhook URL:', webhookUrl);
+              console.log('URL length:', webhookUrl.length);
+              console.log('URL protocol:', new URL(webhookUrl).protocol);
+              console.log('URL hostname:', new URL(webhookUrl).hostname);
+              console.log('URL port:', new URL(webhookUrl).port || 'default');
+              console.log('URL pathname:', new URL(webhookUrl).pathname);
+              
+              // Check if the issue is with Telegram's servers or our setup
+              console.log('Testing Telegram API accessibility...');
+              const telegramTest = await fetch('https://api.telegram.org/');
+              console.log('Telegram API test status:', telegramTest.status);
+            }
+            
           } catch (testError) {
             console.error('Webhook endpoint test failed:', testError);
           }
