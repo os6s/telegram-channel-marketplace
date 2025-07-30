@@ -178,9 +178,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.redirect(301, 'https://t.me/giftspremarketbot');
   });
 
-  // Enhanced middleware to detect Telegram Mini App and external visitors
+  // TEMPORARILY DISABLE REDIRECT - Testing if this is the root cause
   app.use((req, res, next) => {
-    // CRITICAL: Skip middleware for webhook and API routes to prevent Telegram validation issues
+    // Skip all middleware logic for debugging
     if (req.path.startsWith('/webhook/') || 
         req.path.startsWith('/api/') || 
         req.path.startsWith('/src/') ||
@@ -191,58 +191,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const userAgent = req.get('User-Agent') || '';
     const referer = req.get('Referer') || '';
     
-    // Skip for bot validation requests
-    if (userAgent.includes('TelegramBot') && !req.path.startsWith('/')) {
-      console.log(`Bypassing redirect for Telegram bot request: ${req.path}`);
-      return next();
-    }
-    
-    // Only check root path requests
+    // Log ALL requests to root path for analysis
     if (req.path === "/" || req.path === "/index.html") {
-      // Enhanced Telegram Mini App detection - MORE RESTRICTIVE
-      const isTelegramWebApp = 
-        // Direct Telegram Bot/WebApp user agents
-        userAgent.includes('TelegramBot') || 
-        userAgent.toLowerCase().includes('telegram') ||
-        // Telegram referrers (most reliable indicator)
-        referer.includes('telegram.org') ||
-        referer.includes('t.me') ||
-        referer.includes('web.telegram.org') ||
-        referer.includes('tdesktop') ||
-        // Telegram Mini App specific headers and parameters
-        req.query.tgWebAppPlatform ||
-        req.query.tgWebAppData ||
-        req.headers['x-telegram-bot-api-secret-token'] ||
-        req.headers['tg-web-app-data'] ||
-        // DISABLE cross-site check as it's too broad
-        // req.headers['sec-fetch-site'] === 'cross-site' ||
-        // More specific iOS Telegram detection
-        (userAgent.includes('Mobile/') && userAgent.includes('AppleWebKit') && 
-         (referer.includes('telegram') || referer.includes('t.me')));
-      
-      // Enhanced logging for debugging
-      console.log('🔍 Request Analysis:', {
+      console.log('🔍 ALL ROOT REQUESTS - REDIRECT DISABLED:', {
         path: req.path,
-        userAgent: userAgent.substring(0, 150),
+        method: req.method,
+        userAgent: userAgent,
         referer: referer,
-        isTelegramWebApp: isTelegramWebApp,
-        detectionReasons: {
-          hasUserAgentTelegram: userAgent.toLowerCase().includes('telegram'),
-          hasUserAgentBot: userAgent.includes('TelegramBot'),
-          hasTelegramReferer: referer.includes('telegram') || referer.includes('t.me'),
-          hasWebAppParams: !!(req.query.tgWebAppPlatform || req.query.tgWebAppData),
-          hasWebAppHeaders: !!(req.headers['tg-web-app-data'] || req.headers['x-telegram-bot-api-secret-token'])
-        },
-        allHeaders: Object.keys(req.headers).filter(h => h.includes('tg') || h.includes('telegram'))
+        query: req.query,
+        telegramHeaders: Object.keys(req.headers).filter(h => h.includes('tg') || h.includes('telegram')),
+        allHeaders: req.headers
       });
       
-      // If not from Telegram, redirect to bot
-      if (!isTelegramWebApp) {
-        console.log(`🔄 Redirecting external visitor to bot`);
-        return res.redirect(301, 'https://t.me/giftspremarketbot');
-      }
-      
-      console.log('✅ Telegram Mini App access allowed');
+      console.log('✅ Allowing all requests - redirect middleware disabled for testing');
     }
     
     next();
