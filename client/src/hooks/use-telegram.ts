@@ -48,18 +48,46 @@ export function useTelegram() {
         tg.ready();
         tg.expand();
         
+        // Enable closing confirmation
+        tg.enableClosingConfirmation();
+        
+        // Set header color to match theme
+        if (tg.themeParams.bg_color) {
+          tg.setHeaderColor(tg.themeParams.bg_color);
+        }
+        
         // Update state with Telegram data
         setWebAppData({
           user: tg.initDataUnsafe.user,
           theme: tg.themeParams,
           colorScheme: tg.colorScheme,
-          isExpanded: true, // Assume expanded after calling expand()
-          viewportHeight: window.innerHeight,
+          isExpanded: tg.isExpanded,
+          viewportHeight: tg.viewportHeight || window.innerHeight,
           isClosingConfirmationEnabled: true
         });
 
         // Apply Telegram theme to CSS variables
         applyTelegramTheme(tg.themeParams);
+        
+        // Listen for viewport changes
+        tg.onEvent('viewportChanged', () => {
+          setWebAppData(prev => ({
+            ...prev,
+            viewportHeight: tg.viewportHeight || window.innerHeight,
+            isExpanded: tg.isExpanded
+          }));
+        });
+        
+        // Listen for theme changes
+        tg.onEvent('themeChanged', () => {
+          const newTheme = tg.themeParams;
+          applyTelegramTheme(newTheme);
+          setWebAppData(prev => ({
+            ...prev,
+            theme: newTheme,
+            colorScheme: tg.colorScheme
+          }));
+        });
         
         setIsReady(true);
       } else {
@@ -83,21 +111,38 @@ export function useTelegram() {
   const applyTelegramTheme = (theme: TelegramTheme) => {
     const root = document.documentElement;
     
+    // Apply all available theme colors
     if (theme.bg_color) {
       root.style.setProperty('--tg-theme-bg-color', theme.bg_color);
+      root.style.setProperty('--background', theme.bg_color);
     }
     if (theme.text_color) {
       root.style.setProperty('--tg-theme-text-color', theme.text_color);
+      root.style.setProperty('--foreground', theme.text_color);
+    }
+    if (theme.hint_color) {
+      root.style.setProperty('--tg-theme-hint-color', theme.hint_color);
+      root.style.setProperty('--muted-foreground', theme.hint_color);
     }
     if (theme.button_color) {
       root.style.setProperty('--tg-theme-button-color', theme.button_color);
+      root.style.setProperty('--primary', theme.button_color);
     }
     if (theme.button_text_color) {
       root.style.setProperty('--tg-theme-button-text-color', theme.button_text_color);
+      root.style.setProperty('--primary-foreground', theme.button_text_color);
     }
     if (theme.link_color) {
       root.style.setProperty('--tg-theme-link-color', theme.link_color);
+      root.style.setProperty('--accent', theme.link_color);
     }
+    if (theme.secondary_bg_color) {
+      root.style.setProperty('--tg-theme-secondary-bg-color', theme.secondary_bg_color);
+      root.style.setProperty('--card', theme.secondary_bg_color);
+    }
+    
+    // Update document background
+    document.body.style.backgroundColor = theme.bg_color || '#ffffff';
   };
 
   // Haptic feedback functions
@@ -119,7 +164,9 @@ export function useTelegram() {
       if (window.Telegram?.WebApp?.MainButton) {
         const btn = window.Telegram.WebApp.MainButton;
         btn.setText(text);
+        btn.enable();
         btn.show();
+        btn.offClick(onClick); // Remove previous listeners
         btn.onClick(onClick);
       }
     },
@@ -131,6 +178,15 @@ export function useTelegram() {
     },
     disable: () => {
       window.Telegram?.WebApp?.MainButton?.disable();
+    },
+    setLoader: (loading: boolean) => {
+      if (window.Telegram?.WebApp?.MainButton) {
+        if (loading) {
+          window.Telegram.WebApp.MainButton.showProgress();
+        } else {
+          window.Telegram.WebApp.MainButton.hideProgress();
+        }
+      }
     }
   };
 
@@ -138,8 +194,10 @@ export function useTelegram() {
   const backButton = {
     show: (onClick: () => void) => {
       if (window.Telegram?.WebApp?.BackButton) {
-        window.Telegram.WebApp.BackButton.show();
-        window.Telegram.WebApp.BackButton.onClick(onClick);
+        const btn = window.Telegram.WebApp.BackButton;
+        btn.offClick(onClick); // Remove previous listeners
+        btn.onClick(onClick);
+        btn.show();
       }
     },
     hide: () => {

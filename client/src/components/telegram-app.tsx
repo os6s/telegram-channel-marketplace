@@ -27,10 +27,13 @@ export function TelegramApp({ children }: TelegramAppProps) {
 
   return (
     <div 
-      className="telegram-mini-app safe-area-inset"
+      className="telegram-mini-app"
       style={{
         backgroundColor: webAppData.theme.bg_color || undefined,
         color: webAppData.theme.text_color || undefined,
+        minHeight: `${webAppData.viewportHeight}px`,
+        height: '100vh',
+        overflow: 'hidden auto'
       }}
     >
       {children}

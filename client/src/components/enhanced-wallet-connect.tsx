@@ -29,15 +29,21 @@ export function EnhancedWalletConnect() {
 
   const initializeTonConnect = async () => {
     try {
-      // Use production URL for TON Connect manifest in Mini App
-      const manifestUrl = import.meta.env.VITE_TON_MANIFEST_URL || 
-                         'https://telegram-channel-marketplace.onrender.com/tonconnect-manifest.json';
+      // Detect if running in production or development
+      const isProduction = window.location.hostname !== 'localhost' && 
+                          window.location.hostname !== '127.0.0.1';
       
-      // Initialize real TON Connect UI with standard configuration
+      const manifestUrl = isProduction 
+        ? 'https://telegram-channel-marketplace--5000.prod1.defang.dev/tonconnect-manifest.json'
+        : `${window.location.origin}/tonconnect-manifest.json`;
+      
+      console.log('TON Connect manifest URL:', manifestUrl);
+      
+      // Initialize real TON Connect UI with proper configuration
       const tonConnectUI = new TonConnectUI({
         manifestUrl: manifestUrl,
         restoreConnection: true,
-        // Use default wallet configuration to support user's preferred wallets
+        enableAndroidBackHandler: false, // Disable for Telegram Mini App
       });
       
       setTonConnectUI(tonConnectUI);
@@ -59,33 +65,36 @@ export function EnhancedWalletConnect() {
       // Listen for wallet connection changes
       tonConnectUI.onStatusChange((wallet) => {
         if (wallet) {
-          const connectedWallet: TonWallet = {
-            name: wallet.device.appName,
-            address: wallet.account.address,
-            balance: "0",
-            network: "mainnet"
-          };
-          setWallet(connectedWallet);
-          localStorage.setItem('ton-wallet', JSON.stringify(connectedWallet));
-          setIsConnecting(false);
-          
-          // Close modal after successful connection
-          setTimeout(() => {
-            if (tonConnectUI.modal.state?.status === 'opened') {
-              tonConnectUI.modal.close();
-            }
-          }, 500);
-          
-          toast({
-            title: "Wallet Connected",
-            description: "Successfully connected to TON wallet.",
-          });
+          // Ensure we're not connecting to a mock wallet
+          if (wallet.account.address && wallet.account.walletStateInit !== "mock") {
+            const connectedWallet: TonWallet = {
+              name: wallet.device.appName,
+              address: wallet.account.address,
+              balance: "0",
+              network: "mainnet"
+            };
+            setWallet(connectedWallet);
+            localStorage.setItem('ton-wallet', JSON.stringify(connectedWallet));
+            setIsConnecting(false);
+            
+            // Fetch real balance after a small delay
+            setTimeout(() => fetchBalance(wallet.account.address), 1000);
+            
+            toast({
+              title: "Wallet Connected",
+              description: `Connected to ${wallet.device.appName}`,
+            });
+          } else {
+            setError("Demo wallets are not supported. Please connect a real TON wallet.");
+            setIsConnecting(false);
+          }
         } else {
           setWallet(null);
           localStorage.removeItem('ton-wallet');
           setIsConnecting(false);
         }
       });
+
       
     } catch (error) {
       console.log('TON Connect initialization failed, falling back to demo mode:', error);
@@ -97,59 +106,43 @@ export function EnhancedWalletConnect() {
     }
   };
 
-  const connectWallet = async () => {
-    setIsConnecting(true);
-    setError(null);
-
+  // Fetch TON balance from blockchain
+  const fetchBalance = async (address: string) => {
     try {
-      if (tonConnectUI) {
-        // Use real TON Connect
-        await tonConnectUI.openModal();
-        
-        toast({
-          title: "Connecting...",
-          description: "Please approve the connection in your TON wallet.",
-        });
-      } else {
-        // Fallback to demo mode for development/testing
-        const isInTelegram = typeof window !== 'undefined' && window.Telegram?.WebApp;
-        
-        if (isInTelegram) {
-          const mockWallet: TonWallet = {
-            name: "TON Space (Demo)",
-            address: "EQD4FPq-PRDieyQKkizFTRtSDyucUIqrj0v_zXJmqaDp6_0t",
-            balance: "125.437",
-            network: "mainnet"
-          };
-
-          // Simulate connection delay
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          
-          setWallet(mockWallet);
-          localStorage.setItem('ton-wallet', JSON.stringify(mockWallet));
-          
-          toast({
-            title: "Wallet Connected",
-            description: "Successfully connected to TON wallet.",
-          });
-        } else {
-          setError('telegram-required');
-          toast({
-            title: "Open in Telegram",
-            description: "TON wallet connection requires opening this app through Telegram.",
-            variant: "destructive",
-          });
-        }
+      const response = await fetch(`https://toncenter.com/api/v3/account?address=${address}`);
+      const data = await response.json();
+      if (data.balance) {
+        const balanceInTON = (parseInt(data.balance) / 1000000000).toFixed(2);
+        setWallet(prev => prev ? { ...prev, balance: balanceInTON } : null);
       }
     } catch (error) {
-      console.error('Wallet connection failed:', error);
-      setError('connection-failed');
-      toast({
-        title: "Connection Failed",
-        description: "Could not connect to TON wallet. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
+      console.error('Failed to fetch balance:', error);
+    }
+  };
+
+  const connectWallet = async () => {
+    if (!tonConnectUI) {
+      setError("TON Connect not initialized");
+      return;
+    }
+
+    setIsConnecting(true);
+    setError(null);
+    
+    try {
+      // Check if we're in Telegram WebApp environment
+      const isTelegramWebApp = window.Telegram?.WebApp;
+      
+      if (isTelegramWebApp) {
+        // For Telegram Mini Apps, use connector for better UX
+        await tonConnectUI.connectWallet();
+      } else {
+        // For web browsers, use modal
+        await tonConnectUI.openModal();
+      }
+    } catch (err) {
+      console.error('Connection error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to connect wallet');
       setIsConnecting(false);
     }
   };

@@ -46,7 +46,9 @@ function BottomNavigation() {
   const { hapticFeedback } = useTelegram();
 
   const handleNavClick = (path: string) => {
-    hapticFeedback.selection();
+    if (hapticFeedback) {
+      hapticFeedback.selection();
+    }
     // Navigation will be handled by Link component
   };
 
@@ -96,10 +98,10 @@ function BottomNavigation() {
           <Link 
             key={item.path} 
             href={item.path} 
-            className={`flex flex-col items-center py-2 transition-colors touch-target haptic-feedback ${
+            className={`flex flex-col items-center py-2 transition-colors ${
               location === item.path 
-                ? 'text-telegram-500' 
-                : 'text-muted-foreground hover:text-telegram-500'
+                ? 'text-primary' 
+                : 'text-muted-foreground hover:text-foreground'
             }`}
             onClick={() => handleNavClick(item.path)}
           >
