@@ -1,69 +1,71 @@
 import { useState, useEffect } from "react";
+import { TonConnectButton, TonConnectUI, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Wallet, CheckCircle, Loader2, ExternalLink } from "lucide-react";
-import { tonConnect, type TonWallet } from "@/lib/ton-connect";
 import { useToast } from "@/hooks/use-toast";
+
+export interface TonWallet {
+  address: string;
+  balance: string;
+  network: 'mainnet' | 'testnet';
+}
 
 interface WalletConnectProps {
   onWalletConnect?: (wallet: TonWallet) => void;
 }
 
 export function WalletConnect({ onWalletConnect }: WalletConnectProps) {
-  const [wallet, setWallet] = useState<TonWallet | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [tonConnectUI] = useTonConnectUI();
+  const wallet = useTonWallet();
+  const [localWallet, setLocalWallet] = useState<TonWallet | null>(null);
+  const [balance, setBalance] = useState<string>('0');
   const { toast } = useToast();
 
-  useEffect(() => {
-    // Try to restore connection on mount
-    tonConnect.restoreConnection().then((restoredWallet) => {
-      if (restoredWallet) {
-        setWallet(restoredWallet);
-        onWalletConnect?.(restoredWallet);
-      }
-    });
-
-    // Set up a periodic check for wallet status
-    const interval = setInterval(async () => {
-      const currentWallet = await tonConnect.restoreConnection();
-      if (currentWallet && (!wallet || currentWallet.address !== wallet.address)) {
-        setWallet(currentWallet);
-        onWalletConnect?.(currentWallet);
-      } else if (!currentWallet && wallet) {
-        setWallet(null);
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [onWalletConnect, wallet]);
-
-  const handleConnect = async () => {
-    setIsConnecting(true);
+  // Fetch balance when wallet is connected
+  const fetchBalance = async (address: string) => {
     try {
-      const connectedWallet = await tonConnect.connect();
-      setWallet(connectedWallet);
-      onWalletConnect?.(connectedWallet);
+      const response = await fetch(`https://toncenter.com/api/v2/getAddressInformation?address=${address}`);
+      const data = await response.json();
+      
+      if (data.ok && data.result.balance) {
+        const balanceInTon = (parseInt(data.result.balance) / 1000000000).toFixed(3);
+        setBalance(balanceInTon);
+        return balanceInTon;
+      }
+    } catch (error) {
+      console.error('Failed to fetch balance:', error);
+    }
+    return '0.000';
+  };
+
+  useEffect(() => {
+    if (wallet) {
+      const tonWallet: TonWallet = {
+        address: wallet.account.address,
+        balance: balance,
+        network: wallet.account.chain === '-239' ? 'mainnet' : 'testnet'
+      };
+      
+      setLocalWallet(tonWallet);
+      onWalletConnect?.(tonWallet);
+      
+      // Fetch balance
+      fetchBalance(wallet.account.address);
       
       toast({
         title: "Wallet Connected",
-        description: `Connected to ${connectedWallet.address.slice(0, 6)}...${connectedWallet.address.slice(-4)}`,
+        description: `Connected to ${wallet.account.address.slice(0, 6)}...${wallet.account.address.slice(-4)}`,
       });
-    } catch (error) {
-      console.error('Wallet connection error:', error);
-      toast({
-        title: "Connection Failed",
-        description: error instanceof Error ? error.message : "Failed to connect wallet",
-        variant: "destructive",
-      });
-    } finally {
-      setIsConnecting(false);
+    } else {
+      setLocalWallet(null);
+      setBalance('0');
     }
-  };
+  }, [wallet, onWalletConnect]);
 
   const handleDisconnect = async () => {
     try {
-      await tonConnect.disconnect();
-      setWallet(null);
+      await tonConnectUI.disconnect();
       toast({
         title: "Wallet Disconnected",
         description: "Your wallet has been disconnected",
@@ -78,7 +80,7 @@ export function WalletConnect({ onWalletConnect }: WalletConnectProps) {
     }
   };
 
-  if (wallet) {
+  if (localWallet) {
     return (
       <div className="flex items-center space-x-2">
         <Button
@@ -86,13 +88,16 @@ export function WalletConnect({ onWalletConnect }: WalletConnectProps) {
           className="bg-green-500 text-white border-green-600 hover:bg-green-600"
           onClick={() => {
             // Open TON blockchain explorer
-            window.open(`https://tonapi.io/account/${wallet.address}`, '_blank');
+            window.open(`https://tonapi.io/account/${localWallet.address}`, '_blank');
           }}
         >
           <CheckCircle className="w-4 h-4 mr-2" />
-          {wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}
+          {localWallet.address.slice(0, 6)}...{localWallet.address.slice(-4)}
           <ExternalLink className="w-3 h-3 ml-1" />
         </Button>
+        <div className="text-sm text-muted-foreground">
+          {balance} TON
+        </div>
         <Button
           variant="ghost"
           size="sm"
@@ -107,26 +112,8 @@ export function WalletConnect({ onWalletConnect }: WalletConnectProps) {
 
   return (
     <div className="space-y-4">
-      {/* TON Connect Button Container - This is where the real TON Connect UI will render */}
-      <div id="ton-connect-button" className="hidden"></div>
-      
-      <Button 
-        onClick={handleConnect}
-        disabled={isConnecting}
-        className="bg-blue-500 text-white hover:bg-blue-600"
-      >
-        {isConnecting ? (
-          <>
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            Connecting...
-          </>
-        ) : (
-          <>
-            <Wallet className="w-4 h-4 mr-2" />
-            Connect TON Wallet
-          </>
-        )}
-      </Button>
+      {/* Official TON Connect Button */}
+      <TonConnectButton />
       
       {/* Info card about TON Connect */}
       <Card className="mt-4">

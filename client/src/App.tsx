@@ -9,6 +9,7 @@ import { LanguageProvider } from "@/contexts/language-context";
 import { useLanguage } from "@/contexts/language-context";
 import { lazy, Suspense } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
+import { TonConnectUIProvider } from '@tonconnect/ui-react';
 
 // Lazy load pages for better performance
 const Marketplace = lazy(() => import("@/components/enhanced-marketplace"));
@@ -114,17 +115,19 @@ function BottomNavigation() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <LanguageProvider>
-          <TooltipProvider>
-            <TelegramApp>
-              <Toaster />
-              <Router />
-              <BottomNavigation />
-            </TelegramApp>
-          </TooltipProvider>
-        </LanguageProvider>
-      </ThemeProvider>
+      <TonConnectUIProvider manifestUrl="/tonconnect-manifest.json">
+        <ThemeProvider>
+          <LanguageProvider>
+            <TooltipProvider>
+              <TelegramApp>
+                <Toaster />
+                <Router />
+                <BottomNavigation />
+              </TelegramApp>
+            </TooltipProvider>
+          </LanguageProvider>
+        </ThemeProvider>
+      </TonConnectUIProvider>
     </QueryClientProvider>
   );
 }
