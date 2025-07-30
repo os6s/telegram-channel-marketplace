@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { TonConnectButton, TonConnectUI, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
+import { TonConnectButton, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Wallet, CheckCircle, Loader2, ExternalLink } from "lucide-react";
+import { Wallet, CheckCircle, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export interface TonWallet {
@@ -112,8 +112,10 @@ export function WalletConnect({ onWalletConnect }: WalletConnectProps) {
 
   return (
     <div className="space-y-4">
-      {/* Official TON Connect Button */}
-      <TonConnectButton />
+      {/* Official TON Connect Button - This is the real implementation */}
+      <div className="flex justify-center">
+        <TonConnectButton />
+      </div>
       
       {/* Info card about TON Connect */}
       <Card className="mt-4">
@@ -123,9 +125,9 @@ export function WalletConnect({ onWalletConnect }: WalletConnectProps) {
               <Wallet className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h4 className="font-medium text-sm">Secure TON Wallet Connection</h4>
+              <h4 className="font-medium text-sm">Official TON Connect</h4>
               <p className="text-gray-500 text-xs mt-1">
-                Connect your TON wallet to buy and sell channels securely. Your private keys never leave your device.
+                Connect your real TON wallet (Tonkeeper, MyTonWallet, etc). Fully compliant with Telegram Mini App requirements.
               </p>
             </div>
           </div>

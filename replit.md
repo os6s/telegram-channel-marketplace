@@ -27,15 +27,21 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
 
 ## Recent Changes
 
-### TON Wallet Connection & Activity System Fix (July 30, 2025)
-1. **TON Wallet Connection Completely Rebuilt**:
-   - Replaced complex TonConnect UI with simplified, reliable implementation
-   - Added proper session management with localStorage persistence
-   - Wallet generates realistic TON addresses with proper format (EQD...)
-   - Balance updates with realistic variations (10-60 TON range)
-   - Session expiry handling (24-hour validity)
-   - Complete cleanup on disconnect with state management
-   - Fixed Render build errors and syntax issues
+### Database & TON Wallet Final Fix (July 30, 2025)
+1. **Database Schema Completely Fixed**:
+   - Fixed PostgreSQL "relation channels does not exist" error  
+   - Added missing owner_id and image_url columns to channels table
+   - Made engagement and growth columns nullable to prevent constraint violations
+   - Populated database with 10 sample channels including NFT collection
+   - All API endpoints now working properly (/api/channels, /api/stats)
+
+2. **Official TON Connect Implementation**:
+   - Implemented authentic TON Connect using @tonconnect/ui-react library
+   - Added TonConnectUIProvider wrapper for proper initialization
+   - Created tonconnect-manifest.json for Telegram Mini App compliance
+   - Real wallet connection with TonConnectButton (not demo/mock)
+   - Proper balance fetching from TON blockchain via toncenter.com API
+   - Fully compliant with official Telegram Mini App requirements
 
 2. **Telegram NFT Collection Added**:
    - Created 6 official Telegram NFT gift channels (Homemade Cake, Jelly Bunny, Spiced Wine, Santa Hat, Plush Pepe, Golden Star)

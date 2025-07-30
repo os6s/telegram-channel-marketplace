@@ -1,7 +1,7 @@
 {
-  "url": "https://telegram-channel-marketplace.onrender.com",
+  "url": "https://telegram-channel-marketplace-production.up.railway.app",
   "name": "Telegram Channel Marketplace",
-  "iconUrl": "https://telegram-channel-marketplace.onrender.com/icon-192x192.png",
-  "termsOfUseUrl": "https://telegram-channel-marketplace.onrender.com/terms",
-  "privacyPolicyUrl": "https://telegram-channel-marketplace.onrender.com/privacy"
+  "iconUrl": "https://telegram-channel-marketplace-production.up.railway.app/icon-192x192.png",
+  "termsOfUseUrl": "https://telegram-channel-marketplace-production.up.railway.app/terms",
+  "privacyPolicyUrl": "https://telegram-channel-marketplace-production.up.railway.app/privacy"
 }
