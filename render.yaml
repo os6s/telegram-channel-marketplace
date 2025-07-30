@@ -5,17 +5,27 @@ services:
     plan: free
     buildCommand: npm install && npm run build
     startCommand: npm start
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 5000
       - key: DATABASE_URL
         fromDatabase:
           name: telegram-marketplace-db
           property: connectionString
       - key: TELEGRAM_BOT_TOKEN
         sync: false
-    healthCheckPath: /api/health
+      - key: WEBAPP_URL
+        value: https://telegram-channel-marketplace.onrender.com
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
 
 databases:
   - name: telegram-marketplace-db
+    databaseName: telegram_marketplace
+    user: marketplace_user
     plan: free

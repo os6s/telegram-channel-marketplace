@@ -34,6 +34,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   });
 
+  // Health check endpoint for Render
+  app.get("/api/health", (req, res) => {
+    res.status(200).json({ 
+      status: "healthy", 
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || 'development'
+    });
+  });
+
   // Register Telegram bot routes
   registerBotRoutes(app);
   // User routes
@@ -141,10 +151,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Channel username already exists" });
       }
 
-      const channel = await storage.createChannel({
+      // Create channel with sellerId for database storage
+      const channelWithSeller = {
         ...validatedChannelData,
         sellerId,
-      });
+      };
+      const channel = await storage.createChannel(channelWithSeller as any);
       res.json(channel);
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });

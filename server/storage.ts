@@ -1,5 +1,6 @@
 import { type User, type InsertUser, type Channel, type InsertChannel, type Escrow, type InsertEscrow } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { PostgreSQLStorage } from "./db";
 
 export interface IStorage {
   // User operations
@@ -216,4 +217,11 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Initialize storage based on environment
+const databaseUrl = process.env.DATABASE_URL;
+
+export const storage: IStorage = databaseUrl 
+  ? new PostgreSQLStorage(databaseUrl)
+  : new MemStorage();
+
+console.log(`Using ${databaseUrl ? 'PostgreSQL' : 'in-memory'} storage`);

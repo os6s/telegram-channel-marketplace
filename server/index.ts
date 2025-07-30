@@ -3,9 +3,18 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 // Environment variable validation for production deployment
-if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
-  console.warn('Warning: SESSION_SECRET environment variable not set. Using default value.');
-  process.env.SESSION_SECRET = 'telegram-marketplace-default-secret-change-in-production';
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.SESSION_SECRET) {
+    console.warn('Warning: SESSION_SECRET environment variable not set. Using default value.');
+    process.env.SESSION_SECRET = 'telegram-marketplace-default-secret-change-in-production';
+  }
+  if (!process.env.DATABASE_URL) {
+    console.error('Error: DATABASE_URL environment variable is required for production');
+    process.exit(1);
+  }
+  if (!process.env.TELEGRAM_BOT_TOKEN) {
+    console.warn('Warning: TELEGRAM_BOT_TOKEN not set. Bot functionality will be disabled.');
+  }
 }
 
 const app = express();
