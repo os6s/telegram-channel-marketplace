@@ -1,32 +1,38 @@
-import { useEffect, ReactNode } from "react";
-import { telegramWebApp } from "@/lib/telegram";
+import { ReactNode } from "react";
+import { useTelegram } from "@/hooks/use-telegram";
 
 interface TelegramAppProps {
   children: ReactNode;
 }
 
 export function TelegramApp({ children }: TelegramAppProps) {
-  useEffect(() => {
-    // Initialize Telegram Web App
-    telegramWebApp.initialize();
-    
-    // Add script tag for Telegram Web App SDK if not already present
-    if (!document.querySelector('script[src*="telegram-web-app.js"]')) {
-      const script = document.createElement('script');
-      script.src = 'https://telegram.org/js/telegram-web-app.js';
-      script.async = true;
-      document.head.appendChild(script);
-    }
+  const { isReady, webAppData, isTelegramEnvironment } = useTelegram();
 
-    return () => {
-      // Cleanup if needed
-      telegramWebApp.hideMainButton();
-      telegramWebApp.hideBackButton();
-    };
-  }, []);
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center min-h-screen safe-area-inset">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-telegram-500 mx-auto"></div>
+          <h2 className="text-lg font-medium">Telegram Channel Marketplace</h2>
+          <p className="text-sm text-muted-foreground">Loading your marketplace...</p>
+          {!isTelegramEnvironment && (
+            <p className="text-xs text-muted-foreground mt-4">
+              For the best experience, open this app through Telegram
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="telegram-web-app min-h-screen bg-background">
+    <div 
+      className="telegram-mini-app safe-area-inset"
+      style={{
+        backgroundColor: webAppData.theme.bg_color || undefined,
+        color: webAppData.theme.text_color || undefined,
+      }}
+    >
       {children}
     </div>
   );

@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/contexts/theme-context";
 import { LanguageProvider } from "@/contexts/language-context";
 import { useLanguage } from "@/contexts/language-context";
 import { lazy, Suspense } from "react";
+import { useTelegram } from "@/hooks/use-telegram";
 
 // Lazy load pages for better performance
 const Marketplace = lazy(() => import("@/components/enhanced-marketplace"));
@@ -40,6 +41,12 @@ function Router() {
 function BottomNavigation() {
   const [location] = useLocation();
   const { t } = useLanguage();
+  const { hapticFeedback } = useTelegram();
+
+  const handleNavClick = (path: string) => {
+    hapticFeedback.selection();
+    // Navigation will be handled by Link component
+  };
 
   const navItems = [
     {
@@ -81,14 +88,19 @@ function BottomNavigation() {
   ];
 
   return (
-    <div className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 px-4 py-2 sticky bottom-0 z-50">
+    <div className="bg-background border-t border-border px-4 py-2 sticky bottom-0 z-50 safe-area-inset">
       <div className="grid grid-cols-4 gap-1">
         {navItems.map((item) => (
-          <Link key={item.path} href={item.path} className={`flex flex-col items-center py-2 transition-colors ${
-            location === item.path 
-              ? 'text-telegram-500 dark:text-telegram-400' 
-              : 'text-gray-400 dark:text-gray-500 hover:text-telegram-500 dark:hover:text-telegram-400'
-          }`}>
+          <Link 
+            key={item.path} 
+            href={item.path} 
+            className={`flex flex-col items-center py-2 transition-colors touch-target haptic-feedback ${
+              location === item.path 
+                ? 'text-telegram-500' 
+                : 'text-muted-foreground hover:text-telegram-500'
+            }`}
+            onClick={() => handleNavClick(item.path)}
+          >
             {item.icon}
             <span className="text-xs">{item.label}</span>
           </Link>
