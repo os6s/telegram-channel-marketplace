@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   useTonConnectUI,
   useTonWallet
@@ -16,14 +16,18 @@ export interface TonWallet {
 
 interface WalletConnectProps {
   onWalletConnect?: (wallet: TonWallet) => void;
+  onWalletDisconnect?: () => void;
 }
 
-export function WalletConnect({ onWalletConnect }: WalletConnectProps) {
+export function WalletConnect({ onWalletConnect, onWalletDisconnect }: WalletConnectProps) {
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
   const [localWallet, setLocalWallet] = useState<TonWallet | null>(null);
   const [connecting, setConnecting] = useState(false);
   const { toast } = useToast();
+
+  // علم لتجنب تكرار إشعار الاتصال
+  const toastShownRef = useRef(false);
 
   const fetchBalance = async (address: string) => {
     try {
@@ -58,20 +62,22 @@ export function WalletConnect({ onWalletConnect }: WalletConnectProps) {
         setLocalWallet(tonWallet);
         onWalletConnect?.(tonWallet);
 
-        toast({
-          title: "Wallet Connected",
-          description: `Connected to ${wallet.account.address.slice(
-            0,
-            6
-          )}...${wallet.account.address.slice(-4)}`
-        });
+        if (!toastShownRef.current) {
+          toastShownRef.current = true;
+          toast({
+            title: "Wallet Connected",
+            description: `Connected to ${wallet.account.address.slice(0, 6)}...${wallet.account.address.slice(-4)}`
+          });
+        }
       } else {
         setLocalWallet(null);
+        onWalletDisconnect?.();
+        toastShownRef.current = false; // إعادة تهيئة العلم عند فصل المحفظة
       }
     };
 
     setupWallet();
-  }, [wallet, onWalletConnect, toast]);
+  }, [wallet, onWalletConnect, onWalletDisconnect, toast]);
 
   const handleConnect = async () => {
     try {
@@ -96,6 +102,9 @@ export function WalletConnect({ onWalletConnect }: WalletConnectProps) {
         title: "Wallet Disconnected",
         description: "Your wallet has been disconnected"
       });
+      setLocalWallet(null);
+      onWalletDisconnect?.();
+      toastShownRef.current = false; // إعادة تهيئة العلم بعد قطع الاتصال
     } catch (error) {
       console.error("Wallet disconnection error:", error);
       toast({
