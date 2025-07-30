@@ -112,7 +112,7 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
    - Proper handling of empty filter values
 
 ### Known Issues to Address
-1. **RESOLVED - Webhook Route Issue**: Fixed POST route configuration with proper JSON middleware and logging
+1. **URGENT - BotFather Setup**: Mini App needs to be enabled in @BotFather to resolve black loading screen
 2. **Data Persistence**: Currently using in-memory storage - need migration to PostgreSQL
 3. **Payment Integration**: TON wallet integration is UI-only, needs blockchain connection
 4. **Bot Token Verification**: Channel verification endpoint has TODO - needs implementation
