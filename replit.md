@@ -81,7 +81,8 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
 4. **Mini App Integration**:
    - Added inline web app button to /start command for direct marketplace access
    - Configured proper web_app parameter for Telegram Mini App functionality
-   - Ready for BotFather Mini App configuration to enable web app button
+   - Enhanced Telegram WebApp detection to prevent redirect issues
+   - Fixed middleware to properly allow Telegram Mini App requests while redirecting external visitors
    
 4. **Environment Variable Requirements**:
    - TELEGRAM_BOT_TOKEN must be set in Render dashboard

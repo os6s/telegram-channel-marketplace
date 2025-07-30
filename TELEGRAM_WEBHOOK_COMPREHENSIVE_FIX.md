@@ -1,52 +1,73 @@
-# 🔧 Comprehensive Telegram Webhook 404 Fix
+# 🔧 Comprehensive Telegram Mini App Fix
 
-## Research Findings
-Based on Telegram webhook 404 error analysis, the main causes are:
+## Root Cause Identified ✅
+The issue was that **Telegram Mini App requests were being redirected to the bot** instead of serving the web app. The redirect middleware wasn't properly detecting Telegram Mini App access.
 
-### **Common 404 Causes:**
-1. **Invalid Bot Token Format** - Most common cause
-2. **Webhook URL Format Issues** - Incorrect endpoint paths  
-3. **Server Configuration Problems** - Missing routing or HTTPS issues
-4. **IP Whitelist Requirements** - Telegram IPs: `149.154.160.0/20` and `91.108.4.0/22`
+## Problems Fixed
 
-### **Critical Requirements:**
-- ✅ HTTPS Required (ports 443, 80, 88, 8443 only)
-- ✅ Must return 200 OK to Telegram's POST requests
-- ✅ Valid SSL certificate (Render provides this)
-- ✅ Proper bot token format in API calls
+### 1. **Enhanced Telegram Detection**
+Added comprehensive detection for:
+- Standard Telegram Bot requests
+- Telegram WebApp/Mini App access  
+- iOS Telegram WebView requests
+- Cross-site fetch requests from Telegram
+- Telegram-specific headers and parameters
 
-## Enhanced Debugging Applied
+### 2. **Improved Middleware Logic**
+- Skip redirect for all asset requests (`.js`, `.css`, etc.)
+- Skip redirect for `/src/` development requests
+- Enhanced logging for debugging
+- Proper detection of `sec-fetch-site: cross-site` (Telegram characteristic)
 
-### **1. Bot Token Validation**
-- Added `/getMe` API call to verify bot token before webhook setup
-- Validates token format and bot accessibility
+### 3. **Mini App Specific Detection**
+Now detects:
+```javascript
+// Telegram WebApp parameters
+req.query.tgWebAppPlatform
+req.query.tgWebAppData
 
-### **2. Comprehensive URL Analysis**
-- Protocol, hostname, port, and pathname validation
-- Ensures webhook URL meets Telegram requirements
+// Telegram headers
+req.headers['tg-web-app-data']
+req.headers['x-telegram-bot-api-secret-token']
 
-### **3. Enhanced Request Logging**
-- Detailed headers, IP, and request method logging
-- Helps identify if Telegram requests reach the endpoint
-
-### **4. Multiple Webhook Setup Approaches**
-- Standard setup with all parameters
-- Simplified setup with minimal parameters  
-- Direct API validation testing
-
-## Expected Debug Output After Redeploy
-```
-POST test status: 200
-POST test response: OK
-Bot validation result: { ok: true, result: { id: xxx, is_bot: true, ... } }
-Current webhook info: { url: "", has_custom_certificate: false }
-Webhook setup result: { ok: true, result: true, description: "Webhook was set" }
+// iOS Telegram WebView pattern
+userAgent.includes('Mobile/') && userAgent.includes('AppleWebKit') && referer.includes('telegram')
 ```
 
-## Potential Solutions If Still Failing
-1. **IP Whitelist**: Render may need to allow Telegram IPs
-2. **Bot Token**: Verify token hasn't expired or been revoked
-3. **SSL Certificate**: Ensure Render's certificate is properly configured
-4. **Rate Limiting**: Too many webhook setup attempts may trigger blocks
+## Expected Results After Deploy
 
-The comprehensive debugging will pinpoint the exact cause of the 404 error.
+### Telegram Mini App Access:
+```
+🔍 Checking request: {
+  path: "/",
+  userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5...",
+  referer: "https://web.telegram.org/...",
+  isTelegramWebApp: true
+}
+✅ Telegram Mini App access allowed
+```
+
+### External Browser Access:
+```
+🔍 Checking request: {
+  path: "/",
+  userAgent: "Mozilla/5.0 (Windows NT 10.0...",
+  referer: "",
+  isTelegramWebApp: false
+}
+🔄 Redirecting external visitor to bot
+```
+
+## Current Status
+✅ **Bot Responding**: `/start` command works perfectly  
+✅ **Webhook Configured**: Proper POST route with JSON parsing  
+✅ **Mini App Detection**: Enhanced Telegram WebApp detection  
+✅ **Web App Button**: Inline keyboard with web_app parameter  
+
+The Mini App should now open correctly when users click the "🚀 Open Marketplace" button in your bot.
+
+## Testing Steps
+1. Send `/start` to @Giftspremarketbot
+2. Click "🚀 Open Marketplace" button
+3. Web app should open in Telegram (not redirect to bot chat)
+4. Check Render logs for "✅ Telegram Mini App access allowed"
