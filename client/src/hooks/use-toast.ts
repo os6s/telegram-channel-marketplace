@@ -1,10 +1,12 @@
-// use-toast.ts
 import * as React from "react"
-import type { ToastActionElement, ToastProps } from "@/components/ui/toast"
 
-// 1. تعديل الإعدادات الزمنية
+import type {
+  ToastActionElement,
+  ToastProps,
+} from "@/components/ui/toast"
+
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 3000 // 3 ثواني بدلاً من 1,000,000
+const TOAST_REMOVE_DELAY = 4000  // 4 ثواني
 
 type ToasterToast = ToastProps & {
   id: string
@@ -13,9 +15,6 @@ type ToasterToast = ToastProps & {
   action?: ToastActionElement
 }
 
-// 2. إضافة registry لتتبع الإشعارات النشطة
-const activeToasts = new Set<string>()
-
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
   UPDATE_TOAST: "UPDATE_TOAST",
@@ -23,26 +22,46 @@ const actionTypes = {
   REMOVE_TOAST: "REMOVE_TOAST",
 } as const
 
-// 3. تحسين إنشاء الـ ID ليكون أكثر تحديداً
-function genId(title?: React.ReactNode): string {
-  if (typeof title === 'string') {
-    return title.toLowerCase().replace(/\s+/g, '-')
-  }
-  return Date.now().toString()
+let count = 0
+
+function genId() {
+  count = (count + 1) % Number.MAX_SAFE_INTEGER
+  return count.toString()
 }
 
-// ... (بقية أنواع Action و State تبقى كما هي)
+type ActionType = typeof actionTypes
+
+type Action =
+  | {
+      type: ActionType["ADD_TOAST"]
+      toast: ToasterToast
+    }
+  | {
+      type: ActionType["UPDATE_TOAST"]
+      toast: Partial<ToasterToast>
+    }
+  | {
+      type: ActionType["DISMISS_TOAST"]
+      toastId?: ToasterToast["id"]
+    }
+  | {
+      type: ActionType["REMOVE_TOAST"]
+      toastId?: ToasterToast["id"]
+    }
+
+interface State {
+  toasts: ToasterToast[]
+}
 
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
 
 const addToRemoveQueue = (toastId: string) => {
-  if (toastTimeouts.has(toastId) || activeToasts.has(toastId)) {
+  if (toastTimeouts.has(toastId)) {
     return
   }
 
   const timeout = setTimeout(() => {
     toastTimeouts.delete(toastId)
-    activeToasts.delete(toastId)
     dispatch({
       type: "REMOVE_TOAST",
       toastId: toastId,
@@ -52,14 +71,9 @@ const addToRemoveQueue = (toastId: string) => {
   toastTimeouts.set(toastId, timeout)
 }
 
-// 4. تعديل الـ reducer لإدارة الإشعارات النشطة
 export const reducer = (state: State, action: Action): State => {
   switch (action.type) {
     case "ADD_TOAST":
-      if (activeToasts.has(action.toast.id)) {
-        return state
-      }
-      activeToasts.add(action.toast.id)
       return {
         ...state,
         toasts: [action.toast, ...state.toasts].slice(0, TOAST_LIMIT),
@@ -75,6 +89,8 @@ export const reducer = (state: State, action: Action): State => {
 
     case "DISMISS_TOAST": {
       const { toastId } = action
+
+      // Side effects
       if (toastId) {
         addToRemoveQueue(toastId)
       } else {
@@ -82,21 +98,26 @@ export const reducer = (state: State, action: Action): State => {
           addToRemoveQueue(toast.id)
         })
       }
+
       return {
         ...state,
         toasts: state.toasts.map((t) =>
           t.id === toastId || toastId === undefined
-            ? { ...t, open: false }
+            ? {
+                ...t,
+                open: false,
+              }
             : t
         ),
       }
     }
     case "REMOVE_TOAST":
       if (action.toastId === undefined) {
-        activeToasts.clear()
-        return { toasts: [] }
+        return {
+          ...state,
+          toasts: [],
+        }
       }
-      activeToasts.delete(action.toastId)
       return {
         ...state,
         toasts: state.toasts.filter((t) => t.id !== action.toastId),
@@ -104,25 +125,21 @@ export const reducer = (state: State, action: Action): State => {
   }
 }
 
-// ... (بقية الكود يبقى كما هو حتى جزء toast function)
+const listeners: Array<(state: State) => void> = []
 
-// 5. تعديل دالة toast الأساسية
+let memoryState: State = { toasts: [] }
+
+function dispatch(action: Action) {
+  memoryState = reducer(memoryState, action)
+  listeners.forEach((listener) => {
+    listener(memoryState)
+  })
+}
+
+type Toast = Omit<ToasterToast, "id">
+
 function toast({ ...props }: Toast) {
-  // إنشاء ID بناءً على عنوان الإشعار إن أمكن
-  const id = props.title ? genId(props.title) : genId()
-
-  // إذا كان الإشعار موجوداً بالفعل، نقوم بتحديثه بدلاً من إضافة جديد
-  if (activeToasts.has(id)) {
-    return {
-      id,
-      dismiss: () => dispatch({ type: "DISMISS_TOAST", toastId: id }),
-      update: (props: ToasterToast) =>
-        dispatch({
-          type: "UPDATE_TOAST",
-          toast: { ...props, id },
-        }),
-    }
-  }
+  const id = genId()
 
   const update = (props: ToasterToast) =>
     dispatch({
@@ -144,13 +161,12 @@ function toast({ ...props }: Toast) {
   })
 
   return {
-    id,
+    id: id,
     dismiss,
     update,
   }
 }
 
-// 6. تحسين useToast
 function useToast() {
   const [state, setState] = React.useState<State>(memoryState)
 
