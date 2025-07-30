@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { TonConnectButton, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,22 +30,19 @@ export function WalletConnect({
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  // Telegram WebApp instance and initialization
   const [webApp, setWebApp] = useState<WebApp | null>(null);
-  const isTelegramEnv = useMemo(() => typeof window !== 'undefined' && window.Telegram?.WebApp, []);
+  const toastShownRef = useRef(false);
 
+  // تحقق من بيئة Telegram WebApp
   useEffect(() => {
-    if (isTelegramEnv) {
+    if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
       const tgWebApp = new WebApp(window.Telegram.WebApp);
       setWebApp(tgWebApp);
-      
-      // Initialize Telegram WebApp
       tgWebApp.ready();
       tgWebApp.expand();
       tgWebApp.setBackgroundColor('#ffffff');
       tgWebApp.enableClosingConfirmation();
-      
-      // Set up back button behavior
+
       tgWebApp.BackButton.onClick(() => {
         if (localWallet) {
           handleDisconnect();
@@ -58,9 +55,9 @@ export function WalletConnect({
         tgWebApp.BackButton.offClick();
       };
     }
-  }, [isTelegramEnv, localWallet]);
+  }, [localWallet]);
 
-  // Improved balance fetching with caching
+  // جلب الرصيد مع تحسين الأداء
   const fetchBalance = useCallback(async (address: string): Promise<string> => {
     try {
       setIsLoading(true);
@@ -73,7 +70,7 @@ export function WalletConnect({
           }
         }
       );
-      
+
       if (!response.ok) throw new Error('Network response was not ok');
 
       const data = await response.json();
@@ -93,53 +90,55 @@ export function WalletConnect({
     }
   }, [toast]);
 
-  // Wallet state management
+  // إدارة حالة المحفظة مع منع تكرار الإشعارات
   useEffect(() => {
     if (!wallet) {
       if (localWallet) {
         setLocalWallet(null);
         setBalance('0.000');
         onWalletDisconnect?.();
-        if (webApp) {
-          webApp.BackButton.hide();
-        }
       }
+      toastShownRef.current = false;
+      if (webApp) webApp.BackButton.hide();
       return;
     }
 
-    const initializeWallet = async () => {
-      const balanceInTon = await fetchBalance(wallet.account.address);
-      const tonWallet: TonWallet = {
-        address: wallet.account.address,
-        balance: balanceInTon,
-        network: wallet.account.chain === '-239' ? 'mainnet' : 'testnet',
+    if (wallet && !toastShownRef.current) {
+      toastShownRef.current = true;
+
+      const initializeWallet = async () => {
+        const balanceInTon = await fetchBalance(wallet.account.address);
+        const tonWallet: TonWallet = {
+          address: wallet.account.address,
+          balance: balanceInTon,
+          network: wallet.account.chain === '-239' ? 'mainnet' : 'testnet',
+        };
+
+        setLocalWallet(tonWallet);
+        setBalance(balanceInTon);
+        onWalletConnect?.(tonWallet);
+
+        if (webApp) webApp.BackButton.show();
+
+        toast({
+          title: "Wallet Connected",
+          description: `Connected to ${formatAddress(wallet.account.address)}`,
+          duration: 3000,
+        });
       };
 
-      setLocalWallet(tonWallet);
-      setBalance(balanceInTon);
-      onWalletConnect?.(tonWallet);
+      initializeWallet();
+    }
+  }, [wallet, fetchBalance, onWalletConnect, onWalletDisconnect, toast, webApp]);
 
-      if (webApp) {
-        webApp.BackButton.show();
-      }
-
-      toast({
-        title: "Wallet Connected",
-        description: `Connected to ${formatAddress(wallet.account.address)}`,
-      });
-    };
-
-    initializeWallet();
-  }, [wallet, fetchBalance, onWalletConnect, onWalletDisconnect, toast, localWallet, webApp]);
-
-  // Format address for display
+  // تنسيق العنوان للعرض
   const formatAddress = (address: string): string => {
     if (!address) return '';
     if (address.length <= 10) return address;
     return `${address.slice(0, 4)}...${address.slice(-4)}`;
   };
 
-  // Handle wallet disconnection
+  // فصل المحفظة مع إشعارات الخطأ
   const handleDisconnect = async () => {
     try {
       await tonConnectUI.disconnect();
@@ -148,6 +147,10 @@ export function WalletConnect({
         description: "Your wallet has been disconnected successfully",
       });
       onWalletDisconnect?.();
+      toastShownRef.current = false;
+      if (webApp) webApp.BackButton.hide();
+      setLocalWallet(null);
+      setBalance('0.000');
     } catch (error) {
       console.error('Wallet disconnection error:', error);
       toast({
@@ -158,13 +161,13 @@ export function WalletConnect({
     }
   };
 
-  // Telegram Wallet integration
+  // دمج محفظة تيليجرام (زر فقط داخل تيليجرام)
   const connectTelegramWallet = () => {
     if (!webApp) return;
     
     webApp.openInvoice({
       currency: 'TON',
-      amount: '0', // Just to open the wallet
+      amount: '0', // فتح المحفظة فقط
       description: 'Connect your Telegram Wallet'
     }, (status) => {
       if (status === 'paid') {
@@ -176,7 +179,6 @@ export function WalletConnect({
     });
   };
 
-  // Loading state
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-4">
@@ -187,12 +189,10 @@ export function WalletConnect({
 
   return (
     <div className="space-y-4">
-      {/* Main wallet connection UI */}
       {!localWallet && (
         <TonConnectButton className="w-full mb-4" />
       )}
 
-      {/* Connected wallet display */}
       {localWallet && (
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <div className="flex items-center gap-2">
@@ -222,7 +222,6 @@ export function WalletConnect({
         </div>
       )}
 
-      {/* Telegram Wallet button (only in Telegram environment) */}
       {enableTelegramWallet && webApp && !localWallet && (
         <div className="mt-3">
           <Button 
@@ -237,7 +236,6 @@ export function WalletConnect({
         </div>
       )}
 
-      {/* Fallback UI for non-Telegram environments */}
       {!localWallet && !webApp && (
         <Card className="border-gray-200 dark:border-gray-700">
           <CardContent className="pt-4">
