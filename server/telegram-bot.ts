@@ -327,21 +327,40 @@ export function registerBotRoutes(app: express.Express) {
     setTimeout(async () => {
       const webhookUrl = `${process.env.WEBAPP_URL}/webhook/telegram`;
       console.log(`Production mode - setting up webhook: ${webhookUrl}`);
+      
+      // First test if the endpoint is reachable
+      try {
+        const testResponse = await fetch(webhookUrl.replace('/webhook/telegram', '/api/health'));
+        console.log('Health check status:', testResponse.status);
+      } catch (testError) {
+        console.error('Health check failed:', testError);
+      }
+      
       try {
         const result = await bot.setWebhook(webhookUrl);
         if (result.ok) {
           console.log('✅ Webhook configured successfully for production');
         } else {
           console.error('❌ Failed to configure webhook:', result);
+          console.log('Attempting to test webhook endpoint directly...');
+          
+          // Test the webhook endpoint directly
+          try {
+            const testWebhook = await fetch(webhookUrl, { method: 'GET' });
+            console.log('Webhook endpoint test:', testWebhook.status, await testWebhook.text());
+          } catch (testError) {
+            console.error('Webhook endpoint test failed:', testError);
+          }
         }
       } catch (error) {
         console.error('❌ Error configuring webhook:', error);
       }
-    }, 2000); // Wait 2 seconds for server to be fully ready
+    }, 3000); // Wait 2 seconds for server to be fully ready
   }
 
   // Webhook endpoint for Telegram (for production)
   app.post('/webhook/telegram', (req, res) => {
+    console.log('Webhook endpoint hit:', req.body);
     try {
       const update: TelegramUpdate = req.body;
       bot.handleUpdate(update);
@@ -350,6 +369,15 @@ export function registerBotRoutes(app: express.Express) {
       console.error('Error handling Telegram update:', error);
       res.sendStatus(500);
     }
+  });
+
+  // Test endpoint to verify webhook route exists
+  app.get('/webhook/telegram', (req, res) => {
+    res.json({ 
+      message: 'Webhook endpoint is active',
+      method: 'POST required for Telegram updates',
+      timestamp: new Date().toISOString()
+    });
   });
 
   // Setup webhook (for production deployment)

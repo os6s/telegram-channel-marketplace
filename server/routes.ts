@@ -6,6 +6,19 @@ import { z } from "zod";
 import { registerBotRoutes } from "./telegram-bot";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Register Telegram bot routes FIRST (highest priority)
+  registerBotRoutes(app);
+
+  // Health check endpoint for Render
+  app.get("/api/health", (req, res) => {
+    res.status(200).json({ 
+      status: "healthy", 
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || 'development'
+    });
+  });
+
   // Redirect external visitors to Telegram bot
   app.get("/redirect-to-bot", (req, res) => {
     res.redirect(301, 'https://t.me/giftspremarketbot');
@@ -13,6 +26,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Middleware to detect external visitors and redirect them
   app.use((req, res, next) => {
+    // Skip middleware for webhook and API routes
+    if (req.path.startsWith('/webhook/') || req.path.startsWith('/api/')) {
+      return next();
+    }
+    
     // Only check root path requests
     if (req.path === "/" || req.path === "/index.html") {
       const userAgent = req.get('User-Agent') || '';
@@ -33,19 +51,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     next();
   });
-
-  // Health check endpoint for Render
-  app.get("/api/health", (req, res) => {
-    res.status(200).json({ 
-      status: "healthy", 
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: process.env.NODE_ENV || 'development'
-    });
-  });
-
-  // Register Telegram bot routes
-  registerBotRoutes(app);
   // User routes
   app.post("/api/users", async (req, res) => {
     try {
