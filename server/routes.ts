@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import express from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertChannelSchema, insertEscrowSchema } from "@shared/schema";
@@ -9,43 +10,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register webhook route with absolute priority BEFORE any other middleware
   console.log('Registering webhook route with highest priority...');
   
-  // Webhook endpoint for Telegram (absolute priority)
-  app.post('/webhook/telegram', (req, res) => {
-    console.log('Webhook endpoint hit - processing update:', req.body);
+  // Webhook endpoint for Telegram (absolute priority) - EXPLICIT POST ROUTE
+  app.post('/webhook/telegram', express.json(), (req, res) => {
+    console.log('POST /webhook/telegram - Telegram update received');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
     console.log('Request headers:', req.headers);
-    console.log('Request IP:', req.ip);
     console.log('Request method:', req.method);
     console.log('Request URL:', req.originalUrl);
     
     try {
       // Handle the Telegram update here directly
       if (req.body && req.body.message) {
-        console.log('Received message from user:', req.body.message.from?.first_name);
+        console.log('Message from user:', req.body.message.from?.first_name, ':', req.body.message.text);
       }
       
-      // Ensure we send the exact response Telegram expects
+      if (req.body && req.body.callback_query) {
+        console.log('Callback query from user:', req.body.callback_query.from?.first_name);
+      }
+      
+      // Send the exact response Telegram expects
       res.status(200).send('OK');
+      console.log('✅ Webhook response sent: 200 OK');
     } catch (error) {
       console.error('Error handling Telegram update:', error);
       res.status(500).send('Internal Server Error');
     }
   });
 
-  // Test endpoint to verify webhook route exists
-  app.get('/webhook/telegram', (req, res) => {
-    console.log('GET request to webhook endpoint');
-    console.log('Request headers:', req.headers);
-    console.log('Request IP:', req.ip);
-    console.log('User-Agent:', req.get('User-Agent'));
-    
-    res.json({ 
-      message: 'Webhook endpoint is active',
-      method: 'POST required for Telegram updates',
-      timestamp: new Date().toISOString(),
-      server: 'Express on Render',
-      endpoint: '/webhook/telegram'
-    });
+  // Catch-all webhook route to log any missed requests
+  app.all('/webhook/telegram', (req, res) => {
+    console.log(`⚠️  Non-POST request to webhook: ${req.method} /webhook/telegram`);
+    console.log('Headers:', req.headers);
+    if (req.method === 'GET') {
+      res.json({ 
+        message: 'Webhook endpoint is active - POST method required for Telegram updates',
+        method: req.method,
+        timestamp: new Date().toISOString(),
+        server: 'Express on Render',
+        endpoint: '/webhook/telegram'
+      });
+    } else {
+      res.status(405).send('Method Not Allowed - POST required');
+    }
   });
+
+  // Remove duplicate GET route since it's handled by app.all below
 
   // Register Telegram bot routes (for webhook setup and other functionality)
   registerBotRoutes(app);

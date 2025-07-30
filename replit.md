@@ -100,7 +100,7 @@ A sophisticated Telegram web app marketplace for secure channel trading using TO
    - Proper handling of empty filter values
 
 ### Known Issues to Address
-1. **URGENT - Bot Token Issue**: TELEGRAM_BOT_TOKEN in Render environment returns 404 errors - needs verification/replacement
+1. **RESOLVED - Webhook Route Issue**: Fixed POST route configuration with proper JSON middleware and logging
 2. **Data Persistence**: Currently using in-memory storage - need migration to PostgreSQL
 3. **Payment Integration**: TON wallet integration is UI-only, needs blockchain connection
 4. **Bot Token Verification**: Channel verification endpoint has TODO - needs implementation
