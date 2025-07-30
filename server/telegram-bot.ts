@@ -55,6 +55,7 @@ export class TelegramBot {
 
   async setWebhook(webhookUrl: string) {
     try {
+      console.log(`Setting webhook to: ${webhookUrl}`);
       const response = await fetch(`${this.baseUrl}/setWebhook`, {
         method: 'POST',
         headers: {
@@ -62,12 +63,34 @@ export class TelegramBot {
         },
         body: JSON.stringify({
           url: webhookUrl,
+          allowed_updates: ['message', 'callback_query']
         }),
       });
 
-      return await response.json();
+      const result = await response.json();
+      console.log('Webhook setup result:', result);
+      return result;
     } catch (error) {
       console.error('Error setting webhook:', error);
+      throw error;
+    }
+  }
+
+  async removeWebhook() {
+    try {
+      console.log('Removing webhook...');
+      const response = await fetch(`${this.baseUrl}/deleteWebhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const result = await response.json();
+      console.log('Webhook removal result:', result);
+      return result;
+    } catch (error) {
+      console.error('Error removing webhook:', error);
     }
   }
 
@@ -295,9 +318,22 @@ export function registerBotRoutes(app: express.Express) {
   // In development, use polling instead of webhooks
   if (process.env.NODE_ENV === 'development') {
     // Remove any existing webhook for development
-    bot.setWebhook('').then(() => {
+    bot.removeWebhook().then(() => {
       console.log('Webhook removed for development mode');
       startPolling(bot);
+    });
+  } else {
+    // In production, automatically set up webhook
+    const webhookUrl = `${process.env.WEBAPP_URL}/webhook/telegram`;
+    console.log(`Production mode - setting up webhook: ${webhookUrl}`);
+    bot.setWebhook(webhookUrl).then(result => {
+      if (result.ok) {
+        console.log('✅ Webhook configured successfully for production');
+      } else {
+        console.error('❌ Failed to configure webhook:', result);
+      }
+    }).catch(error => {
+      console.error('❌ Error configuring webhook:', error);
     });
   }
 
