@@ -11,31 +11,109 @@ export async function registerRoutes(app: Express): Promise<Server> {
   console.log('Registering webhook route with highest priority...');
   
   // Webhook endpoint for Telegram (absolute priority) - EXPLICIT POST ROUTE
-  app.post('/webhook/telegram', express.json(), (req, res) => {
+  app.post('/webhook/telegram', express.json(), async (req, res) => {
     console.log('POST /webhook/telegram - Telegram update received');
     console.log('Request body:', JSON.stringify(req.body, null, 2));
-    console.log('Request headers:', req.headers);
-    console.log('Request method:', req.method);
-    console.log('Request URL:', req.originalUrl);
     
     try {
-      // Handle the Telegram update here directly
-      if (req.body && req.body.message) {
-        console.log('Message from user:', req.body.message.from?.first_name, ':', req.body.message.text);
+      const update = req.body;
+      
+      // Handle text messages
+      if (update.message && update.message.text) {
+        const chatId = update.message.chat.id;
+        const text = update.message.text;
+        const user = update.message.from;
+        
+        console.log(`📨 Message from ${user.first_name} (${user.id}): ${text}`);
+        
+        // Handle /start command
+        if (text === '/start') {
+          await sendTelegramMessage(chatId, 
+            `🎉 Welcome to Telegram Channel Marketplace!\n\n` +
+            `🔥 Buy and sell Telegram channels securely with escrow protection.\n\n` +
+            `🚀 Open our web app: https://telegram-channel-marketplace.onrender.com\n\n` +
+            `💎 Features:\n` +
+            `• Secure escrow transactions\n` +
+            `• Channel verification\n` +
+            `• TON cryptocurrency payments\n` +
+            `• Trusted guarantor services\n\n` +
+            `📱 Start trading channels safely today!`
+          );
+        } else {
+          // Handle other messages
+          await sendTelegramMessage(chatId,
+            `👋 Hi ${user.first_name}!\n\n` +
+            `Use /start to access the Channel Marketplace.\n\n` +
+            `🌐 Direct link: https://telegram-channel-marketplace.onrender.com`
+          );
+        }
       }
       
-      if (req.body && req.body.callback_query) {
-        console.log('Callback query from user:', req.body.callback_query.from?.first_name);
+      // Handle callback queries (inline keyboard buttons)
+      if (update.callback_query) {
+        const callbackQuery = update.callback_query;
+        const chatId = callbackQuery.message.chat.id;
+        const data = callbackQuery.data;
+        
+        console.log(`🔘 Callback from ${callbackQuery.from.first_name}: ${data}`);
+        
+        // Answer the callback query to remove loading state
+        await answerCallbackQuery(callbackQuery.id, 'Opening marketplace...');
       }
       
       // Send the exact response Telegram expects
       res.status(200).send('OK');
       console.log('✅ Webhook response sent: 200 OK');
     } catch (error) {
-      console.error('Error handling Telegram update:', error);
+      console.error('❌ Error handling Telegram update:', error);
       res.status(500).send('Internal Server Error');
     }
   });
+
+  // Helper function to send Telegram messages
+  async function sendTelegramMessage(chatId: number, text: string) {
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: text,
+          parse_mode: 'HTML'
+        })
+      });
+      
+      const result = await response.json();
+      if (result.ok) {
+        console.log('✅ Message sent successfully');
+      } else {
+        console.error('❌ Failed to send message:', result);
+      }
+    } catch (error) {
+      console.error('❌ Error sending message:', error);
+    }
+  }
+
+  // Helper function to answer callback queries
+  async function answerCallbackQuery(callbackQueryId: string, text: string) {
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callback_query_id: callbackQueryId,
+          text: text
+        })
+      });
+      
+      const result = await response.json();
+      if (!result.ok) {
+        console.error('❌ Failed to answer callback query:', result);
+      }
+    } catch (error) {
+      console.error('❌ Error answering callback query:', error);
+    }
+  }
 
   // Catch-all webhook route to log any missed requests
   app.all('/webhook/telegram', (req, res) => {
