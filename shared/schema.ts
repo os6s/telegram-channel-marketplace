@@ -21,8 +21,7 @@ export const channels = pgTable("channels", {
   category: text("category").notNull(),
   subscribers: integer("subscribers").notNull(),
   engagement: decimal("engagement", { precision: 5, scale: 2 }).notNull(),
-  growth: decimal("growth", { precision: 5, scale: 2 }).notNull(),
-  price: decimal("price", { precision: 18, scale: 9 }).notNull(), // TON amount
+  price: decimal("price", { precision: 18, scale: 9 }).notNull(),
   isVerified: boolean("is_verified").default(false),
   isActive: boolean("is_active").default(true),
   avatarUrl: text("avatar_url"),
@@ -34,9 +33,10 @@ export const activities = pgTable("activities", {
   buyerId: varchar("buyer_id").notNull(),
   sellerId: varchar("seller_id").notNull(),
   amount: decimal("amount", { precision: 18, scale: 9 }).notNull(),
-  status: text("status").notNull().default("completed"), // completed, refunded
+  status: text("status").notNull().default("completed"),
   transactionHash: text("transaction_hash"),
   completedAt: text("completed_at").notNull(),
+  giftType: text("gift_type"),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({
@@ -52,7 +52,6 @@ export const insertChannelSchema = createInsertSchema(channels).omit({
   price: z.string().regex(/^\d+(\.\d{1,9})?$/, "Invalid TON amount"),
   subscribers: z.number().min(1, "Must have at least 1 subscriber"),
   engagement: z.string().regex(/^\d+(\.\d{1,2})?$/, "Invalid engagement rate"),
-  growth: z.string().regex(/^[+-]?\d+(\.\d{1,2})?$/, "Invalid growth rate"),
 });
 
 export const insertActivitySchema = createInsertSchema(activities).omit({
@@ -68,3 +67,5 @@ export type InsertChannel = z.infer<typeof insertChannelSchema>;
 export type Channel = typeof channels.$inferSelect;
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
 export type Activity = typeof activities.$inferSelect;
+
+export type GiftType = "statue-of-liberty" | "flame-of-liberty";
