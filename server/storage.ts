@@ -1,15 +1,20 @@
-import { type User, type InsertUser, type Channel, type InsertChannel, type Activity, type InsertActivity } from "@shared/schema";
+import {
+  type User,
+  type InsertUser,
+  type Channel,
+  type InsertChannel,
+  type Activity,
+  type InsertActivity,
+} from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PostgreSQLStorage } from "./db";
 
 export interface IStorage {
-  // User operations
   getUser(id: string): Promise<User | undefined>;
   getUserByTelegramId(telegramId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
 
-  // Channel operations
   getChannel(id: string): Promise<Channel | undefined>;
   getChannelByUsername(username: string): Promise<Channel | undefined>;
   getChannels(filters?: {
@@ -23,14 +28,12 @@ export interface IStorage {
   updateChannel(id: string, updates: Partial<Channel>): Promise<Channel | undefined>;
   deleteChannel(id: string): Promise<boolean>;
 
-  // Activity operations
   getActivity(id: string): Promise<Activity | undefined>;
   getActivitiesByUser(userId: string): Promise<Activity[]>;
   getActivitiesByChannel(channelId: string): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   updateActivity(id: string, updates: Partial<Activity>): Promise<Activity | undefined>;
 
-  // Statistics
   getMarketplaceStats(): Promise<{
     activeListings: number;
     totalVolume: string;
@@ -61,13 +64,13 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = { 
-      ...insertUser, 
+    const user: User = {
+      ...insertUser,
       id,
       username: insertUser.username || null,
       firstName: insertUser.firstName || null,
       lastName: insertUser.lastName || null,
-      tonWallet: insertUser.tonWallet || null
+      tonWallet: insertUser.tonWallet || null,
     };
     this.users.set(id, user);
     return user;
@@ -76,7 +79,7 @@ export class MemStorage implements IStorage {
   async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
     const user = this.users.get(id);
     if (!user) return undefined;
-    
+
     const updatedUser = { ...user, ...updates };
     this.users.set(id, updatedUser);
     return updatedUser;
@@ -99,28 +102,31 @@ export class MemStorage implements IStorage {
     search?: string;
     sellerId?: string;
   }): Promise<Channel[]> {
-    let channels = Array.from(this.channels.values()).filter(c => c.isActive);
+    let channels = Array.from(this.channels.values()).filter((c) => c.isActive);
 
     if (filters) {
       if (filters.category) {
-        channels = channels.filter(c => c.category === filters.category);
+        channels = channels.filter((c) => c.category === filters.category);
       }
       if (filters.minSubscribers) {
-        channels = channels.filter(c => c.subscribers >= filters.minSubscribers!);
+        channels = channels.filter((c) => c.subscribers >= filters.minSubscribers!);
       }
       if (filters.maxPrice) {
-        channels = channels.filter(c => parseFloat(c.price) <= parseFloat(filters.maxPrice!));
+        channels = channels.filter(
+          (c) => parseFloat(c.price) <= parseFloat(filters.maxPrice!),
+        );
       }
       if (filters.search) {
         const search = filters.search.toLowerCase();
-        channels = channels.filter(c => 
-          c.name.toLowerCase().includes(search) ||
-          c.username.toLowerCase().includes(search) ||
-          c.description.toLowerCase().includes(search)
+        channels = channels.filter(
+          (c) =>
+            c.name.toLowerCase().includes(search) ||
+            c.username.toLowerCase().includes(search) ||
+            c.description.toLowerCase().includes(search),
         );
       }
       if (filters.sellerId) {
-        channels = channels.filter(c => c.sellerId === filters.sellerId);
+        channels = channels.filter((c) => c.sellerId === filters.sellerId);
       }
     }
 
@@ -129,12 +135,16 @@ export class MemStorage implements IStorage {
 
   async createChannel(insertChannel: InsertChannel & { sellerId: string }): Promise<Channel> {
     const id = randomUUID();
-    const channel: Channel = { 
-      ...insertChannel, 
+    const channel: Channel = {
+      ...insertChannel,
       id,
       isVerified: false,
       isActive: true,
-      avatarUrl: insertChannel.avatarUrl || null
+      avatarUrl: insertChannel.avatarUrl || null,
+      gifts: {
+        statueOfLiberty: insertChannel.gifts?.statueOfLiberty || 0,
+        torchOfFreedom: insertChannel.gifts?.torchOfFreedom || 0,
+      },
     };
     this.channels.set(id, channel);
     return channel;
@@ -143,8 +153,15 @@ export class MemStorage implements IStorage {
   async updateChannel(id: string, updates: Partial<Channel>): Promise<Channel | undefined> {
     const channel = this.channels.get(id);
     if (!channel) return undefined;
-    
-    const updatedChannel = { ...channel, ...updates };
+
+    const updatedChannel = {
+      ...channel,
+      ...updates,
+      gifts: {
+        ...channel.gifts,
+        ...(updates.gifts || {}),
+      },
+    };
     this.channels.set(id, updatedChannel);
     return updatedChannel;
   }
@@ -173,16 +190,16 @@ export class MemStorage implements IStorage {
     const id = randomUUID();
     const channel = await this.getChannel(insertActivity.channelId);
     if (!channel) throw new Error("Channel not found");
-    
+
     const completedAt = new Date().toISOString();
-    
-    const activity: Activity = { 
-      ...insertActivity, 
+
+    const activity: Activity = {
+      ...insertActivity,
       id,
       sellerId: channel.sellerId,
       status: "completed",
       completedAt,
-      transactionHash: insertActivity.transactionHash || null
+      transactionHash: insertActivity.transactionHash || null,
     };
     this.activities.set(id, activity);
     return activity;
@@ -191,7 +208,7 @@ export class MemStorage implements IStorage {
   async updateActivity(id: string, updates: Partial<Activity>): Promise<Activity | undefined> {
     const activity = this.activities.get(id);
     if (!activity) return undefined;
-    
+
     const updatedActivity = { ...activity, ...updates };
     this.activities.set(id, updatedActivity);
     return updatedActivity;
@@ -202,25 +219,31 @@ export class MemStorage implements IStorage {
     totalVolume: string;
     totalSales: number;
   }> {
-    const activeChannels = Array.from(this.channels.values()).filter(c => c.isActive);
-    const completedActivities = Array.from(this.activities.values()).filter(a => a.status === "completed");
-    
-    const totalVolume = completedActivities
-      .reduce((sum, activity) => sum + parseFloat(activity.amount), 0);
+    const activeChannels = Array.from(this.channels.values()).filter(
+      (c) => c.isActive,
+    );
+    const completedActivities = Array.from(this.activities.values()).filter(
+      (a) => a.status === "completed",
+    );
+
+    const totalVolume = completedActivities.reduce(
+      (sum, activity) => sum + parseFloat(activity.amount),
+      0,
+    );
 
     return {
       activeListings: activeChannels.length,
       totalVolume: totalVolume.toFixed(2),
-      totalSales: completedActivities.length
+      totalSales: completedActivities.length,
     };
   }
 }
 
-// Initialize storage based on environment
+// Initialize storage
 const databaseUrl = process.env.DATABASE_URL;
 
-export const storage: IStorage = databaseUrl 
+export const storage: IStorage = databaseUrl
   ? new PostgreSQLStorage(databaseUrl)
   : new MemStorage();
 
-console.log(`Using ${databaseUrl ? 'PostgreSQL' : 'in-memory'} storage`);
+console.log(`Using ${databaseUrl ? "PostgreSQL" : "in-memory"} storage`);
