@@ -5,24 +5,21 @@ import {
   type InsertChannel,
   type Activity,
   type InsertActivity,
-  type GiftType
+  type GiftType,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { PostgreSQLStorage } from "./db";
 
 export interface IStorage {
-  // User operations
   getUser(id: string): Promise<User | undefined>;
   getUserByTelegramId(telegramId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
 
-  // Channel operations
   getChannel(id: string): Promise<Channel | undefined>;
   getChannelByUsername(username: string): Promise<Channel | undefined>;
   getChannels(filters?: {
     category?: string;
-    minSubscribers?: number;
     maxPrice?: string;
     search?: string;
     sellerId?: string;
@@ -31,14 +28,12 @@ export interface IStorage {
   updateChannel(id: string, updates: Partial<Channel>): Promise<Channel | undefined>;
   deleteChannel(id: string): Promise<boolean>;
 
-  // Activity operations
   getActivity(id: string): Promise<Activity | undefined>;
   getActivitiesByUser(userId: string): Promise<Activity[]>;
   getActivitiesByChannel(channelId: string): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   updateActivity(id: string, updates: Partial<Activity>): Promise<Activity | undefined>;
 
-  // Statistics
   getMarketplaceStats(): Promise<{
     activeListings: number;
     totalVolume: string;
@@ -93,7 +88,6 @@ export class MemStorage implements IStorage {
     let result = Array.from(this.channels.values()).filter((c) => c.isActive);
 
     if (filters.category) result = result.filter((c) => c.category === filters.category);
-    if (filters.minSubscribers) result = result.filter((c) => c.subscribers >= filters.minSubscribers);
     if (filters.maxPrice) result = result.filter((c) => parseFloat(c.price) <= parseFloat(filters.maxPrice));
     if (filters.search) {
       const search = filters.search.toLowerCase();
@@ -122,7 +116,7 @@ export class MemStorage implements IStorage {
       })
     );
 
-    return full.sort((a, b) => b.subscribers - a.subscribers);
+    return full.sort((a, b) => b.price.localeCompare(a.price));
   }
 
   async createChannel(data: InsertChannel & { sellerId: string }): Promise<Channel> {
@@ -206,7 +200,6 @@ export class MemStorage implements IStorage {
   }
 }
 
-// Switch to DB if needed
 const databaseUrl = process.env.DATABASE_URL;
 export const storage: IStorage = databaseUrl ? new PostgreSQLStorage(databaseUrl) : new MemStorage();
-console.log(`Using ${databaseUrl ? 'PostgreSQL' : 'in-memory'} storage`);
+console.log(`Using ${databaseUrl ? "PostgreSQL" : "in-memory"} storage`);
