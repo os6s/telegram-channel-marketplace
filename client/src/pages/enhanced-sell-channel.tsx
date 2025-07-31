@@ -379,4 +379,18 @@ export default function SellChannel() {
                       </div>
                     </div>
                   </CardContent>
-                </Card
+                </Card>
+                <Button
+                  type="submit"
+                  className="w-full bg-telegram-500 hover:bg-telegram-600"
+                >
+                  Submit Listing
+                </Button>
+              </div>
+            )}
+          </form>
+        </Form>
+      </div>
+    </div>
+  );
+}
