@@ -8,8 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Upload, CheckCircle, AlertCircle } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle } from "lucide-react";
 import { insertChannelSchema, type InsertChannel } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -51,7 +50,7 @@ export default function SellChannel() {
       const response = await apiRequest('POST', '/api/channels', data);
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/channels'] });
       queryClient.invalidateQueries({ queryKey: ['/api/stats'] });
       toast({
@@ -82,7 +81,7 @@ export default function SellChannel() {
     const telegramId = telegramWebApp.user.id.toString();
     try {
       let userId = telegramId;
-      
+
       const userResponse = await fetch(`/api/users?telegramId=${telegramId}`);
       if (!userResponse.ok) {
         const createUserResponse = await apiRequest('POST', '/api/users', {
@@ -91,9 +90,9 @@ export default function SellChannel() {
           firstName: telegramWebApp.user.first_name,
           lastName: telegramWebApp.user.last_name,
         });
-        
+
         if (!createUserResponse.ok) throw new Error('Failed to create user account');
-        
+
         const newUser = await createUserResponse.json();
         userId = newUser.id;
       } else {
@@ -121,14 +120,14 @@ export default function SellChannel() {
 
   if (step === 3) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardContent className="pt-6 text-center">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="w-8 h-8 text-green-600" />
+            <div className="w-16 h-16 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-8 h-8 text-green-600 dark:text-green-300" />
             </div>
             <h2 className="text-xl font-semibold mb-2">Channel Listed!</h2>
-            <p className="text-gray-600 mb-6">
+            <p className="text-muted-foreground mb-6">
               Your channel has been successfully added to the marketplace. Buyers can now discover and purchase it.
             </p>
             <div className="space-y-2">
@@ -156,25 +155,25 @@ export default function SellChannel() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="px-4 py-3">
           <div className="flex items-center space-x-3">
             <Button variant="ghost" size="sm" onClick={handleBack}>
               <ArrowLeft className="w-4 h-4" />
             </Button>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900">Sell Your Channel</h1>
-              <p className="text-xs text-gray-500">Step {step} of 2</p>
+              <h1 className="text-lg font-semibold">Sell Your Channel</h1>
+              <p className="text-xs text-muted-foreground">Step {step} of 2</p>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="bg-white px-4 pb-4">
+      <div className="bg-card px-4 pb-4">
         <div className="flex items-center space-x-2">
-          <div className={`flex-1 h-2 rounded-full ${step >= 1 ? 'bg-telegram-500' : 'bg-gray-200'}`} />
-          <div className={`flex-1 h-2 rounded-full ${step >= 2 ? 'bg-telegram-500' : 'bg-gray-200'}`} />
+          <div className={`flex-1 h-2 rounded-full ${step >= 1 ? 'bg-telegram-500' : 'bg-muted'}`} />
+          <div className={`flex-1 h-2 rounded-full ${step >= 2 ? 'bg-telegram-500' : 'bg-muted'}`} />
         </div>
       </div>
 
@@ -208,7 +207,7 @@ export default function SellChannel() {
                         <FormLabel>Channel Username</FormLabel>
                         <FormControl>
                           <div className="relative">
-                            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">@</span>
+                            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground">@</span>
                             <Input className="pl-8" placeholder="cryptobulls_official" {...field} />
                           </div>
                         </FormControl>
@@ -350,14 +349,14 @@ export default function SellChannel() {
                           <FormControl>
                             <div className="relative">
                               <Input placeholder="2500" {...field} />
-                              <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500">
+                              <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground">
                                 TON
                               </span>
                             </div>
                           </FormControl>
                           <FormMessage />
                           {field.value && (
-                            <p className="text-sm text-gray-500">
+                            <p className="text-sm text-muted-foreground">
                               ≈ ${(parseFloat(field.value) * 5.1).toLocaleString()} USD
                             </p>
                           )}
@@ -366,13 +365,13 @@ export default function SellChannel() {
                     />
                   </CardContent>
                 </Card>
-                <Card className="border-orange-200 bg-orange-50">
+                <Card className="border-orange-200 bg-orange-50 dark:bg-orange-950">
                   <CardContent className="pt-6">
                     <div className="flex items-start space-x-3">
                       <AlertCircle className="w-5 h-5 text-orange-500 mt-0.5" />
                       <div className="text-sm">
-                        <p className="font-medium text-orange-800 mb-1">Verification Required</p>
-                        <p className="text-orange-700">
+                        <p className="font-medium text-orange-800 dark:text-orange-300 mb-1">Verification Required</p>
+                        <p className="text-orange-700 dark:text-orange-400">
                           After listing, you'll need to provide a bot token to verify ownership of your channel.
                           This ensures secure transfers through our automated escrow system.
                         </p>
