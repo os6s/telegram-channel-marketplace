@@ -12,24 +12,29 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
-    // أول شي نتحقق من ثيم تلغرام
+    // أول شي نجرب نسترجع من localStorage
+    const stored = localStorage.getItem("theme") as Theme | null;
+    if (stored === "dark" || stored === "light") return stored;
+
+    // بعدها تيليجرام إذا موجود
     const telegramTheme = getTelegramTheme();
     if (telegramTheme?.colorScheme) {
       return telegramTheme.colorScheme === "dark" ? "dark" : "light";
     }
-    // إذا ماكو، نجرب نسترجع من localStorage أو من نظام المستخدم
-    const stored = localStorage.getItem("theme") as Theme;
-    if (stored) return stored;
+
+    // fallback: حسب النظام
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
 
   useEffect(() => {
     const root = document.documentElement;
+
     if (theme === "dark") {
       root.classList.add("dark");
     } else {
       root.classList.remove("dark");
     }
+
     localStorage.setItem("theme", theme);
   }, [theme]);
 
