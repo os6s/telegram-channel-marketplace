@@ -12,12 +12,12 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
-    // Check Telegram's theme first
+    // أول شي نتحقق من ثيم تلغرام
     const telegramTheme = getTelegramTheme();
     if (telegramTheme?.colorScheme) {
-      return telegramTheme.colorScheme === 'dark' ? 'dark' : 'light';
+      return telegramTheme.colorScheme === "dark" ? "dark" : "light";
     }
-    // Fallback to localStorage or system preference
+    // إذا ماكو، نجرب نسترجع من localStorage أو من نظام المستخدم
     const stored = localStorage.getItem("theme") as Theme;
     if (stored) return stored;
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -25,13 +25,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.remove("light", "dark");
-    root.classList.add(theme);
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
     localStorage.setItem("theme", theme);
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme(prev => prev === "light" ? "dark" : "light");
+    setTheme((prev) => (prev === "light" ? "dark" : "light"));
   };
 
   return (
