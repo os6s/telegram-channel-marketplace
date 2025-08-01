@@ -30,7 +30,7 @@
     --telegram-button-text: 255 255 255;
   }
 
-  html.dark {
+  .dark {
     --background: 224 71.4% 4.1%;
     --foreground: 210 20% 98%;
     --card: 224 71.4% 4.1%;
@@ -56,7 +56,6 @@
     --telegram-button-text: 255 255 255;
   }
 
-  /* RTL Support */
   [dir="rtl"] {
     direction: rtl;
   }
@@ -79,8 +78,6 @@
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
-
-    /* Disable scrollbar for cleaner Mini App look */
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
@@ -89,15 +86,13 @@
     display: none;
   }
 
-  /* Telegram Mini App viewport handling */
   #root {
     min-height: 100vh;
-    min-height: 100svh; /* Use small viewport height for mobile */
+    min-height: 100svh;
     display: flex;
     flex-direction: column;
   }
 
-  /* Telegram Web App specific styles */
   .telegram-bg {
     background-color: hsl(var(--telegram-bg));
     color: hsl(var(--telegram-text));
@@ -108,12 +103,10 @@
     color: hsl(var(--telegram-button-text));
   }
 
-  /* Smooth transitions for theme changes */
   * {
     transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   }
 
-  /* Telegram Mini App specific styles */
   .telegram-mini-app {
     height: 100vh;
     height: 100svh;
@@ -122,7 +115,6 @@
     color: var(--tg-theme-text-color, var(--foreground));
   }
 
-  /* Telegram native button styles */
   .telegram-button {
     background: var(--tg-theme-button-color, hsl(var(--telegram-button)));
     color: var(--tg-theme-button-text-color, hsl(var(--telegram-button-text)));
@@ -146,7 +138,6 @@
     opacity: 0.8;
   }
 
-  /* Safe area insets for devices with notch */
   .safe-area-inset {
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
@@ -154,7 +145,6 @@
     padding-right: env(safe-area-inset-right);
   }
 
-  /* Touch-friendly interactions */
   .touch-target {
     min-height: 44px;
     min-width: 44px;
@@ -163,7 +153,6 @@
     justify-content: center;
   }
 
-  /* Haptic feedback visual indicator */
   .haptic-feedback {
     position: relative;
   }
@@ -199,7 +188,6 @@
     overflow: hidden;
   }
 
-  /* Custom Telegram theme colors */
   .bg-telegram-50 { background-color: hsl(var(--telegram-50)); }
   .bg-telegram-100 { background-color: hsl(var(--telegram-100)); }
   .bg-telegram-200 { background-color: hsl(var(--telegram-200)); }
@@ -230,7 +218,6 @@
   .hover\:text-telegram-500:hover { color: hsl(var(--telegram-500)); }
   .hover\:text-telegram-600:hover { color: hsl(var(--telegram-600)); }
 
-  /* TON colors */
   .bg-ton-500 { background-color: hsl(var(--ton-500)); }
   .bg-ton-600 { background-color: hsl(var(--ton-600)); }
   .bg-ton-700 { background-color: hsl(var(--ton-700)); }
