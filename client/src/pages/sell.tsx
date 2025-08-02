@@ -6,28 +6,72 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { telegramWebApp } from "@/lib/telegram";
 import { apiRequest } from "@/lib/queryClient";
 
-// Schema موحد
 const listingSchema = z.object({
   type: z.enum(["username", "channel", "service"]),
-  platform: z.string().optional(), // Telegram, Instagram, إلخ
-  username: z.string().optional(),
-  giftType: z.string().optional(),
-  price: z.string(),
+  platform: z.string().optional(),
+  username: z
+    .string()
+    .optional()
+    .refine((val, ctx) => {
+      if (ctx.parent.type === "channel" || ctx.parent.type === "username") {
+        return val && val.trim().length > 0;
+      }
+      return true;
+    }, "Username is required for channel and username listings."),
+  giftType: z
+    .string()
+    .optional()
+    .refine((val, ctx) => {
+      if (ctx.parent.type === "channel") {
+        return val && val.trim().length > 0;
+      }
+      return true;
+    }, "Gift type is required for channel listings."),
+  price: z
+    .string()
+    .min(1, "Price is required.")
+    .refine(
+      (val) => !isNaN(Number(val)) && Number(val) > 0,
+      "Price must be a positive number."
+    ),
   description: z.string().optional(),
-  serviceTitle: z.string().optional(),
+  serviceTitle: z
+    .string()
+    .optional()
+    .refine((val, ctx) => {
+      if (ctx.parent.type === "service") {
+        return val && val.trim().length > 0;
+      }
+      return true;
+    }, "Service title is required for service listings."),
 });
 
 type ListingForm = z.infer<typeof listingSchema>;
 
 export default function SellPage() {
   const { toast } = useToast();
-  const [listingType, setListingType] = useState<"username" | "channel" | "service" | null>(null);
+  const [listingType, setListingType] = useState<
+    "username" | "channel" | "service" | null
+  >(null);
 
   const form = useForm<ListingForm>({
     resolver: zodResolver(listingSchema),
@@ -35,13 +79,14 @@ export default function SellPage() {
       price: "",
       description: "",
     },
+    mode: "onChange", // تفعيل التحقق الفوري
   });
 
   const onSubmit = async (data: ListingForm) => {
     if (!telegramWebApp.user) {
       toast({
         title: "Not Authenticated",
-        description: "Open this app from Telegram",
+        description: "Open this app from Telegram.",
         variant: "destructive",
       });
       return;
@@ -53,13 +98,16 @@ export default function SellPage() {
     });
 
     if (result.ok) {
-      toast({ title: "Listing Submitted", description: "Your item is now on sale." });
+      toast({
+        title: "Listing Submitted",
+        description: "Your item is now live for sale!",
+      });
       form.reset();
       setListingType(null);
     } else {
       toast({
         title: "Error",
-        description: "Something went wrong.",
+        description: "Something went wrong. Please try again.",
         variant: "destructive",
       });
     }
@@ -68,6 +116,7 @@ export default function SellPage() {
   const handleBack = () => {
     if (listingType) {
       setListingType(null);
+      form.reset();
     } else {
       window.history.back();
     }
@@ -78,17 +127,17 @@ export default function SellPage() {
       {!listingType ? (
         <Card>
           <CardHeader>
-            <CardTitle>شنو تريد تبيع؟</CardTitle>
+            <CardTitle>What do you want to sell?</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Button className="w-full" onClick={() => setListingType("username")}>
-              يوزر (Telegram / Instagram / Twitter ...)
+              Username (Telegram / Instagram / Twitter ...)
             </Button>
             <Button className="w-full" onClick={() => setListingType("channel")}>
-              قناة تيليجرام
+              Telegram Channel
             </Button>
             <Button className="w-full" onClick={() => setListingType("service")}>
-              خدمة (زيادة متابعين، دعم، إلخ)
+              Service (Followers, Support, etc.)
             </Button>
           </CardContent>
         </Card>
@@ -99,18 +148,22 @@ export default function SellPage() {
               <CardHeader>
                 <CardTitle>
                   {listingType === "username"
-                    ? "بيع يوزر"
+                    ? "Sell Username"
                     : listingType === "channel"
-                    ? "بيع قناة"
-                    : "بيع خدمة"}
+                    ? "Sell Channel"
+                    : "Sell Service"}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Button type="button" variant="ghost" size="sm" onClick={handleBack}>
-                  ← رجوع
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleBack}
+                >
+                  ← Back
                 </Button>
 
-                {/* Common Field: Type */}
                 <input type="hidden" value={listingType} {...form.register("type")} />
 
                 {/* Platform + Username */}
@@ -121,11 +174,11 @@ export default function SellPage() {
                       name="platform"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>نوع التطبيق</FormLabel>
+                          <FormLabel>Platform</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="اختر التطبيق" />
+                                <SelectValue placeholder="Select platform" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
@@ -146,7 +199,7 @@ export default function SellPage() {
                       name="username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>اليوزر</FormLabel>
+                          <FormLabel>Username</FormLabel>
                           <FormControl>
                             <Input placeholder="@example" {...field} />
                           </FormControl>
@@ -165,7 +218,7 @@ export default function SellPage() {
                       name="username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>اسم المستخدم للقناة</FormLabel>
+                          <FormLabel>Channel Username</FormLabel>
                           <FormControl>
                             <Input placeholder="@channel_name" {...field} />
                           </FormControl>
@@ -178,16 +231,16 @@ export default function SellPage() {
                       name="giftType"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>نوع الهدية</FormLabel>
+                          <FormLabel>Gift Type</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="اختر نوع الهدية" />
+                                <SelectValue placeholder="Select gift type" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="statue">🗽 تمثال الحرية</SelectItem>
-                              <SelectItem value="flame">🔥 شعلة الحرية</SelectItem>
+                              <SelectItem value="statue">🗽 Statue of Liberty</SelectItem>
+                              <SelectItem value="flame">🔥 Liberty Torch</SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -204,9 +257,9 @@ export default function SellPage() {
                     name="serviceTitle"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>نوع الخدمة</FormLabel>
+                        <FormLabel>Service Type</FormLabel>
                         <FormControl>
-                          <Input placeholder="مثلاً: زيادة متابعين" {...field} />
+                          <Input placeholder="e.g., Increase Followers" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -220,7 +273,7 @@ export default function SellPage() {
                   name="price"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>السعر (TON)</FormLabel>
+                      <FormLabel>Price (TON)</FormLabel>
                       <FormControl>
                         <Input placeholder="100" {...field} />
                       </FormControl>
@@ -234,17 +287,21 @@ export default function SellPage() {
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>الوصف (اختياري)</FormLabel>
+                      <FormLabel>Description (Optional)</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="تفاصيل إضافية عن العرض..." {...field} />
+                        <Textarea placeholder="Additional details..." {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
-                <Button type="submit" className="w-full bg-telegram-500 hover:bg-telegram-600">
-                  نشر العرض للبيع
+                <Button
+                  type="submit"
+                  className="w-full bg-telegram-500 hover:bg-telegram-600"
+                  disabled={!form.formState.isValid}
+                >
+                  Publish Listing
                 </Button>
               </CardContent>
             </Card>
