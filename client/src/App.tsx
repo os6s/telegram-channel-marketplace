@@ -13,7 +13,7 @@ import { TonConnectUIProvider } from '@tonconnect/ui-react';
 
 // Lazy load pages for better performance
 const Marketplace = lazy(() => import("@/components/enhanced-marketplace"));
-const SellChannel = lazy(() => import("@/pages/enhanced-sell-channel"));
+const SellPage = lazy(() => import("@/pages/sell"));  // <-- تم التعديل هنا
 const Activity = lazy(() => import("@/pages/activity"));
 const Profile = lazy(() => import("@/pages/profile"));
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -29,8 +29,8 @@ function Router() {
     <Suspense fallback={<LoadingSpinner />}>
       <Switch>
         <Route path="/" component={Marketplace} />
-        <Route path="/sell" component={SellChannel} />
-        <Route path="/sell-channel" component={SellChannel} />
+        <Route path="/sell" component={SellPage} />
+        <Route path="/sell-channel" component={SellPage} /> {/* توجه إلى نفس الصفحة */}
         <Route path="/activity" component={Activity} />
         <Route path="/profile" component={Profile} />
         {/* Fallback to 404 */}
@@ -69,7 +69,7 @@ function BottomNavigation() {
           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/>
         </svg>
       ),
-      label: t('sellChannel')
+      label: t('sellChannel') // ممكن تغير هذا النص في ملف الترجمة إذا تريد
     },
     {
       path: "/activity",
