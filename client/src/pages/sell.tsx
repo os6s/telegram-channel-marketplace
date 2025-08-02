@@ -158,6 +158,7 @@ export default function SellPage() {
       description: "",
       followersCount: "",
       subscribersCount: "",
+      platform: "",
     },
     mode: "onChange",
     criteriaMode: "all",
@@ -237,6 +238,8 @@ export default function SellPage() {
     }
   };
 
+  const selectedPlatform = form.watch("platform");
+
   return (
     <div className="min-h-screen bg-background text-foreground p-4">
       {!listingType ? (
@@ -274,7 +277,7 @@ export default function SellPage() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="mb-4"
+                  className="mb-4 bg-purple-700 text-white hover:bg-purple-800"
                   onClick={handleBack}
                 >
                   {t.back}
@@ -293,11 +296,11 @@ export default function SellPage() {
                           <FormLabel>{t.platformLabel}</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
-                              <SelectTrigger>
+                              <SelectTrigger className="bg-purple-700 text-white">
                                 <SelectValue placeholder={t.selectPlatform} />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="bg-purple-700 text-white">
                               <SelectItem value="telegram">Telegram</SelectItem>
                               <SelectItem value="instagram">Instagram</SelectItem>
                               <SelectItem value="twitter">Twitter</SelectItem>
@@ -348,12 +351,12 @@ export default function SellPage() {
                         <Select
                           value={gift.giftType}
                           onValueChange={(val) => handleGiftTypeChange(idx, val)}
-                          className="flex-1 bg-black text-white"
+                          className="flex-1 bg-purple-700 text-white"
                         >
-                          <SelectTrigger>
+                          <SelectTrigger className="bg-purple-700 text-white">
                             <SelectValue placeholder={t.chooseGiftType} />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="bg-purple-700 text-white">
                             <SelectItem value="statue">{t.giftNameStatue}</SelectItem>
                             <SelectItem value="flame">{t.giftNameFlame}</SelectItem>
                           </SelectContent>
@@ -376,9 +379,32 @@ export default function SellPage() {
                   </>
                 )}
 
-                {/* Service Title + Counts */}
+                {/* Service Title + Platform + Counts */}
                 {listingType === "service" && (
                   <>
+                    <FormField
+                      control={form.control}
+                      name="platform"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t.platformLabel}</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger className="bg-purple-700 text-white">
+                                <SelectValue placeholder={t.selectPlatform} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="bg-purple-700 text-white">
+                              <SelectItem value="telegram">Telegram</SelectItem>
+                              <SelectItem value="instagram">Instagram</SelectItem>
+                              <SelectItem value="twitter">Twitter</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
                     <FormField
                       control={form.control}
                       name="serviceTitle"
@@ -387,11 +413,11 @@ export default function SellPage() {
                           <FormLabel>{t.serviceTypeLabel}</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
-                              <SelectTrigger>
+                              <SelectTrigger className="bg-purple-700 text-white">
                                 <SelectValue placeholder={t.serviceTypeLabel} />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="bg-purple-700 text-white">
                               <SelectItem value="followers">{t.followers}</SelectItem>
                               <SelectItem value="subscribers">{t.subscribers}</SelectItem>
                             </SelectContent>
@@ -400,46 +426,50 @@ export default function SellPage() {
                         </FormItem>
                       )}
                     />
-                    {form.watch("serviceTitle") === "followers" && (
-                      <FormField
-                        control={form.control}
-                        name="followersCount"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t.followersCountLabel}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                min={1}
-                                placeholder={t.followersCountLabel}
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    )}
-                    {form.watch("serviceTitle") === "subscribers" && (
-                      <FormField
-                        control={form.control}
-                        name="subscribersCount"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t.subscribersCountLabel}</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                min={1}
-                                placeholder={t.subscribersCountLabel}
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    )}
+
+                    {(selectedPlatform === "instagram" || selectedPlatform === "twitter") &&
+                      form.watch("serviceTitle") === "followers" && (
+                        <FormField
+                          control={form.control}
+                          name="followersCount"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t.followersCountLabel}</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  placeholder={t.followersCountLabel}
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+
+                    {selectedPlatform === "telegram" &&
+                      form.watch("serviceTitle") === "subscribers" && (
+                        <FormField
+                          control={form.control}
+                          name="subscribersCount"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t.subscribersCountLabel}</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  placeholder={t.subscribersCountLabel}
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
                   </>
                 )}
 
