@@ -36,45 +36,42 @@ const listingSchema = z.object({
         return val && val.trim().length > 0;
       }
       return true;
-    }, "Username is required for channel and username listings."),
-  // استبدلنا giftType ب gifts array:
-  gifts: z
-    .array(
-      z.object({
-        type: z.string(),
-        quantity: z.number().min(1, "Quantity must be at least 1"),
-      })
-    )
-    .optional(),
+    }, "يجب إدخال اسم المستخدم."),
+  giftType: z.string().optional(),
+  giftCount: z.string().optional(),
+  extraGifts: z.array(
+    z.object({
+      giftType: z.string(),
+      giftCount: z.string(),
+    })
+  ).optional(),
   price: z
     .string()
-    .min(1, "Price is required.")
-    .refine(
-      (val) => !isNaN(Number(val)) && Number(val) > 0,
-      "Price must be a positive number."
-    ),
+    .min(1, "يجب إدخال السعر.")
+    .refine((val) => !isNaN(Number(val)) && Number(val) > 0, "السعر يجب أن يكون رقمًا موجبًا."),
   description: z.string().optional(),
   serviceTitle: z
     .string()
     .optional()
     .refine((val, ctx) => {
-      if (ctx.parent.type === "service") {
-        return val && val.trim().length > 0;
-      }
+      if (ctx.parent.type === "service") return val && val.trim().length > 0;
       return true;
-    }, "Service title is required for service listings."),
+    }, "اختر نوع الخدمة."),
+  serviceQuantity: z
+    .string()
+    .optional()
+    .refine((val, ctx) => {
+      if (ctx.parent.type === "service") return val && !isNaN(Number(val));
+      return true;
+    }, "أدخل عدد صحيح."),
 });
 
 type ListingForm = z.infer<typeof listingSchema>;
 
 export default function SellPage() {
   const { toast } = useToast();
-  const [listingType, setListingType] = useState<
-    "username" | "channel" | "service" | null
-  >(null);
-
-  // State للهدايا في قناة تيليجرام
-  const [gifts, setGifts] = useState<{ type: string; quantity: number }[]>([]);
+  const [listingType, setListingType] = useState<"username" | "channel" | "service" | null>(null);
+  const [extraGifts, setExtraGifts] = useState<Array<{ giftType: string; giftCount: string }>>([]);
 
   const form = useForm<ListingForm>({
     resolver: zodResolver(listingSchema),
@@ -85,49 +82,54 @@ export default function SellPage() {
     mode: "onChange",
   });
 
+  const watchServiceTitle = form.watch("serviceTitle");
+
   const onSubmit = async (data: ListingForm) => {
     if (!telegramWebApp.user) {
       toast({
-        title: "Not Authenticated",
-        description: "Open this app from Telegram.",
+        title: "غير مسجل الدخول",
+        description: "يرجى فتح التطبيق من خلال Telegram.",
         variant: "destructive",
       });
       return;
     }
 
-    const payload = {
+    const result = await apiRequest("POST", "/api/sell", {
       ...data,
+      extraGifts,
       telegramId: telegramWebApp.user.id,
-      gifts: listingType === "channel" ? gifts : undefined,
-    };
-
-    const result = await apiRequest("POST", "/api/sell", payload);
+    });
 
     if (result.ok) {
-      toast({
-        title: "Listing Submitted",
-        description: "Your item is now live for sale!",
-      });
+      toast({ title: "تم النشر", description: "تم عرض العرض للبيع." });
       form.reset();
+      setExtraGifts([]);
       setListingType(null);
-      setGifts([]);
     } else {
-      toast({
-        title: "Error",
-        description: "Something went wrong. Please try again.",
-        variant: "destructive",
-      });
+      toast({ title: "حدث خطأ", description: "حاول مجددًا.", variant: "destructive" });
     }
   };
 
   const handleBack = () => {
-    if (listingType) {
-      setListingType(null);
-      form.reset();
-      setGifts([]);
-    } else {
-      window.history.back();
-    }
+    setListingType(null);
+    form.reset();
+    setExtraGifts([]);
+  };
+
+  const addGiftField = () => {
+    setExtraGifts([...extraGifts, { giftType: "", giftCount: "" }]);
+  };
+
+  const updateGift = (index: number, field: "giftType" | "giftCount", value: string) => {
+    const updated = [...extraGifts];
+    updated[index][field] = value;
+    setExtraGifts(updated);
+  };
+
+  const removeGift = (index: number) => {
+    const updated = [...extraGifts];
+    updated.splice(index, 1);
+    setExtraGifts(updated);
   };
 
   return (
@@ -135,17 +137,17 @@ export default function SellPage() {
       {!listingType ? (
         <Card>
           <CardHeader>
-            <CardTitle>What do you want to sell?</CardTitle>
+            <CardTitle>شنو تريد تبيع؟</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Button className="w-full" onClick={() => setListingType("username")}>
-              Username (Telegram / Instagram / Twitter ...)
+              يوزر (Telegram / Instagram / Twitter ...)
             </Button>
             <Button className="w-full" onClick={() => setListingType("channel")}>
-              Telegram Channel
+              قناة تيليجرام
             </Button>
             <Button className="w-full" onClick={() => setListingType("service")}>
-              Service (Followers, Subscribers)
+              خدمة (متابعين، مشتركين)
             </Button>
           </CardContent>
         </Card>
@@ -156,25 +158,19 @@ export default function SellPage() {
               <CardHeader>
                 <CardTitle>
                   {listingType === "username"
-                    ? "Sell Username"
+                    ? "بيع يوزر"
                     : listingType === "channel"
-                    ? "Sell Channel"
-                    : "Sell Service"}
+                    ? "بيع قناة"
+                    : "بيع خدمة"}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleBack}
-                >
-                  ← Back
+                <Button type="button" variant="ghost" size="sm" onClick={handleBack}>
+                  ← رجوع
                 </Button>
 
                 <input type="hidden" value={listingType} {...form.register("type")} />
 
-                {/* Username Section */}
                 {listingType === "username" && (
                   <>
                     <FormField
@@ -182,17 +178,14 @@ export default function SellPage() {
                       name="platform"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Platform</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            defaultValue={field.value}
-                          >
+                          <FormLabel>نوع التطبيق</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="Select platform" />
+                                <SelectValue placeholder="اختر التطبيق" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent className="bg-orange-500 text-white rounded-md shadow-lg">
+                            <SelectContent className="bg-zinc-900 text-white">
                               <SelectItem value="telegram">Telegram</SelectItem>
                               <SelectItem value="instagram">Instagram</SelectItem>
                               <SelectItem value="twitter">Twitter</SelectItem>
@@ -204,13 +197,12 @@ export default function SellPage() {
                         </FormItem>
                       )}
                     />
-
                     <FormField
                       control={form.control}
                       name="username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Username</FormLabel>
+                          <FormLabel>اليوزر</FormLabel>
                           <FormControl>
                             <Input placeholder="@example" {...field} />
                           </FormControl>
@@ -221,7 +213,6 @@ export default function SellPage() {
                   </>
                 )}
 
-                {/* Channel Section */}
                 {listingType === "channel" && (
                   <>
                     <FormField
@@ -229,7 +220,7 @@ export default function SellPage() {
                       name="username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Channel Username</FormLabel>
+                          <FormLabel>اسم المستخدم للقناة</FormLabel>
                           <FormControl>
                             <Input placeholder="@channel_name" {...field} />
                           </FormControl>
@@ -237,108 +228,136 @@ export default function SellPage() {
                         </FormItem>
                       )}
                     />
+                    <FormField
+                      control={form.control}
+                      name="giftType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>نوع الهدية</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="اختر نوع الهدية" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="bg-zinc-900 text-white">
+                              <SelectItem value="statue">🗽 تمثال الحرية</SelectItem>
+                              <SelectItem value="flame">🔥 شعلة الحرية</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="giftCount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>عدد الهدايا</FormLabel>
+                          <FormControl>
+                            <Input placeholder="مثلاً: 3" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                    <FormLabel>Gifts</FormLabel>
-
-                    {gifts.map((gift, index) => (
-                      <div
-                        key={index}
-                        className="flex space-x-2 mb-2 items-center"
-                      >
+                    {extraGifts.map((gift, i) => (
+                      <div key={i} className="flex gap-2">
                         <Select
-                          value={gift.type}
-                          onValueChange={(val) => {
-                            const newGifts = [...gifts];
-                            newGifts[index].type = val;
-                            setGifts(newGifts);
-                          }}
+                          onValueChange={(val) => updateGift(i, "giftType", val)}
+                          value={gift.giftType}
                         >
-                          <SelectTrigger className="w-40">
-                            <SelectValue placeholder="Select gift type" />
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="نوع الهدية الإضافية" />
                           </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="statue">🗽 Statue of Liberty</SelectItem>
-                            <SelectItem value="flame">🗽🗽 Liberty Torch</SelectItem>
-                            {/* تقدر تضيف أنواع هدايا أكثر هنا */}
+                          <SelectContent className="bg-zinc-900 text-white">
+                            <SelectItem value="statue">🗽 تمثال الحرية</SelectItem>
+                            <SelectItem value="flame">🔥 شعلة الحرية</SelectItem>
                           </SelectContent>
                         </Select>
-
                         <Input
-                          type="number"
-                          min={1}
-                          placeholder="Quantity"
-                          className="w-20"
-                          value={gift.quantity}
-                          onChange={(e) => {
-                            const newGifts = [...gifts];
-                            newGifts[index].quantity = Number(e.target.value);
-                            setGifts(newGifts);
-                          }}
+                          className="w-1/3"
+                          placeholder="العدد"
+                          value={gift.giftCount}
+                          onChange={(e) => updateGift(i, "giftCount", e.target.value)}
                         />
-
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => {
-                            setGifts(gifts.filter((_, i) => i !== index));
-                          }}
-                        >
-                          Remove
+                        <Button type="button" variant="destructive" onClick={() => removeGift(i)}>
+                          حذف
                         </Button>
                       </div>
                     ))}
-
-                    <Button
-                      type="button"
-                      onClick={() => setGifts([...gifts, { type: "", quantity: 1 }])}
-                    >
-                      + Add Gift Type
+                    <Button type="button" variant="outline" onClick={addGiftField}>
+                      إضافة هدية إضافية
                     </Button>
                   </>
                 )}
 
-                {/* Service Section */}
                 {listingType === "service" && (
-                  <FormField
-                    control={form.control}
-                    name="serviceTitle"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Service Type</FormLabel>
-                        <FormControl>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select service type" />
-                            </SelectTrigger>
-                            <SelectContent className="bg-purple-600 text-white rounded-md shadow-lg">
-                              <SelectItem value="instagram_followers">
-                                Instagram Followers
-                              </SelectItem>
-                              <SelectItem value="twitter_followers">
-                                Twitter Followers
-                              </SelectItem>
-                              <SelectItem value="telegram_subscribers">
-                                Telegram Subscribers
-                              </SelectItem>
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="serviceTitle"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>نوع الخدمة</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="اختر نوع الخدمة" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="bg-zinc-900 text-white">
+                              <SelectItem value="instagram_followers">متابعين انستاغرام</SelectItem>
+                              <SelectItem value="twitter_followers">متابعين تويتر</SelectItem>
+                              <SelectItem value="telegram_subscribers">مشتركين تيليجرام</SelectItem>
                             </SelectContent>
                           </Select>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    {(watchServiceTitle === "instagram_followers" ||
+                      watchServiceTitle === "twitter_followers") && (
+                      <FormField
+                        control={form.control}
+                        name="serviceQuantity"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>عدد المتابعين</FormLabel>
+                            <FormControl>
+                              <Input placeholder="مثلاً: 1000" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     )}
-                  />
+                    {watchServiceTitle === "telegram_subscribers" && (
+                      <FormField
+                        control={form.control}
+                        name="serviceQuantity"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>عدد المشتركين</FormLabel>
+                            <FormControl>
+                              <Input placeholder="مثلاً: 500" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                  </>
                 )}
 
-                {/* Common Fields */}
                 <FormField
                   control={form.control}
                   name="price"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Price (TON)</FormLabel>
+                      <FormLabel>السعر (TON)</FormLabel>
                       <FormControl>
                         <Input placeholder="100" {...field} />
                       </FormControl>
@@ -352,9 +371,9 @@ export default function SellPage() {
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Description (Optional)</FormLabel>
+                      <FormLabel>الوصف (اختياري)</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="Additional details..." {...field} />
+                        <Textarea placeholder="تفاصيل إضافية عن العرض..." {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -363,10 +382,14 @@ export default function SellPage() {
 
                 <Button
                   type="submit"
-                  className="w-32 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold disabled:bg-blue-300 disabled:cursor-not-allowed"
-                  disabled={!form.formState.isValid || form.formState.isSubmitting}
+                  className={`w-full text-white ${
+                    form.formState.isValid
+                      ? "bg-blue-600 hover:bg-blue-700"
+                      : "bg-blue-300 cursor-not-allowed"
+                  }`}
+                  disabled={!form.formState.isValid}
                 >
-                  {form.formState.isSubmitting ? "Publishing..." : "Publish"}
+                  نشر العرض للبيع
                 </Button>
               </CardContent>
             </Card>
