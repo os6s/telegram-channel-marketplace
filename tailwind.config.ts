@@ -61,6 +61,13 @@ export default {
           border: "var(--sidebar-border)",
           ring: "var(--sidebar-ring)",
         },
+
+        // ✅ ألوان تيليجرام المخصصة
+        telegram: {
+          400: "#5ea2e5",
+          600: "#3390ec",
+          700: "#2787db",
+        },
       },
       keyframes: {
         "accordion-down": {
