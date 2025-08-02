@@ -37,15 +37,15 @@ const listingSchema = z.object({
       }
       return true;
     }, "Username is required for channel and username listings."),
-  giftType: z
-    .string()
-    .optional()
-    .refine((val, ctx) => {
-      if (ctx.parent.type === "channel") {
-        return val && val.trim().length > 0;
-      }
-      return true;
-    }, "Gift type is required for channel listings."),
+  // استبدلنا giftType ب gifts array:
+  gifts: z
+    .array(
+      z.object({
+        type: z.string(),
+        quantity: z.number().min(1, "Quantity must be at least 1"),
+      })
+    )
+    .optional(),
   price: z
     .string()
     .min(1, "Price is required.")
@@ -73,13 +73,16 @@ export default function SellPage() {
     "username" | "channel" | "service" | null
   >(null);
 
+  // State للهدايا في قناة تيليجرام
+  const [gifts, setGifts] = useState<{ type: string; quantity: number }[]>([]);
+
   const form = useForm<ListingForm>({
     resolver: zodResolver(listingSchema),
     defaultValues: {
       price: "",
       description: "",
     },
-    mode: "onChange", // تفعيل التحقق الفوري
+    mode: "onChange",
   });
 
   const onSubmit = async (data: ListingForm) => {
@@ -92,10 +95,13 @@ export default function SellPage() {
       return;
     }
 
-    const result = await apiRequest("POST", "/api/sell", {
+    const payload = {
       ...data,
       telegramId: telegramWebApp.user.id,
-    });
+      gifts: listingType === "channel" ? gifts : undefined,
+    };
+
+    const result = await apiRequest("POST", "/api/sell", payload);
 
     if (result.ok) {
       toast({
@@ -104,6 +110,7 @@ export default function SellPage() {
       });
       form.reset();
       setListingType(null);
+      setGifts([]);
     } else {
       toast({
         title: "Error",
@@ -117,6 +124,7 @@ export default function SellPage() {
     if (listingType) {
       setListingType(null);
       form.reset();
+      setGifts([]);
     } else {
       window.history.back();
     }
@@ -137,7 +145,7 @@ export default function SellPage() {
               Telegram Channel
             </Button>
             <Button className="w-full" onClick={() => setListingType("service")}>
-              Service (Followers, Support, etc.)
+              Service (Followers, Subscribers)
             </Button>
           </CardContent>
         </Card>
@@ -166,7 +174,7 @@ export default function SellPage() {
 
                 <input type="hidden" value={listingType} {...form.register("type")} />
 
-                {/* Platform + Username */}
+                {/* Username Section */}
                 {listingType === "username" && (
                   <>
                     <FormField
@@ -175,13 +183,16 @@ export default function SellPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Platform</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select
+                            onValueChange={field.onChange}
+                            defaultValue={field.value}
+                          >
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select platform" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent className="bg-orange-500 text-white rounded-md shadow-lg">
                               <SelectItem value="telegram">Telegram</SelectItem>
                               <SelectItem value="instagram">Instagram</SelectItem>
                               <SelectItem value="twitter">Twitter</SelectItem>
@@ -210,7 +221,7 @@ export default function SellPage() {
                   </>
                 )}
 
-                {/* Channel Username + Gift Type */}
+                {/* Channel Section */}
                 {listingType === "channel" && (
                   <>
                     <FormField
@@ -226,31 +237,67 @@ export default function SellPage() {
                         </FormItem>
                       )}
                     />
-                    <FormField
-                      control={form.control}
-                      name="giftType"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Gift Type</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select gift type" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="statue">🗽 Statue of Liberty</SelectItem>
-                              <SelectItem value="flame">🔥 Liberty Torch</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+
+                    <FormLabel>Gifts</FormLabel>
+
+                    {gifts.map((gift, index) => (
+                      <div
+                        key={index}
+                        className="flex space-x-2 mb-2 items-center"
+                      >
+                        <Select
+                          value={gift.type}
+                          onValueChange={(val) => {
+                            const newGifts = [...gifts];
+                            newGifts[index].type = val;
+                            setGifts(newGifts);
+                          }}
+                        >
+                          <SelectTrigger className="w-40">
+                            <SelectValue placeholder="Select gift type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="statue">🗽 Statue of Liberty</SelectItem>
+                            <SelectItem value="flame">🗽🗽 Liberty Torch</SelectItem>
+                            {/* تقدر تضيف أنواع هدايا أكثر هنا */}
+                          </SelectContent>
+                        </Select>
+
+                        <Input
+                          type="number"
+                          min={1}
+                          placeholder="Quantity"
+                          className="w-20"
+                          value={gift.quantity}
+                          onChange={(e) => {
+                            const newGifts = [...gifts];
+                            newGifts[index].quantity = Number(e.target.value);
+                            setGifts(newGifts);
+                          }}
+                        />
+
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            setGifts(gifts.filter((_, i) => i !== index));
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+
+                    <Button
+                      type="button"
+                      onClick={() => setGifts([...gifts, { type: "", quantity: 1 }])}
+                    >
+                      + Add Gift Type
+                    </Button>
                   </>
                 )}
 
-                {/* Service Title */}
+                {/* Service Section */}
                 {listingType === "service" && (
                   <FormField
                     control={form.control}
@@ -259,7 +306,25 @@ export default function SellPage() {
                       <FormItem>
                         <FormLabel>Service Type</FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g., Increase Followers" {...field} />
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select service type" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-purple-600 text-white rounded-md shadow-lg">
+                              <SelectItem value="instagram_followers">
+                                Instagram Followers
+                              </SelectItem>
+                              <SelectItem value="twitter_followers">
+                                Twitter Followers
+                              </SelectItem>
+                              <SelectItem value="telegram_subscribers">
+                                Telegram Subscribers
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -298,10 +363,10 @@ export default function SellPage() {
 
                 <Button
                   type="submit"
-                  className="w-full bg-telegram-500 hover:bg-telegram-600"
-                  disabled={!form.formState.isValid}
+                  className="w-32 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold disabled:bg-blue-300 disabled:cursor-not-allowed"
+                  disabled={!form.formState.isValid || form.formState.isSubmitting}
                 >
-                  Publish Listing
+                  {form.formState.isSubmitting ? "Publishing..." : "Publish"}
                 </Button>
               </CardContent>
             </Card>
