@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -148,7 +148,22 @@ export default function SellPage() {
     { giftType: string; count: number }[]
   >([]);
 
-  const userLang = telegramWebApp?.initDataUnsafe?.user?.language_code || "en";
+  // نستخدم state للغة بحيث لما تتغير اللغة في تيليجرام يتحدث النص مباشرة
+  const [userLang, setUserLang] = useState(
+    telegramWebApp?.initDataUnsafe?.user?.language_code || "en"
+  );
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentLang = telegramWebApp?.initDataUnsafe?.user?.language_code || "en";
+      if (currentLang !== userLang) {
+        setUserLang(currentLang);
+      }
+    }, 1000); // شيك كل ثانية
+
+    return () => clearInterval(interval);
+  }, [userLang]);
+
   const t = translations[userLang] || translations.en;
 
   const form = useForm<ListingForm>({
@@ -504,10 +519,10 @@ export default function SellPage() {
 
                 <Button
                   type="submit"
-                  className={`w-full ${
+                  className={`w-full text-white ${
                     form.formState.isValid
-                      ? "bg-telegram-600 hover:bg-telegram-700"
-                      : "bg-telegram-400 cursor-not-allowed"
+                      ? "bg-blue-500 hover:bg-blue-700"
+                      : "bg-gray-400 cursor-not-allowed"
                   }`}
                   disabled={!form.formState.isValid}
                 >
