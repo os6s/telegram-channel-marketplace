@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -24,6 +24,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { telegramWebApp } from "@/lib/telegram";
 import { apiRequest } from "@/lib/queryClient";
+import { useLanguage } from "@/contexts/Language-context";
 
 const listingSchema = z.object({
   type: z.enum(["username", "channel", "service"]),
@@ -85,61 +86,10 @@ const listingSchema = z.object({
 
 type ListingForm = z.infer<typeof listingSchema>;
 
-const translations = {
-  en: {
-    chooseSellType: "Choose service type",
-    sellUsername: "Sell Username",
-    sellChannel: "Sell Channel",
-    sellService: "Sell Service",
-    back: "← Back",
-    publishListing: "Publish Listing",
-    selectPlatform: "Select platform",
-    platformLabel: "Platform",
-    usernameLabel: "Username",
-    channelUsernameLabel: "Channel Username",
-    giftTypeLabel: "Gift Type",
-    serviceTypeLabel: "Service Type",
-    priceLabel: "Price (TON)",
-    descriptionLabel: "Description (Optional)",
-    chooseGiftType: "Select gift type",
-    followers: "Followers",
-    subscribers: "Subscribers",
-    followersCountLabel: "Number of Followers",
-    subscribersCountLabel: "Number of Subscribers",
-    giftCountLabel: "Number of gifts",
-    addGift: "Add Gift",
-    giftNameStatue: "🗽 Statue of Liberty",
-    giftNameFlame: "🔥 Liberty Torch",
-  },
-  ar: {
-    chooseSellType: "اختر نوع الخدمة",
-    sellUsername: "بيع يوزر",
-    sellChannel: "بيع قناة",
-    sellService: "بيع خدمة",
-    back: "← رجوع",
-    publishListing: "نشر العرض للبيع",
-    selectPlatform: "اختر التطبيق",
-    platformLabel: "نوع التطبيق",
-    usernameLabel: "اليوزر",
-    channelUsernameLabel: "اسم المستخدم للقناة",
-    giftTypeLabel: "نوع الهدية",
-    serviceTypeLabel: "نوع الخدمة",
-    priceLabel: "السعر (TON)",
-    descriptionLabel: "الوصف (اختياري)",
-    chooseGiftType: "اختر نوع الهدية",
-    followers: "متابعين",
-    subscribers: "مشتركين",
-    followersCountLabel: "عدد المتابعين",
-    subscribersCountLabel: "عدد المشتركين",
-    giftCountLabel: "عدد الهدايا",
-    addGift: "إضافة هدية",
-    giftNameStatue: "🗽 تمثال الحرية",
-    giftNameFlame: "🔥 شعلة الحرية",
-  },
-};
-
 export default function SellPage() {
   const { toast } = useToast();
+  const { t } = useLanguage();
+
   const [listingType, setListingType] = useState<
     "username" | "channel" | "service" | null
   >(null);
@@ -147,24 +97,6 @@ export default function SellPage() {
   const [giftCounts, setGiftCounts] = useState<
     { giftType: string; count: number }[]
   >([]);
-
-  // نستخدم state للغة بحيث لما تتغير اللغة في تيليجرام يتحدث النص مباشرة
-  const [userLang, setUserLang] = useState(
-    telegramWebApp?.initDataUnsafe?.user?.language_code || "en"
-  );
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const currentLang = telegramWebApp?.initDataUnsafe?.user?.language_code || "en";
-      if (currentLang !== userLang) {
-        setUserLang(currentLang);
-      }
-    }, 1000); // شيك كل ثانية
-
-    return () => clearInterval(interval);
-  }, [userLang]);
-
-  const t = translations[userLang] || translations.en;
 
   const form = useForm<ListingForm>({
     resolver: zodResolver(listingSchema),
@@ -198,9 +130,8 @@ export default function SellPage() {
   const onSubmit = async (data: ListingForm) => {
     if (!telegramWebApp.user) {
       toast({
-        title: userLang === "ar" ? "خطأ" : "Error",
-        description:
-          userLang === "ar" ? "افتح التطبيق من تيليجرام." : "Open this app from Telegram.",
+        title: t("error"),
+        description: t("openTelegramApp") || "Open this app from Telegram.",
         variant: "destructive",
       });
       return;
@@ -208,11 +139,8 @@ export default function SellPage() {
 
     if (listingType === "channel" && giftCounts.some(g => !g.giftType || g.count <= 0)) {
       toast({
-        title: userLang === "ar" ? "خطأ" : "Error",
-        description:
-          userLang === "ar"
-            ? "حدد نوع الهدية وعدد صحيح لكل هدية."
-            : "Please specify valid gift types and counts.",
+        title: t("error"),
+        description: t("invalidGifts") || "Please specify valid gift types and counts.",
         variant: "destructive",
       });
       return;
@@ -226,18 +154,16 @@ export default function SellPage() {
 
     if (result.ok) {
       toast({
-        title: userLang === "ar" ? "تم نشر العرض" : "Listing Submitted",
-        description:
-          userLang === "ar" ? "العرض متوفر الآن للبيع!" : "Your item is now live for sale!",
+        title: t("success"),
+        description: t("listingSubmitted") || "Your item is now live for sale!",
       });
       form.reset();
       setListingType(null);
       setGiftCounts([]);
     } else {
       toast({
-        title: userLang === "ar" ? "خطأ" : "Error",
-        description:
-          userLang === "ar" ? "حدث خطأ. حاول مرة أخرى." : "Something went wrong. Please try again.",
+        title: t("error"),
+        description: t("somethingWentWrong") || "Something went wrong. Please try again.",
         variant: "destructive",
       });
     }
@@ -260,17 +186,17 @@ export default function SellPage() {
       {!listingType ? (
         <Card>
           <CardHeader>
-            <CardTitle>{t.chooseSellType}</CardTitle>
+            <CardTitle>{t("chooseSellType")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Button className="w-full" onClick={() => setListingType("username")}>
-              {t.sellUsername}
+              {t("sellUsername")}
             </Button>
             <Button className="w-full" onClick={() => setListingType("channel")}>
-              {t.sellChannel}
+              {t("sellChannel")}
             </Button>
             <Button className="w-full" onClick={() => setListingType("service")}>
-              {t.sellService}
+              {t("sellService")}
             </Button>
           </CardContent>
         </Card>
@@ -281,10 +207,10 @@ export default function SellPage() {
               <CardHeader>
                 <CardTitle>
                   {listingType === "username"
-                    ? t.sellUsername
+                    ? t("sellUsername")
                     : listingType === "channel"
-                    ? t.sellChannel
-                    : t.sellService}
+                    ? t("sellChannel")
+                    : t("sellService")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -295,7 +221,7 @@ export default function SellPage() {
                   className="mb-4 bg-purple-700 text-white hover:bg-purple-800"
                   onClick={handleBack}
                 >
-                  {t.back}
+                  {t("back")}
                 </Button>
 
                 <input type="hidden" value={listingType} {...form.register("type")} />
@@ -308,11 +234,11 @@ export default function SellPage() {
                       name="platform"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>{t.platformLabel}</FormLabel>
+                          <FormLabel>{t("platformLabel")}</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
-                                <SelectValue placeholder={t.selectPlatform} />
+                                <SelectValue placeholder={t("selectPlatform")} />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="bg-purple-700 text-white">
@@ -333,7 +259,7 @@ export default function SellPage() {
                       name="username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>{t.usernameLabel}</FormLabel>
+                          <FormLabel>{t("usernameLabel")}</FormLabel>
                           <FormControl>
                             <Input placeholder="@example" {...field} />
                           </FormControl>
@@ -352,7 +278,7 @@ export default function SellPage() {
                       name="username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>{t.channelUsernameLabel}</FormLabel>
+                          <FormLabel>{t("channelUsernameLabel")}</FormLabel>
                           <FormControl>
                             <Input placeholder="@channel_name" {...field} />
                           </FormControl>
@@ -369,18 +295,18 @@ export default function SellPage() {
                           className="flex-1 bg-purple-700 text-white"
                         >
                           <SelectTrigger className="bg-purple-700 text-white">
-                            <SelectValue placeholder={t.chooseGiftType} />
+                            <SelectValue placeholder={t("chooseGiftType")} />
                           </SelectTrigger>
                           <SelectContent className="bg-purple-700 text-white">
-                            <SelectItem value="statue">{t.giftNameStatue}</SelectItem>
-                            <SelectItem value="flame">{t.giftNameFlame}</SelectItem>
+                            <SelectItem value="statue">{t("giftNameStatue")}</SelectItem>
+                            <SelectItem value="flame">{t("giftNameFlame")}</SelectItem>
                           </SelectContent>
                         </Select>
 
                         <Input
                           type="number"
                           min={0}
-                          placeholder={t.giftCountLabel}
+                          placeholder={t("giftCountLabel")}
                           value={gift.count || ""}
                           onChange={(e) => handleGiftCountChange(idx, Number(e.target.value))}
                           className="w-24"
@@ -389,7 +315,7 @@ export default function SellPage() {
                     ))}
 
                     <Button variant="outline" size="sm" onClick={handleAddGiftCount}>
-                      {t.addGift}
+                      {t("addGift")}
                     </Button>
                   </>
                 )}
@@ -402,11 +328,11 @@ export default function SellPage() {
                       name="platform"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>{t.platformLabel}</FormLabel>
+                          <FormLabel>{t("platformLabel")}</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
-                                <SelectValue placeholder={t.selectPlatform} />
+                                <SelectValue placeholder={t("selectPlatform")} />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="bg-purple-700 text-white">
@@ -425,16 +351,16 @@ export default function SellPage() {
                       name="serviceTitle"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>{t.serviceTypeLabel}</FormLabel>
+                          <FormLabel>{t("serviceTypeLabel")}</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
-                                <SelectValue placeholder={t.serviceTypeLabel} />
+                                <SelectValue placeholder={t("serviceTypeLabel")} />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="bg-purple-700 text-white">
-                              <SelectItem value="followers">{t.followers}</SelectItem>
-                              <SelectItem value="subscribers">{t.subscribers}</SelectItem>
+                              <SelectItem value="followers">{t("followers")}</SelectItem>
+                              <SelectItem value="subscribers">{t("subscribers")}</SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -449,12 +375,12 @@ export default function SellPage() {
                           name="followersCount"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>{t.followersCountLabel}</FormLabel>
+                              <FormLabel>{t("followersCountLabel")}</FormLabel>
                               <FormControl>
                                 <Input
                                   type="number"
                                   min={1}
-                                  placeholder={t.followersCountLabel}
+                                  placeholder={t("followersCountLabel")}
                                   {...field}
                                 />
                               </FormControl>
@@ -471,12 +397,12 @@ export default function SellPage() {
                           name="subscribersCount"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>{t.subscribersCountLabel}</FormLabel>
+                              <FormLabel>{t("subscribersCountLabel")}</FormLabel>
                               <FormControl>
                                 <Input
                                   type="number"
                                   min={1}
-                                  placeholder={t.subscribersCountLabel}
+                                  placeholder={t("subscribersCountLabel")}
                                   {...field}
                                 />
                               </FormControl>
@@ -494,7 +420,7 @@ export default function SellPage() {
                   name="price"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t.priceLabel}</FormLabel>
+                      <FormLabel>{t("priceLabel")}</FormLabel>
                       <FormControl>
                         <Input placeholder="100" {...field} />
                       </FormControl>
@@ -508,7 +434,7 @@ export default function SellPage() {
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t.descriptionLabel}</FormLabel>
+                      <FormLabel>{t("descriptionLabel")}</FormLabel>
                       <FormControl>
                         <Textarea placeholder="Additional details..." {...field} />
                       </FormControl>
@@ -519,14 +445,14 @@ export default function SellPage() {
 
                 <Button
                   type="submit"
-                  className={`w-full text-white ${
+                  className={`w-full ${
                     form.formState.isValid
-                      ? "bg-blue-500 hover:bg-blue-700"
-                      : "bg-gray-400 cursor-not-allowed"
+                      ? "bg-telegram-600 hover:bg-telegram-700"
+                      : "bg-telegram-400 cursor-not-allowed"
                   }`}
                   disabled={!form.formState.isValid}
                 >
-                  {t.publishListing}
+                  {t("publishListing")}
                 </Button>
               </CardContent>
             </Card>
