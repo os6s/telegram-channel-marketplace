@@ -5,20 +5,10 @@ if (!process.env.DATABASE_URL) {
 }
 
 export default defineConfig({
-  out: "./migrations",
-  schema: "./shared/schema.ts",
+  out: "./migrations",           // مجلد تخزين المايجريشنات
+  schema: "./shared/schema.ts",  // مكان سكيمات الجداول
   dialect: "postgresql",
   dbCredentials: {
     url: process.env.DATABASE_URL,
-  },
-});
-import { defineConfig } from "drizzle-kit";
-
-export default defineConfig({
-  schema: "./shared/schema.ts",
-  out: "./drizzle",
-  dialect: "postgresql",
-  dbCredentials: {
-    url: process.env.DATABASE_URL!,
   },
 });
