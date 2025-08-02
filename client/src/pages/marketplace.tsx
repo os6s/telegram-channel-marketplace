@@ -2,68 +2,102 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Filter, TrendingUp, Users, Shield } from "lucide-react";
 import { ChannelCard } from "@/components/channel-card";
 import { WalletConnect } from "@/components/wallet-connect";
 import { type Channel } from "@shared/schema";
+import { useLanguage } from "@/contexts/language-context";
 
-const categories = [
-  { id: 'Cryptocurrency', name: 'Cryptocurrency', icon: '🪙' },
-  { id: 'NFT Collection', name: 'NFT Collection', icon: '🎁' },
-  { id: 'Technology', name: 'Technology', icon: '💻' },
-  { id: 'Gaming', name: 'Gaming', icon: '🎮' },
-  { id: 'Entertainment', name: 'Entertainment', icon: '🎬' },
-  { id: 'Education', name: 'Education', icon: '🎓' },
-  { id: 'Business', name: 'Business', icon: '💼' },
-];
+// بدلات النص حسب اللغة
+const textMap = {
+  en: {
+    title: "Digital Marketplace",
+    subtitle: "Platform for Buying & Selling Digital Assets",
+    activeListings: "Active Listings",
+    totalVolume: "Total Volume",
+    sold: "Sold",
+    searchPlaceholder: "Search channels, usernames, or services...",
+    allTypes: "All Types",
+    telegramUser: "Telegram User",
+    instagramUser: "Instagram User",
+    twitterUser: "Twitter User",
+    serviceFollowers: "Followers Service",
+    serviceSubscribers: "Subscribers Service",
+    noChannelsFound: "No channels or listings found",
+    tryFilters: "Try adjusting your filters or search query",
+    sortByPrice: "Sort: Price Low to High",
+    loadMore: "Load More Listings",
+  },
+  ar: {
+    title: "السوق الرقمي",
+    subtitle: "منصة شراء وبيع الاصول الرقمية",
+    activeListings: "القوائم النشطة",
+    totalVolume: "الإجمالي",
+    sold: "المباع",
+    searchPlaceholder: "ابحث عن يوزرات، قنوات أو خدمات...",
+    allTypes: "كل الأنواع",
+    telegramUser: "يوزر تليجرام",
+    instagramUser: "يوزر انستاغرام",
+    twitterUser: "يوزر تويتر",
+    serviceFollowers: "خدمة متابعين",
+    serviceSubscribers: "خدمة مشتركين",
+    noChannelsFound: "لم يتم العثور على قنوات أو عروض",
+    tryFilters: "حاول تعديل الفلاتر أو نص البحث",
+    sortByPrice: "ترتيب: السعر من الأقل للأعلى",
+    loadMore: "تحميل المزيد من العروض",
+  },
+};
 
 export default function Marketplace() {
+  const { t, language } = useLanguage();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedType, setSelectedType] = useState<string>("");
   const [filters, setFilters] = useState<{
-    minSubscribers?: number;
+    minFollowers?: number;
     maxPrice?: string;
     verifiedOnly?: boolean;
   }>({});
 
-  // Fetch marketplace stats
+  // اختيار النص حسب اللغة
+  const texts = textMap[language] || textMap.en;
+
+  // بدائل أنواع البيع حسب طلبك
+  const listingTypes = [
+    { id: "telegramUser", label: texts.telegramUser },
+    { id: "instagramUser", label: texts.instagramUser },
+    { id: "twitterUser", label: texts.twitterUser },
+    { id: "serviceFollowers", label: texts.serviceFollowers },
+    { id: "serviceSubscribers", label: texts.serviceSubscribers },
+  ];
+
+  // جلب الإحصائيات من API
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['/api/stats'],
+    queryKey: ["/api/stats"],
   });
 
-  // Fetch channels with filters
-  const { data: channels = [], isLoading: channelsLoading } = useQuery({
-    queryKey: ['/api/channels', selectedCategory, searchQuery, filters],
+  // جلب القنوات / العروض من API مع الفلاتر
+  const { data: listings = [], isLoading: listingsLoading } = useQuery({
+    queryKey: ["/api/listings", selectedType, searchQuery, filters],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (selectedCategory) params.append('category', selectedCategory);
-      if (searchQuery) params.append('search', searchQuery);
-      if (filters.minSubscribers) params.append('minSubscribers', filters.minSubscribers.toString());
-      if (filters.maxPrice) params.append('maxPrice', filters.maxPrice);
-      
-      const response = await fetch(`/api/channels?${params.toString()}`);
-      if (!response.ok) throw new Error('Failed to fetch channels');
+      if (selectedType) params.append("type", selectedType);
+      if (searchQuery) params.append("search", searchQuery);
+      if (filters.minFollowers) params.append("minFollowers", filters.minFollowers.toString());
+      if (filters.maxPrice) params.append("maxPrice", filters.maxPrice);
+      if (filters.verifiedOnly) params.append("verifiedOnly", "true");
+
+      const response = await fetch(`/api/listings?${params.toString()}`);
+      if (!response.ok) throw new Error("Failed to fetch listings");
       return response.json();
     },
   });
 
-  const handleViewDetails = (channel: Channel) => {
-    console.log('View details for channel:', channel.id);
-    // TODO: Implement channel details modal or navigation
-  };
-
-  const handleBuyNow = (channel: Channel) => {
-    console.log('Buy channel:', channel.id);
-    // TODO: Implement escrow creation flow
-  };
-
   const toggleFilter = (key: string, value: any) => {
-    setFilters(prev => ({
+    setFilters((prev) => ({
       ...prev,
-      [key]: prev[key as keyof typeof prev] === value ? undefined : value
+      [key]: prev[key as keyof typeof prev] === value ? undefined : value,
     }));
   };
 
@@ -75,13 +109,17 @@ export default function Marketplace() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-telegram-500 rounded-full flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                <svg
+                  className="w-5 h-5 text-white"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
                 </svg>
               </div>
               <div>
-                <h1 className="text-lg font-semibold text-gray-900">Channel Marketplace</h1>
-                <p className="text-xs text-gray-500">Buy & Sell Telegram Channels</p>
+                <h1 className="text-lg font-semibold text-gray-900">{texts.title}</h1>
+                <p className="text-xs text-gray-500">{texts.subtitle}</p>
               </div>
             </div>
             <WalletConnect />
@@ -89,42 +127,41 @@ export default function Marketplace() {
         </div>
       </header>
 
-      {/* Search and Filters */}
+      {/* Search and Type Filters */}
       <div className="bg-white px-4 py-4 border-b border-gray-100">
         <div className="space-y-4">
           {/* Search Bar */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input
+            <input
               type="text"
-              placeholder="Search channels by name, niche, or username..."
+              placeholder={texts.searchPlaceholder}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-gray-50 border-gray-200 focus:ring-telegram-500 focus:border-telegram-500"
+              className="pl-10 bg-gray-50 border border-gray-200 focus:ring-telegram-500 focus:border-telegram-500 w-full rounded-md py-2"
             />
           </div>
 
-          {/* Category Filters */}
+          {/* Listing Type Filters */}
           <div className="flex overflow-x-auto pb-2 space-x-2 scrollbar-hide">
             <Button
-              variant={selectedCategory === "" ? "default" : "outline"}
+              variant={selectedType === "" ? "default" : "outline"}
               size="sm"
-              onClick={() => setSelectedCategory("")}
-              className={selectedCategory === "" ? "bg-telegram-500 hover:bg-telegram-600" : ""}
+              onClick={() => setSelectedType("")}
+              className={selectedType === "" ? "bg-telegram-500 hover:bg-telegram-600" : ""}
             >
-              All Categories
+              {texts.allTypes}
             </Button>
-            {categories.map((category) => (
+            {listingTypes.map((type) => (
               <Button
-                key={category.id}
-                variant={selectedCategory === category.id ? "default" : "outline"}
+                key={type.id}
+                variant={selectedType === type.id ? "default" : "outline"}
                 size="sm"
-                onClick={() => setSelectedCategory(category.id)}
+                onClick={() => setSelectedType(type.id)}
                 className={`whitespace-nowrap ${
-                  selectedCategory === category.id ? "bg-telegram-500 hover:bg-telegram-600" : ""
+                  selectedType === type.id ? "bg-telegram-500 hover:bg-telegram-600" : ""
                 }`}
               >
-                {category.icon} {category.name}
+                {type.label}
               </Button>
             ))}
           </div>
@@ -132,18 +169,18 @@ export default function Marketplace() {
           {/* Filter Pills */}
           <div className="flex flex-wrap gap-2">
             <Button
-              variant={filters.minSubscribers === 10000 ? "default" : "outline"}
+              variant={filters.minFollowers === 10000 ? "default" : "outline"}
               size="sm"
-              onClick={() => toggleFilter('minSubscribers', 10000)}
-              className={filters.minSubscribers === 10000 ? "bg-blue-500 hover:bg-blue-600" : ""}
+              onClick={() => toggleFilter("minFollowers", 10000)}
+              className={filters.minFollowers === 10000 ? "bg-blue-500 hover:bg-blue-600" : ""}
             >
               <Users className="w-3 h-3 mr-1" />
-              10K+ Subscribers
+              10K+ Followers
             </Button>
             <Button
               variant={filters.verifiedOnly ? "default" : "outline"}
               size="sm"
-              onClick={() => toggleFilter('verifiedOnly', true)}
+              onClick={() => toggleFilter("verifiedOnly", true)}
               className={filters.verifiedOnly ? "bg-green-500 hover:bg-green-600" : ""}
             >
               <Shield className="w-3 h-3 mr-1" />
@@ -164,45 +201,47 @@ export default function Marketplace() {
                 (stats as any)?.activeListings || 0
               )}
             </div>
-            <div className="text-sm opacity-90">Active Listings</div>
+            <div className="text-sm opacity-90">{texts.activeListings}</div>
           </div>
           <div>
             <div className="text-2xl font-bold">
               {statsLoading ? (
                 <Skeleton className="h-6 w-20 bg-white/20 mx-auto" />
               ) : (
-                `${(stats as any)?.totalVolume || '0'} TON`
+                `${(stats as any)?.totalVolume || "0"} TON`
               )}
             </div>
-            <div className="text-sm opacity-90">Total Volume</div>
+            <div className="text-sm opacity-90">{texts.totalVolume}</div>
           </div>
           <div>
             <div className="text-2xl font-bold">
               {statsLoading ? (
                 <Skeleton className="h-6 w-12 bg-white/20 mx-auto" />
               ) : (
-                (stats as any)?.totalSales || 0
+                (stats as any)?.activeEscrows || 0
               )}
             </div>
-            <div className="text-sm opacity-90">Total Sales</div>
+            <div className="text-sm opacity-90">{texts.sold}</div>
           </div>
         </div>
       </div>
 
-      {/* Channel Listings */}
+      {/* Listings Grid */}
       <div className="px-4 py-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">
-            {selectedCategory ? `${categories.find(c => c.id === selectedCategory)?.name} Channels` : 'Featured Channels'}
+            {selectedType
+              ? listingTypes.find((c) => c.id === selectedType)?.label
+              : texts.allTypes}
           </h2>
           <Button variant="outline" size="sm">
             <Filter className="w-4 h-4 mr-1" />
-            Sort: Price Low to High
+            {texts.sortByPrice}
           </Button>
         </div>
 
         {/* Loading State */}
-        {channelsLoading && (
+        {listingsLoading && (
           <div className="space-y-4">
             {[...Array(3)].map((_, i) => (
               <Card key={i}>
@@ -221,38 +260,36 @@ export default function Marketplace() {
           </div>
         )}
 
-        {/* Channel Grid */}
-        {!channelsLoading && (
+        {/* Listings */}
+        {!listingsLoading && (
           <div className="space-y-4">
-            {channels.length === 0 ? (
+            {listings.length === 0 ? (
               <Card>
                 <CardContent className="p-8 text-center">
                   <div className="text-gray-400 text-lg mb-2">📭</div>
-                  <h3 className="font-medium text-gray-900 mb-1">No channels found</h3>
-                  <p className="text-sm text-gray-500">
-                    Try adjusting your filters or search query
-                  </p>
+                  <h3 className="font-medium text-gray-900 mb-1">{texts.noChannelsFound}</h3>
+                  <p className="text-sm text-gray-500">{texts.tryFilters}</p>
                 </CardContent>
               </Card>
             ) : (
-              channels.map((channel) => (
+              listings.map((listing: Channel) => (
                 <ChannelCard
-                  key={channel.id}
-                  channel={channel}
-                  onViewDetails={handleViewDetails}
-                  onBuyNow={handleBuyNow}
+                  key={listing.id}
+                  channel={listing}
+                  onViewDetails={() => console.log("View details for", listing.id)}
+                  onBuyNow={() => console.log("Buy listing", listing.id)}
                 />
               ))
             )}
           </div>
         )}
 
-        {/* Load More */}
-        {!channelsLoading && channels.length > 0 && (
+        {/* Load More Button */}
+        {!listingsLoading && listings.length > 0 && (
           <div className="text-center mt-6">
             <Button variant="outline" className="px-6">
               <TrendingUp className="w-4 h-4 mr-2" />
-              Load More Channels
+              {texts.loadMore}
             </Button>
           </div>
         )}
