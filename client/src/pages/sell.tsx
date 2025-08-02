@@ -139,7 +139,7 @@ export default function SellPage() {
       return;
     }
 
-    if (listingType === "channel" && giftCounts.some(g => !g.giftType || g.count <= 0)) {
+    if (listingType === "channel" && giftCounts.some((g) => !g.giftType || g.count <= 0)) {
       toast({
         title: t("error"),
         description: t("invalidGifts") || "Please specify valid gift types and counts.",
@@ -451,11 +451,14 @@ export default function SellPage() {
 
                 <Button
                   type="submit"
-                  className={`w-full flex justify-center items-center ${
-                    !form.formState.isValid || isSubmitting
-                      ? "bg-telegram-400 cursor-not-allowed"
-                      : "bg-telegram-600 hover:bg-telegram-700"
-                  }`}
+                  className={`w-full flex justify-center items-center rounded-md border-2 border-telegram-600
+                    ${
+                      !form.formState.isValid || isSubmitting
+                        ? "bg-telegram-400 cursor-not-allowed border-telegram-400"
+                        : "bg-telegram-600 hover:bg-telegram-700"
+                    }
+                    px-4 py-2 shadow-md
+                  `}
                   disabled={!form.formState.isValid || isSubmitting}
                 >
                   {isSubmitting ? (
