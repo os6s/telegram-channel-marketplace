@@ -36,59 +36,167 @@ const listingSchema = z.object({
         return val && val.trim().length > 0;
       }
       return true;
-    }, "يجب إدخال اسم المستخدم."),
-  giftType: z.string().optional(),
-  giftCount: z.string().optional(),
-  extraGifts: z.array(
-    z.object({
-      giftType: z.string(),
-      giftCount: z.string(),
-    })
-  ).optional(),
+    }, "Username is required for channel and username listings."),
+  giftType: z
+    .string()
+    .optional()
+    .refine((val, ctx) => {
+      if (ctx.parent.type === "channel") {
+        return val && val.trim().length > 0;
+      }
+      return true;
+    }, "Gift type is required for channel listings."),
   price: z
     .string()
-    .min(1, "يجب إدخال السعر.")
-    .refine((val) => !isNaN(Number(val)) && Number(val) > 0, "السعر يجب أن يكون رقمًا موجبًا."),
+    .min(1, "Price is required.")
+    .refine(
+      (val) => !isNaN(Number(val)) && Number(val) > 0,
+      "Price must be a positive number."
+    ),
   description: z.string().optional(),
   serviceTitle: z
     .string()
     .optional()
     .refine((val, ctx) => {
-      if (ctx.parent.type === "service") return val && val.trim().length > 0;
+      if (ctx.parent.type === "service") {
+        return val && val.trim().length > 0;
+      }
       return true;
-    }, "اختر نوع الخدمة."),
-  serviceQuantity: z
+    }, "Service title is required for service listings."),
+  followersCount: z
     .string()
     .optional()
     .refine((val, ctx) => {
-      if (ctx.parent.type === "service") return val && !isNaN(Number(val));
+      if (ctx.parent.serviceTitle === "followers") {
+        return val && val.trim().length > 0 && !isNaN(Number(val)) && Number(val) > 0;
+      }
       return true;
-    }, "أدخل عدد صحيح."),
+    }, "Followers count is required and must be positive."),
+  subscribersCount: z
+    .string()
+    .optional()
+    .refine((val, ctx) => {
+      if (ctx.parent.serviceTitle === "subscribers") {
+        return val && val.trim().length > 0 && !isNaN(Number(val)) && Number(val) > 0;
+      }
+      return true;
+    }, "Subscribers count is required and must be positive."),
 });
 
 type ListingForm = z.infer<typeof listingSchema>;
 
+const translations = {
+  en: {
+    chooseSellType: "Choose service type",
+    sellUsername: "Sell Username",
+    sellChannel: "Sell Channel",
+    sellService: "Sell Service",
+    back: "← Back",
+    publishListing: "Publish Listing",
+    selectPlatform: "Select platform",
+    platformLabel: "Platform",
+    usernameLabel: "Username",
+    channelUsernameLabel: "Channel Username",
+    giftTypeLabel: "Gift Type",
+    serviceTypeLabel: "Service Type",
+    priceLabel: "Price (TON)",
+    descriptionLabel: "Description (Optional)",
+    chooseGiftType: "Select gift type",
+    followers: "Followers",
+    subscribers: "Subscribers",
+    followersCountLabel: "Number of Followers",
+    subscribersCountLabel: "Number of Subscribers",
+    giftCountLabel: "Number of gifts",
+    addGift: "Add Gift",
+    giftNameStatue: "🗽 Statue of Liberty",
+    giftNameFlame: "🔥 Liberty Torch",
+  },
+  ar: {
+    chooseSellType: "اختر نوع الخدمة",
+    sellUsername: "بيع يوزر",
+    sellChannel: "بيع قناة",
+    sellService: "بيع خدمة",
+    back: "← رجوع",
+    publishListing: "نشر العرض للبيع",
+    selectPlatform: "اختر التطبيق",
+    platformLabel: "نوع التطبيق",
+    usernameLabel: "اليوزر",
+    channelUsernameLabel: "اسم المستخدم للقناة",
+    giftTypeLabel: "نوع الهدية",
+    serviceTypeLabel: "نوع الخدمة",
+    priceLabel: "السعر (TON)",
+    descriptionLabel: "الوصف (اختياري)",
+    chooseGiftType: "اختر نوع الهدية",
+    followers: "متابعين",
+    subscribers: "مشتركين",
+    followersCountLabel: "عدد المتابعين",
+    subscribersCountLabel: "عدد المشتركين",
+    giftCountLabel: "عدد الهدايا",
+    addGift: "إضافة هدية",
+    giftNameStatue: "🗽 تمثال الحرية",
+    giftNameFlame: "🔥 شعلة الحرية",
+  },
+};
+
 export default function SellPage() {
   const { toast } = useToast();
-  const [listingType, setListingType] = useState<"username" | "channel" | "service" | null>(null);
-  const [extraGifts, setExtraGifts] = useState<Array<{ giftType: string; giftCount: string }>>([]);
+  const [listingType, setListingType] = useState<
+    "username" | "channel" | "service" | null
+  >(null);
+
+  const [giftCounts, setGiftCounts] = useState<
+    { giftType: string; count: number }[]
+  >([]);
+
+  const userLang = telegramWebApp?.initDataUnsafe?.user?.language_code || "en";
+  const t = translations[userLang] || translations.en;
 
   const form = useForm<ListingForm>({
     resolver: zodResolver(listingSchema),
     defaultValues: {
       price: "",
       description: "",
+      followersCount: "",
+      subscribersCount: "",
     },
     mode: "onChange",
+    criteriaMode: "all",
   });
 
-  const watchServiceTitle = form.watch("serviceTitle");
+  const handleAddGiftCount = () => {
+    setGiftCounts((prev) => [...prev, { giftType: "", count: 0 }]);
+  };
+
+  const handleGiftTypeChange = (index: number, value: string) => {
+    const updated = [...giftCounts];
+    updated[index].giftType = value;
+    setGiftCounts(updated);
+  };
+
+  const handleGiftCountChange = (index: number, value: number) => {
+    const updated = [...giftCounts];
+    updated[index].count = value;
+    setGiftCounts(updated);
+  };
 
   const onSubmit = async (data: ListingForm) => {
     if (!telegramWebApp.user) {
       toast({
-        title: "غير مسجل الدخول",
-        description: "يرجى فتح التطبيق من خلال Telegram.",
+        title: userLang === "ar" ? "خطأ" : "Error",
+        description:
+          userLang === "ar" ? "افتح التطبيق من تيليجرام." : "Open this app from Telegram.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (listingType === "channel" && giftCounts.some(g => !g.giftType || g.count <= 0)) {
+      toast({
+        title: userLang === "ar" ? "خطأ" : "Error",
+        description:
+          userLang === "ar"
+            ? "حدد نوع الهدية وعدد صحيح لكل هدية."
+            : "Please specify valid gift types and counts.",
         variant: "destructive",
       });
       return;
@@ -96,40 +204,37 @@ export default function SellPage() {
 
     const result = await apiRequest("POST", "/api/sell", {
       ...data,
-      extraGifts,
       telegramId: telegramWebApp.user.id,
+      giftCounts: listingType === "channel" ? giftCounts : undefined,
     });
 
     if (result.ok) {
-      toast({ title: "تم النشر", description: "تم عرض العرض للبيع." });
+      toast({
+        title: userLang === "ar" ? "تم نشر العرض" : "Listing Submitted",
+        description:
+          userLang === "ar" ? "العرض متوفر الآن للبيع!" : "Your item is now live for sale!",
+      });
       form.reset();
-      setExtraGifts([]);
       setListingType(null);
+      setGiftCounts([]);
     } else {
-      toast({ title: "حدث خطأ", description: "حاول مجددًا.", variant: "destructive" });
+      toast({
+        title: userLang === "ar" ? "خطأ" : "Error",
+        description:
+          userLang === "ar" ? "حدث خطأ. حاول مرة أخرى." : "Something went wrong. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
   const handleBack = () => {
-    setListingType(null);
-    form.reset();
-    setExtraGifts([]);
-  };
-
-  const addGiftField = () => {
-    setExtraGifts([...extraGifts, { giftType: "", giftCount: "" }]);
-  };
-
-  const updateGift = (index: number, field: "giftType" | "giftCount", value: string) => {
-    const updated = [...extraGifts];
-    updated[index][field] = value;
-    setExtraGifts(updated);
-  };
-
-  const removeGift = (index: number) => {
-    const updated = [...extraGifts];
-    updated.splice(index, 1);
-    setExtraGifts(updated);
+    if (listingType) {
+      setListingType(null);
+      form.reset();
+      setGiftCounts([]);
+    } else {
+      window.history.back();
+    }
   };
 
   return (
@@ -137,17 +242,17 @@ export default function SellPage() {
       {!listingType ? (
         <Card>
           <CardHeader>
-            <CardTitle>شنو تريد تبيع؟</CardTitle>
+            <CardTitle>{t.chooseSellType}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Button className="w-full" onClick={() => setListingType("username")}>
-              يوزر (Telegram / Instagram / Twitter ...)
+              {t.sellUsername}
             </Button>
             <Button className="w-full" onClick={() => setListingType("channel")}>
-              قناة تيليجرام
+              {t.sellChannel}
             </Button>
             <Button className="w-full" onClick={() => setListingType("service")}>
-              خدمة (متابعين، مشتركين)
+              {t.sellService}
             </Button>
           </CardContent>
         </Card>
@@ -158,19 +263,26 @@ export default function SellPage() {
               <CardHeader>
                 <CardTitle>
                   {listingType === "username"
-                    ? "بيع يوزر"
+                    ? t.sellUsername
                     : listingType === "channel"
-                    ? "بيع قناة"
-                    : "بيع خدمة"}
+                    ? t.sellChannel
+                    : t.sellService}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Button type="button" variant="ghost" size="sm" onClick={handleBack}>
-                  ← رجوع
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mb-4"
+                  onClick={handleBack}
+                >
+                  {t.back}
                 </Button>
 
                 <input type="hidden" value={listingType} {...form.register("type")} />
 
+                {/* Platform + Username */}
                 {listingType === "username" && (
                   <>
                     <FormField
@@ -178,14 +290,14 @@ export default function SellPage() {
                       name="platform"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>نوع التطبيق</FormLabel>
+                          <FormLabel>{t.platformLabel}</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="اختر التطبيق" />
+                                <SelectValue placeholder={t.selectPlatform} />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent className="bg-zinc-900 text-white">
+                            <SelectContent>
                               <SelectItem value="telegram">Telegram</SelectItem>
                               <SelectItem value="instagram">Instagram</SelectItem>
                               <SelectItem value="twitter">Twitter</SelectItem>
@@ -197,12 +309,13 @@ export default function SellPage() {
                         </FormItem>
                       )}
                     />
+
                     <FormField
                       control={form.control}
                       name="username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>اليوزر</FormLabel>
+                          <FormLabel>{t.usernameLabel}</FormLabel>
                           <FormControl>
                             <Input placeholder="@example" {...field} />
                           </FormControl>
@@ -213,6 +326,7 @@ export default function SellPage() {
                   </>
                 )}
 
+                {/* Channel Username + Gift Types + Gift Counts */}
                 {listingType === "channel" && (
                   <>
                     <FormField
@@ -220,7 +334,7 @@ export default function SellPage() {
                       name="username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>اسم المستخدم للقناة</FormLabel>
+                          <FormLabel>{t.channelUsernameLabel}</FormLabel>
                           <FormControl>
                             <Input placeholder="@channel_name" {...field} />
                           </FormControl>
@@ -228,72 +342,41 @@ export default function SellPage() {
                         </FormItem>
                       )}
                     />
-                    <FormField
-                      control={form.control}
-                      name="giftType"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>نوع الهدية</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="اختر نوع الهدية" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent className="bg-zinc-900 text-white">
-                              <SelectItem value="statue">🗽 تمثال الحرية</SelectItem>
-                              <SelectItem value="flame">🔥 شعلة الحرية</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="giftCount"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>عدد الهدايا</FormLabel>
-                          <FormControl>
-                            <Input placeholder="مثلاً: 3" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
 
-                    {extraGifts.map((gift, i) => (
-                      <div key={i} className="flex gap-2">
+                    {giftCounts.map((gift, idx) => (
+                      <div key={idx} className="flex space-x-2 items-center">
                         <Select
-                          onValueChange={(val) => updateGift(i, "giftType", val)}
                           value={gift.giftType}
+                          onValueChange={(val) => handleGiftTypeChange(idx, val)}
+                          className="flex-1 bg-black text-white"
                         >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="نوع الهدية الإضافية" />
+                          <SelectTrigger>
+                            <SelectValue placeholder={t.chooseGiftType} />
                           </SelectTrigger>
-                          <SelectContent className="bg-zinc-900 text-white">
-                            <SelectItem value="statue">🗽 تمثال الحرية</SelectItem>
-                            <SelectItem value="flame">🔥 شعلة الحرية</SelectItem>
+                          <SelectContent>
+                            <SelectItem value="statue">{t.giftNameStatue}</SelectItem>
+                            <SelectItem value="flame">{t.giftNameFlame}</SelectItem>
                           </SelectContent>
                         </Select>
+
                         <Input
-                          className="w-1/3"
-                          placeholder="العدد"
-                          value={gift.giftCount}
-                          onChange={(e) => updateGift(i, "giftCount", e.target.value)}
+                          type="number"
+                          min={0}
+                          placeholder={t.giftCountLabel}
+                          value={gift.count || ""}
+                          onChange={(e) => handleGiftCountChange(idx, Number(e.target.value))}
+                          className="w-24"
                         />
-                        <Button type="button" variant="destructive" onClick={() => removeGift(i)}>
-                          حذف
-                        </Button>
                       </div>
                     ))}
-                    <Button type="button" variant="outline" onClick={addGiftField}>
-                      إضافة هدية إضافية
+
+                    <Button variant="outline" size="sm" onClick={handleAddGiftCount}>
+                      {t.addGift}
                     </Button>
                   </>
                 )}
 
+                {/* Service Title + Counts */}
                 {listingType === "service" && (
                   <>
                     <FormField
@@ -301,48 +384,56 @@ export default function SellPage() {
                       name="serviceTitle"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>نوع الخدمة</FormLabel>
+                          <FormLabel>{t.serviceTypeLabel}</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="اختر نوع الخدمة" />
+                                <SelectValue placeholder={t.serviceTypeLabel} />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent className="bg-zinc-900 text-white">
-                              <SelectItem value="instagram_followers">متابعين انستاغرام</SelectItem>
-                              <SelectItem value="twitter_followers">متابعين تويتر</SelectItem>
-                              <SelectItem value="telegram_subscribers">مشتركين تيليجرام</SelectItem>
+                            <SelectContent>
+                              <SelectItem value="followers">{t.followers}</SelectItem>
+                              <SelectItem value="subscribers">{t.subscribers}</SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                    {(watchServiceTitle === "instagram_followers" ||
-                      watchServiceTitle === "twitter_followers") && (
+                    {form.watch("serviceTitle") === "followers" && (
                       <FormField
                         control={form.control}
-                        name="serviceQuantity"
+                        name="followersCount"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>عدد المتابعين</FormLabel>
+                            <FormLabel>{t.followersCountLabel}</FormLabel>
                             <FormControl>
-                              <Input placeholder="مثلاً: 1000" {...field} />
+                              <Input
+                                type="number"
+                                min={1}
+                                placeholder={t.followersCountLabel}
+                                {...field}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                     )}
-                    {watchServiceTitle === "telegram_subscribers" && (
+                    {form.watch("serviceTitle") === "subscribers" && (
                       <FormField
                         control={form.control}
-                        name="serviceQuantity"
+                        name="subscribersCount"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>عدد المشتركين</FormLabel>
+                            <FormLabel>{t.subscribersCountLabel}</FormLabel>
                             <FormControl>
-                              <Input placeholder="مثلاً: 500" {...field} />
+                              <Input
+                                type="number"
+                                min={1}
+                                placeholder={t.subscribersCountLabel}
+                                {...field}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -352,12 +443,13 @@ export default function SellPage() {
                   </>
                 )}
 
+                {/* Common Fields */}
                 <FormField
                   control={form.control}
                   name="price"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>السعر (TON)</FormLabel>
+                      <FormLabel>{t.priceLabel}</FormLabel>
                       <FormControl>
                         <Input placeholder="100" {...field} />
                       </FormControl>
@@ -371,9 +463,9 @@ export default function SellPage() {
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>الوصف (اختياري)</FormLabel>
+                      <FormLabel>{t.descriptionLabel}</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="تفاصيل إضافية عن العرض..." {...field} />
+                        <Textarea placeholder="Additional details..." {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -382,14 +474,14 @@ export default function SellPage() {
 
                 <Button
                   type="submit"
-                  className={`w-full text-white ${
+                  className={`w-full ${
                     form.formState.isValid
-                      ? "bg-blue-600 hover:bg-blue-700"
-                      : "bg-blue-300 cursor-not-allowed"
+                      ? "bg-telegram-600 hover:bg-telegram-700"
+                      : "bg-telegram-400 cursor-not-allowed"
                   }`}
                   disabled={!form.formState.isValid}
                 >
-                  نشر العرض للبيع
+                  {t.publishListing}
                 </Button>
               </CardContent>
             </Card>
