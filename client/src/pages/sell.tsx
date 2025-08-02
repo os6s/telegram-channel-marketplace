@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useState, useEffect } from "react";
+import { useForm, useFieldArray } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
@@ -38,15 +38,6 @@ const listingSchema = z.object({
       }
       return true;
     }, "Username is required for channel and username listings."),
-  giftType: z
-    .string()
-    .optional()
-    .refine((val, ctx) => {
-      if (ctx.parent.type === "channel") {
-        return val && val.trim().length > 0;
-      }
-      return true;
-    }, "Gift type is required for channel listings."),
   price: z
     .string()
     .min(1, "Price is required.")
@@ -82,6 +73,12 @@ const listingSchema = z.object({
       }
       return true;
     }, "Subscribers count is required and must be positive."),
+  giftCounts: z.array(
+    z.object({
+      giftType: z.string().min(1, "Gift type is required"),
+      count: z.number().min(1, "Count must be at least 1"),
+    })
+  ).optional(),
 });
 
 type ListingForm = z.infer<typeof listingSchema>;
@@ -90,46 +87,49 @@ export default function SellPage() {
   const { toast } = useToast();
   const { t } = useLanguage();
 
-  const [listingType, setListingType] = useState<
-    "username" | "channel" | "service" | null
-  >(null);
-
-  const [giftCounts, setGiftCounts] = useState<
-    { giftType: string; count: number }[]
-  >([]);
-
+  const [listingType, setListingType] = useState<"username" | "channel" | "service" | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<ListingForm>({
     resolver: zodResolver(listingSchema),
     defaultValues: {
+      type: undefined,
       price: "",
       description: "",
       followersCount: "",
       subscribersCount: "",
       platform: "",
+      giftCounts: [],
     },
     mode: "onChange",
-    criteriaMode: "all",
   });
 
-  const handleAddGiftCount = () => {
-    setGiftCounts((prev) => [...prev, { giftType: "", count: 0 }]);
-  };
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: "giftCounts",
+  });
 
-  const handleGiftTypeChange = (index: number, value: string) => {
-    const updated = [...giftCounts];
-    updated[index].giftType = value;
-    setGiftCounts(updated);
-  };
+  // Update form type when listingType changes
+  useEffect(() => {
+    if (listingType) {
+      form.setValue("type", listingType, { shouldValidate: true, shouldDirty: true });
+    }
+  }, [listingType, form]);
 
-  const handleGiftCountChange = (index: number, value: number) => {
-    const updated = [...giftCounts];
-    updated[index].count = value;
-    setGiftCounts(updated);
-  };
+  // Debugging
+  useEffect(() => {
+    const subscription = form.watch((value) => {
+      console.log("Form values:", value);
+      console.log("Form errors:", form.formState.errors);
+      console.log("Is valid:", form.formState.isValid);
+    });
+    return () => subscription.unsubscribe();
+  }, [form]);
 
   const onSubmit = async (data: ListingForm) => {
+    const isValid = await form.trigger();
+    if (!isValid) return;
+
     if (!telegramWebApp.user) {
       toast({
         title: t("error"),
@@ -139,39 +139,32 @@ export default function SellPage() {
       return;
     }
 
-    if (listingType === "channel" && giftCounts.some((g) => !g.giftType || g.count <= 0)) {
-      toast({
-        title: t("error"),
-        description: t("invalidGifts") || "Please specify valid gift types and counts.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsSubmitting(true);
 
-    const result = await apiRequest("POST", "/api/sell", {
-      ...data,
-      telegramId: telegramWebApp.user.id,
-      giftCounts: listingType === "channel" ? giftCounts : undefined,
-    });
-
-    setIsSubmitting(false);
-
-    if (result.ok) {
-      toast({
-        title: t("success"),
-        description: t("listingSubmitted") || "Your item is now live for sale!",
+    try {
+      const result = await apiRequest("POST", "/api/sell", {
+        ...data,
+        telegramId: telegramWebApp.user.id,
       });
-      form.reset();
-      setListingType(null);
-      setGiftCounts([]);
-    } else {
+
+      if (result.ok) {
+        toast({
+          title: t("success"),
+          description: t("listingSubmitted") || "Your item is now live for sale!",
+        });
+        form.reset();
+        setListingType(null);
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error: any) {
       toast({
         title: t("error"),
-        description: t("somethingWentWrong") || "Something went wrong. Please try again.",
+        description: error?.message || t("somethingWentWrong"),
         variant: "destructive",
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -179,13 +172,13 @@ export default function SellPage() {
     if (listingType) {
       setListingType(null);
       form.reset();
-      setGiftCounts([]);
     } else {
       window.history.back();
     }
   };
 
   const selectedPlatform = form.watch("platform");
+  const selectedServiceTitle = form.watch("serviceTitle");
 
   return (
     <div className="min-h-screen bg-background text-foreground p-4">
@@ -230,7 +223,17 @@ export default function SellPage() {
                   {t("back")}
                 </Button>
 
-                <input type="hidden" value={listingType} {...form.register("type")} />
+                {/* عرض الأخطاء */}
+                {Object.keys(form.formState.errors).length > 0 && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md">
+                    <h3 className="font-bold mb-2">يوجد أخطاء في النموذج:</h3>
+                    <ul className="list-disc pl-5 space-y-1">
+                      {Object.entries(form.formState.errors).map(([key, error]) => (
+                        <li key={key}>{error?.message ?? "خطأ غير معروف"}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {/* Platform + Username */}
                 {listingType === "username" && (
@@ -241,7 +244,10 @@ export default function SellPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{t("platformLabel")}</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value || ""}
+                          >
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
                                 <SelectValue placeholder={t("selectPlatform")} />
@@ -276,7 +282,7 @@ export default function SellPage() {
                   </>
                 )}
 
-                {/* Channel Username + Gift Types + Gift Counts */}
+                {/* Channel Username + Gift Types */}
                 {listingType === "channel" && (
                   <>
                     <FormField
@@ -293,34 +299,62 @@ export default function SellPage() {
                       )}
                     />
 
-                    {giftCounts.map((gift, idx) => (
-                      <div key={idx} className="flex space-x-2 items-center">
-                        <Select
-                          value={gift.giftType}
-                          onValueChange={(val) => handleGiftTypeChange(idx, val)}
-                          className="flex-1 bg-purple-700 text-white"
-                        >
-                          <SelectTrigger className="bg-purple-700 text-white">
-                            <SelectValue placeholder={t("chooseGiftType")} />
-                          </SelectTrigger>
-                          <SelectContent className="bg-purple-700 text-white">
-                            <SelectItem value="statue">{t("giftNameStatue")}</SelectItem>
-                            <SelectItem value="flame">{t("giftNameFlame")}</SelectItem>
-                          </SelectContent>
-                        </Select>
-
-                        <Input
-                          type="number"
-                          min={0}
-                          placeholder={t("giftCountLabel")}
-                          value={gift.count || ""}
-                          onChange={(e) => handleGiftCountChange(idx, Number(e.target.value))}
-                          className="w-24"
+                    {fields.map((field, index) => (
+                      <div key={field.id} className="flex space-x-2 items-center">
+                        <FormField
+                          control={form.control}
+                          name={`giftCounts.${index}.giftType`}
+                          render={({ field }) => (
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value || ""}
+                            >
+                              <SelectTrigger className="bg-purple-700 text-white flex-1">
+                                <SelectValue placeholder={t("chooseGiftType")} />
+                              </SelectTrigger>
+                              <SelectContent className="bg-purple-700 text-white">
+                                <SelectItem value="statue">{t("giftNameStatue")}</SelectItem>
+                                <SelectItem value="flame">{t("giftNameFlame")}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
                         />
+
+                        <FormField
+                          control={form.control}
+                          name={`giftCounts.${index}.count`}
+                          render={({ field }) => (
+                            <Input
+                              type="number"
+                              min={1}
+                              placeholder={t("giftCountLabel")}
+                              {...field}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                field.onChange(isNaN(val) ? 0 : val);
+                              }}
+                              className="w-24"
+                            />
+                          )}
+                        />
+
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => remove(index)}
+                        >
+                          حذف
+                        </Button>
                       </div>
                     ))}
 
-                    <Button variant="outline" size="sm" onClick={handleAddGiftCount}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => append({ giftType: "", count: 0 })}
+                    >
                       {t("addGift")}
                     </Button>
                   </>
@@ -335,7 +369,10 @@ export default function SellPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{t("platformLabel")}</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value || ""}
+                          >
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
                                 <SelectValue placeholder={t("selectPlatform")} />
@@ -358,7 +395,10 @@ export default function SellPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{t("serviceTypeLabel")}</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value || ""}
+                          >
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
                                 <SelectValue placeholder={t("serviceTypeLabel")} />
@@ -375,7 +415,7 @@ export default function SellPage() {
                     />
 
                     {(selectedPlatform === "instagram" || selectedPlatform === "twitter") &&
-                      form.watch("serviceTitle") === "followers" && (
+                      selectedServiceTitle === "followers" && (
                         <FormField
                           control={form.control}
                           name="followersCount"
@@ -397,7 +437,7 @@ export default function SellPage() {
                       )}
 
                     {selectedPlatform === "telegram" &&
-                      form.watch("serviceTitle") === "subscribers" && (
+                      selectedServiceTitle === "subscribers" && (
                         <FormField
                           control={form.control}
                           name="subscribersCount"
