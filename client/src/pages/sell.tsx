@@ -24,7 +24,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { telegramWebApp } from "@/lib/telegram";
 import { apiRequest } from "@/lib/queryClient";
-import { useLanguage } from "@/contexts/Language-context";
+import { useLanguage } from "@/contexts/language-context";
 
 const listingSchema = z.object({
   type: z.enum(["username", "channel", "service"]),
