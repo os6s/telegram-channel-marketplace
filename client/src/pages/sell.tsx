@@ -24,7 +24,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { telegramWebApp } from "@/lib/telegram";
 import { apiRequest } from "@/lib/queryClient";
-import { useLanguage } from "@/contexts/language-context";
+import { useLanguage } from "@/contexts/Language-context";
 
 const listingSchema = z.object({
   type: z.enum(["username", "channel", "service"]),
@@ -98,6 +98,8 @@ export default function SellPage() {
     { giftType: string; count: number }[]
   >([]);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const form = useForm<ListingForm>({
     resolver: zodResolver(listingSchema),
     defaultValues: {
@@ -146,11 +148,15 @@ export default function SellPage() {
       return;
     }
 
+    setIsSubmitting(true);
+
     const result = await apiRequest("POST", "/api/sell", {
       ...data,
       telegramId: telegramWebApp.user.id,
       giftCounts: listingType === "channel" ? giftCounts : undefined,
     });
+
+    setIsSubmitting(false);
 
     if (result.ok) {
       toast({
@@ -445,14 +451,40 @@ export default function SellPage() {
 
                 <Button
                   type="submit"
-                  className={`w-full ${
-                    form.formState.isValid
-                      ? "bg-telegram-600 hover:bg-telegram-700"
-                      : "bg-telegram-400 cursor-not-allowed"
+                  className={`w-full flex justify-center items-center ${
+                    !form.formState.isValid || isSubmitting
+                      ? "bg-telegram-400 cursor-not-allowed"
+                      : "bg-telegram-600 hover:bg-telegram-700"
                   }`}
-                  disabled={!form.formState.isValid}
+                  disabled={!form.formState.isValid || isSubmitting}
                 >
-                  {t("publishListing")}
+                  {isSubmitting ? (
+                    <>
+                      <svg
+                        className="animate-spin mr-2 h-5 w-5 text-white"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                        ></path>
+                      </svg>
+                      {t("publishing") || "Publishing..."}
+                    </>
+                  ) : (
+                    t("publishListing")
+                  )}
                 </Button>
               </CardContent>
             </Card>
