@@ -60,7 +60,12 @@ const listingSchema = z.object({
     .optional()
     .refine((val, ctx) => {
       if (ctx.parent.serviceTitle === "followers") {
-        return val && val.trim().length > 0 && !isNaN(Number(val)) && Number(val) > 0;
+        return (
+          val &&
+          val.trim().length > 0 &&
+          !isNaN(Number(val)) &&
+          Number(val) > 0
+        );
       }
       return true;
     }, "Followers count is required and must be positive."),
@@ -69,16 +74,23 @@ const listingSchema = z.object({
     .optional()
     .refine((val, ctx) => {
       if (ctx.parent.serviceTitle === "subscribers") {
-        return val && val.trim().length > 0 && !isNaN(Number(val)) && Number(val) > 0;
+        return (
+          val &&
+          val.trim().length > 0 &&
+          !isNaN(Number(val)) &&
+          Number(val) > 0
+        );
       }
       return true;
     }, "Subscribers count is required and must be positive."),
-  giftCounts: z.array(
-    z.object({
-      giftType: z.string().min(1, "Gift type is required"),
-      count: z.number().min(1, "Count must be at least 1"),
-    })
-  ).optional(),
+  giftCounts: z
+    .array(
+      z.object({
+        giftType: z.string().min(1, "Gift type is required"),
+        count: z.number().min(1, "Count must be at least 1"),
+      })
+    )
+    .optional(),
 });
 
 type ListingForm = z.infer<typeof listingSchema>;
@@ -87,7 +99,9 @@ export default function SellPage() {
   const { toast } = useToast();
   const { t } = useLanguage();
 
-  const [listingType, setListingType] = useState<"username" | "channel" | "service" | null>(null);
+  const [listingType, setListingType] = useState<
+    "username" | "channel" | "service" | null
+  >(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<ListingForm>({
@@ -102,6 +116,8 @@ export default function SellPage() {
       giftCounts: [],
     },
     mode: "onChange",
+    reValidateMode: "onChange",
+    criteriaMode: "all",
   });
 
   const { fields, append, remove } = useFieldArray({
@@ -109,10 +125,12 @@ export default function SellPage() {
     name: "giftCounts",
   });
 
-  // Update form type when listingType changes
   useEffect(() => {
     if (listingType) {
-      form.setValue("type", listingType, { shouldValidate: true, shouldDirty: true });
+      form.setValue("type", listingType, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
     }
   }, [listingType, form]);
 
@@ -150,7 +168,8 @@ export default function SellPage() {
       if (result.ok) {
         toast({
           title: t("success"),
-          description: t("listingSubmitted") || "Your item is now live for sale!",
+          description:
+            t("listingSubmitted") || "Your item is now live for sale!",
         });
         form.reset();
         setListingType(null);
@@ -188,13 +207,22 @@ export default function SellPage() {
             <CardTitle>{t("chooseSellType")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Button className="w-full" onClick={() => setListingType("username")}>
+            <Button
+              className="w-full"
+              onClick={() => setListingType("username")}
+            >
               {t("sellUsername")}
             </Button>
-            <Button className="w-full" onClick={() => setListingType("channel")}>
+            <Button
+              className="w-full"
+              onClick={() => setListingType("channel")}
+            >
               {t("sellChannel")}
             </Button>
-            <Button className="w-full" onClick={() => setListingType("service")}>
+            <Button
+              className="w-full"
+              onClick={() => setListingType("service")}
+            >
               {t("sellService")}
             </Button>
           </CardContent>
@@ -223,19 +251,22 @@ export default function SellPage() {
                   {t("back")}
                 </Button>
 
-                {/* عرض الأخطاء */}
                 {Object.keys(form.formState.errors).length > 0 && (
                   <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md">
                     <h3 className="font-bold mb-2">يوجد أخطاء في النموذج:</h3>
                     <ul className="list-disc pl-5 space-y-1">
-                      {Object.entries(form.formState.errors).map(([key, error]) => (
-                        <li key={key}>{error?.message ?? "خطأ غير معروف"}</li>
-                      ))}
+                      {Object.entries(form.formState.errors).map(
+                        ([key, error]) => (
+                          <li key={key}>
+                            {error?.message ?? "خطأ غير معروف"}
+                          </li>
+                        )
+                      )}
                     </ul>
                   </div>
                 )}
 
-                {/* Platform + Username */}
+                {/* Username listing */}
                 {listingType === "username" && (
                   <>
                     <FormField
@@ -250,12 +281,16 @@ export default function SellPage() {
                           >
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
-                                <SelectValue placeholder={t("selectPlatform")} />
+                                <SelectValue
+                                  placeholder={t("selectPlatform")}
+                                />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="bg-purple-700 text-white">
                               <SelectItem value="telegram">Telegram</SelectItem>
-                              <SelectItem value="instagram">Instagram</SelectItem>
+                              <SelectItem value="instagram">
+                                Instagram
+                              </SelectItem>
                               <SelectItem value="twitter">Twitter</SelectItem>
                               <SelectItem value="discord">Discord</SelectItem>
                               <SelectItem value="snapchat">Snapchat</SelectItem>
@@ -265,7 +300,6 @@ export default function SellPage() {
                         </FormItem>
                       )}
                     />
-
                     <FormField
                       control={form.control}
                       name="username"
@@ -282,7 +316,7 @@ export default function SellPage() {
                   </>
                 )}
 
-                {/* Channel Username + Gift Types */}
+                {/* Channel listing */}
                 {listingType === "channel" && (
                   <>
                     <FormField
@@ -300,7 +334,10 @@ export default function SellPage() {
                     />
 
                     {fields.map((field, index) => (
-                      <div key={field.id} className="flex space-x-2 items-center">
+                      <div
+                        key={field.id}
+                        className="flex space-x-2 items-center"
+                      >
                         <FormField
                           control={form.control}
                           name={`giftCounts.${index}.giftType`}
@@ -310,16 +347,21 @@ export default function SellPage() {
                               value={field.value || ""}
                             >
                               <SelectTrigger className="bg-purple-700 text-white flex-1">
-                                <SelectValue placeholder={t("chooseGiftType")} />
+                                <SelectValue
+                                  placeholder={t("chooseGiftType")}
+                                />
                               </SelectTrigger>
                               <SelectContent className="bg-purple-700 text-white">
-                                <SelectItem value="statue">{t("giftNameStatue")}</SelectItem>
-                                <SelectItem value="flame">{t("giftNameFlame")}</SelectItem>
+                                <SelectItem value="statue">
+                                  {t("giftNameStatue")}
+                                </SelectItem>
+                                <SelectItem value="flame">
+                                  {t("giftNameFlame")}
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           )}
                         />
-
                         <FormField
                           control={form.control}
                           name={`giftCounts.${index}.count`}
@@ -337,7 +379,6 @@ export default function SellPage() {
                             />
                           )}
                         />
-
                         <Button
                           type="button"
                           variant="destructive"
@@ -348,7 +389,6 @@ export default function SellPage() {
                         </Button>
                       </div>
                     ))}
-
                     <Button
                       type="button"
                       variant="outline"
@@ -360,7 +400,7 @@ export default function SellPage() {
                   </>
                 )}
 
-                {/* Service Title + Platform + Counts */}
+                {/* Service listing */}
                 {listingType === "service" && (
                   <>
                     <FormField
@@ -375,12 +415,16 @@ export default function SellPage() {
                           >
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
-                                <SelectValue placeholder={t("selectPlatform")} />
+                                <SelectValue
+                                  placeholder={t("selectPlatform")}
+                                />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="bg-purple-700 text-white">
                               <SelectItem value="telegram">Telegram</SelectItem>
-                              <SelectItem value="instagram">Instagram</SelectItem>
+                              <SelectItem value="instagram">
+                                Instagram
+                              </SelectItem>
                               <SelectItem value="twitter">Twitter</SelectItem>
                             </SelectContent>
                           </Select>
@@ -388,7 +432,6 @@ export default function SellPage() {
                         </FormItem>
                       )}
                     />
-
                     <FormField
                       control={form.control}
                       name="serviceTitle"
@@ -401,20 +444,26 @@ export default function SellPage() {
                           >
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
-                                <SelectValue placeholder={t("serviceTypeLabel")} />
+                                <SelectValue
+                                  placeholder={t("serviceTypeLabel")}
+                                />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="bg-purple-700 text-white">
-                              <SelectItem value="followers">{t("followers")}</SelectItem>
-                              <SelectItem value="subscribers">{t("subscribers")}</SelectItem>
+                              <SelectItem value="followers">
+                                {t("followers")}
+                              </SelectItem>
+                              <SelectItem value="subscribers">
+                                {t("subscribers")}
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-
-                    {(selectedPlatform === "instagram" || selectedPlatform === "twitter") &&
+                    {(selectedPlatform === "instagram" ||
+                      selectedPlatform === "twitter") &&
                       selectedServiceTitle === "followers" && (
                         <FormField
                           control={form.control}
@@ -435,7 +484,6 @@ export default function SellPage() {
                           )}
                         />
                       )}
-
                     {selectedPlatform === "telegram" &&
                       selectedServiceTitle === "subscribers" && (
                         <FormField
@@ -443,7 +491,9 @@ export default function SellPage() {
                           name="subscribersCount"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>{t("subscribersCountLabel")}</FormLabel>
+                              <FormLabel>
+                                {t("subscribersCountLabel")}
+                              </FormLabel>
                               <FormControl>
                                 <Input
                                   type="number"
@@ -460,7 +510,7 @@ export default function SellPage() {
                   </>
                 )}
 
-                {/* Common Fields */}
+                {/* Common fields */}
                 <FormField
                   control={form.control}
                   name="price"
@@ -474,7 +524,6 @@ export default function SellPage() {
                     </FormItem>
                   )}
                 />
-
                 <FormField
                   control={form.control}
                   name="description"
@@ -482,13 +531,17 @@ export default function SellPage() {
                     <FormItem>
                       <FormLabel>{t("descriptionLabel")}</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="Additional details..." {...field} />
+                        <Textarea
+                          placeholder="Additional details..."
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
+                {/* Submit button */}
                 <Button
                   type="submit"
                   className={`w-full flex justify-center items-center rounded-md border-2 border-telegram-600
