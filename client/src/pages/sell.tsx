@@ -103,6 +103,7 @@ export default function SellPage() {
     "username" | "channel" | "service" | null
   >(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [canPublish, setCanPublish] = useState(false); // NEW state
 
   const form = useForm<ListingForm>({
     resolver: zodResolver(listingSchema),
@@ -134,12 +135,11 @@ export default function SellPage() {
     }
   }, [listingType, form]);
 
-  // Debugging
+  // Live validity tracking
   useEffect(() => {
-    const subscription = form.watch((value) => {
-      console.log("Form values:", value);
-      console.log("Form errors:", form.formState.errors);
-      console.log("Is valid:", form.formState.isValid);
+    const subscription = form.watch(async () => {
+      const valid = await form.trigger();
+      setCanPublish(valid);
     });
     return () => subscription.unsubscribe();
   }, [form]);
@@ -173,6 +173,7 @@ export default function SellPage() {
         });
         form.reset();
         setListingType(null);
+        setCanPublish(false);
       } else {
         throw new Error(result.error);
       }
@@ -191,6 +192,7 @@ export default function SellPage() {
     if (listingType) {
       setListingType(null);
       form.reset();
+      setCanPublish(false);
     } else {
       window.history.back();
     }
@@ -251,6 +253,7 @@ export default function SellPage() {
                   {t("back")}
                 </Button>
 
+                {/* Error summary */}
                 {Object.keys(form.formState.errors).length > 0 && (
                   <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md">
                     <h3 className="font-bold mb-2">يوجد أخطاء في النموذج:</h3>
@@ -266,7 +269,7 @@ export default function SellPage() {
                   </div>
                 )}
 
-                {/* Username listing */}
+                {/* Type-specific fields */}
                 {listingType === "username" && (
                   <>
                     <FormField
@@ -316,7 +319,6 @@ export default function SellPage() {
                   </>
                 )}
 
-                {/* Channel listing */}
                 {listingType === "channel" && (
                   <>
                     <FormField
@@ -332,7 +334,6 @@ export default function SellPage() {
                         </FormItem>
                       )}
                     />
-
                     {fields.map((field, index) => (
                       <div
                         key={field.id}
@@ -400,7 +401,6 @@ export default function SellPage() {
                   </>
                 )}
 
-                {/* Service listing */}
                 {listingType === "service" && (
                   <>
                     <FormField
@@ -544,15 +544,15 @@ export default function SellPage() {
                 {/* Submit button */}
                 <Button
                   type="submit"
-                  className={`w-full flex justify-center items-center rounded-md border-2 border-telegram-600
+                  className={`w-full flex justify-center items-center rounded-md border-2
                     ${
-                      !form.formState.isValid || isSubmitting
-                        ? "bg-telegram-400 cursor-not-allowed border-telegram-400"
-                        : "bg-telegram-600 hover:bg-telegram-700"
+                      canPublish && !isSubmitting
+                        ? "bg-telegram-600 hover:bg-telegram-700 border-telegram-600"
+                        : "bg-telegram-400 cursor-not-allowed border-telegram-400"
                     }
                     px-4 py-2 shadow-md
                   `}
-                  disabled={!form.formState.isValid || isSubmitting}
+                  disabled={!canPublish || isSubmitting}
                 >
                   {isSubmitting ? (
                     <>
