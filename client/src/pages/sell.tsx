@@ -26,14 +26,25 @@ import { telegramWebApp } from "@/lib/telegram";
 import { apiRequest } from "@/lib/queryClient";
 import { useLanguage } from "@/contexts/language-context";
 
+// Schema validation مُصحح
 const listingSchema = z.object({
   type: z.enum(["username", "channel", "service"]),
-  platform: z.string().optional(),
+  platform: z
+    .string()
+    .optional()
+    .refine((val, ctx) => {
+      const parentData = ctx.parent;
+      if (parentData.type === "service" || parentData.type === "username") {
+        return val && val.trim().length > 0;
+      }
+      return true;
+    }, "Platform is required for service and username listings."),
   username: z
     .string()
     .optional()
     .refine((val, ctx) => {
-      if (ctx.parent.type === "channel" || ctx.parent.type === "username") {
+      const parentData = ctx.parent;
+      if (parentData.type === "channel" || parentData.type === "username") {
         return val && val.trim().length > 0;
       }
       return true;
@@ -50,7 +61,8 @@ const listingSchema = z.object({
     .string()
     .optional()
     .refine((val, ctx) => {
-      if (ctx.parent.type === "service") {
+      const parentData = ctx.parent;
+      if (parentData.type === "service") {
         return val && val.trim().length > 0;
       }
       return true;
@@ -59,7 +71,8 @@ const listingSchema = z.object({
     .string()
     .optional()
     .refine((val, ctx) => {
-      if (ctx.parent.serviceTitle === "followers") {
+      const parentData = ctx.parent;
+      if (parentData.type === "service" && parentData.serviceTitle === "followers") {
         return (
           val &&
           val.trim().length > 0 &&
@@ -73,7 +86,8 @@ const listingSchema = z.object({
     .string()
     .optional()
     .refine((val, ctx) => {
-      if (ctx.parent.serviceTitle === "subscribers") {
+      const parentData = ctx.parent;
+      if (parentData.type === "service" && parentData.serviceTitle === "subscribers") {
         return (
           val &&
           val.trim().length > 0 &&
@@ -99,11 +113,9 @@ export default function SellPage() {
   const { toast } = useToast();
   const { t } = useLanguage();
 
-  const [listingType, setListingType] = useState<
-    "username" | "channel" | "service" | null
-  >(null);
+  const [listingType, setListingType] = useState<"username" | "channel" | "service" | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [canPublish, setCanPublish] = useState(false); // NEW state
+  const [canPublish, setCanPublish] = useState(false);
 
   const form = useForm<ListingForm>({
     resolver: zodResolver(listingSchema),
@@ -135,18 +147,33 @@ export default function SellPage() {
     }
   }, [listingType, form]);
 
-  // Live validity tracking
+  // Live validity tracking - مُصحح
   useEffect(() => {
-    const subscription = form.watch(async () => {
-      const valid = await form.trigger();
-      setCanPublish(valid);
+    const subscription = form.watch(() => {
+      form
+        .trigger()
+        .then((isValid) => {
+          console.log("Form validation result:", isValid); // للتشخيص
+          console.log("Form errors:", form.formState.errors); // للتشخيص
+          setCanPublish(isValid);
+        })
+        .catch((error) => {
+          console.error("Validation error:", error);
+          setCanPublish(false);
+        });
     });
+
     return () => subscription.unsubscribe();
   }, [form]);
 
   const onSubmit = async (data: ListingForm) => {
+    console.log("Submitting form data:", data); // للتشخيص
+
     const isValid = await form.trigger();
-    if (!isValid) return;
+    if (!isValid) {
+      console.log("Form validation failed:", form.formState.errors);
+      return;
+    }
 
     if (!telegramWebApp.user) {
       toast({
@@ -168,19 +195,25 @@ export default function SellPage() {
       if (result.ok) {
         toast({
           title: t("success"),
-          description:
-            t("listingSubmitted") || "Your item is now live for sale!",
+          description: t("listingSubmitted") || "Your item is now live for sale!",
         });
         form.reset();
         setListingType(null);
         setCanPublish(false);
       } else {
-        throw new Error(result.error);
+        throw new Error(result.error || "Unknown error occurred");
       }
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+          ? error
+          : t("somethingWentWrong");
+
       toast({
         title: t("error"),
-        description: error?.message || t("somethingWentWrong"),
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -209,22 +242,13 @@ export default function SellPage() {
             <CardTitle>{t("chooseSellType")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Button
-              className="w-full"
-              onClick={() => setListingType("username")}
-            >
+            <Button className="w-full" onClick={() => setListingType("username")}>
               {t("sellUsername")}
             </Button>
-            <Button
-              className="w-full"
-              onClick={() => setListingType("channel")}
-            >
+            <Button className="w-full" onClick={() => setListingType("channel")}>
               {t("sellChannel")}
             </Button>
-            <Button
-              className="w-full"
-              onClick={() => setListingType("service")}
-            >
+            <Button className="w-full" onClick={() => setListingType("service")}>
               {t("sellService")}
             </Button>
           </CardContent>
@@ -258,16 +282,18 @@ export default function SellPage() {
                   <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md">
                     <h3 className="font-bold mb-2">يوجد أخطاء في النموذج:</h3>
                     <ul className="list-disc pl-5 space-y-1">
-                      {Object.entries(form.formState.errors).map(
-                        ([key, error]) => (
-                          <li key={key}>
-                            {error?.message ?? "خطأ غير معروف"}
-                          </li>
-                        )
-                      )}
+                      {Object.entries(form.formState.errors).map(([key, error]) => (
+                        <li key={key}>{error?.message ?? "خطأ غير معروف"}</li>
+                      ))}
                     </ul>
                   </div>
                 )}
+
+                {/* Debug info - يمكن حذفه لاحقاً */}
+                <div className="bg-blue-50 border border-blue-200 text-blue-700 p-2 rounded-md text-sm">
+                  <p>Debug: canPublish = {canPublish.toString()}</p>
+                  <p>Form valid = {form.formState.isValid.toString()}</p>
+                </div>
 
                 {/* Type-specific fields */}
                 {listingType === "username" && (
@@ -278,22 +304,15 @@ export default function SellPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{t("platformLabel")}</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value || ""}
-                          >
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
-                                <SelectValue
-                                  placeholder={t("selectPlatform")}
-                                />
+                                <SelectValue placeholder={t("selectPlatform")} />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="bg-purple-700 text-white">
                               <SelectItem value="telegram">Telegram</SelectItem>
-                              <SelectItem value="instagram">
-                                Instagram
-                              </SelectItem>
+                              <SelectItem value="instagram">Instagram</SelectItem>
                               <SelectItem value="twitter">Twitter</SelectItem>
                               <SelectItem value="discord">Discord</SelectItem>
                               <SelectItem value="snapchat">Snapchat</SelectItem>
@@ -335,10 +354,7 @@ export default function SellPage() {
                       )}
                     />
                     {fields.map((field, index) => (
-                      <div
-                        key={field.id}
-                        className="flex space-x-2 items-center"
-                      >
+                      <div key={field.id} className="flex space-x-2 items-center">
                         <FormField
                           control={form.control}
                           name={`giftCounts.${index}.giftType`}
@@ -348,17 +364,11 @@ export default function SellPage() {
                               value={field.value || ""}
                             >
                               <SelectTrigger className="bg-purple-700 text-white flex-1">
-                                <SelectValue
-                                  placeholder={t("chooseGiftType")}
-                                />
+                                <SelectValue placeholder={t("chooseGiftType")} />
                               </SelectTrigger>
                               <SelectContent className="bg-purple-700 text-white">
-                                <SelectItem value="statue">
-                                  {t("giftNameStatue")}
-                                </SelectItem>
-                                <SelectItem value="flame">
-                                  {t("giftNameFlame")}
-                                </SelectItem>
+                                <SelectItem value="statue">{t("giftNameStatue")}</SelectItem>
+                                <SelectItem value="flame">{t("giftNameFlame")}</SelectItem>
                               </SelectContent>
                             </Select>
                           )}
@@ -409,22 +419,15 @@ export default function SellPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{t("platformLabel")}</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value || ""}
-                          >
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
-                                <SelectValue
-                                  placeholder={t("selectPlatform")}
-                                />
+                                <SelectValue placeholder={t("selectPlatform")} />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="bg-purple-700 text-white">
                               <SelectItem value="telegram">Telegram</SelectItem>
-                              <SelectItem value="instagram">
-                                Instagram
-                              </SelectItem>
+                              <SelectItem value="instagram">Instagram</SelectItem>
                               <SelectItem value="twitter">Twitter</SelectItem>
                             </SelectContent>
                           </Select>
@@ -438,32 +441,22 @@ export default function SellPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{t("serviceTypeLabel")}</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value || ""}
-                          >
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
                             <FormControl>
                               <SelectTrigger className="bg-purple-700 text-white">
-                                <SelectValue
-                                  placeholder={t("serviceTypeLabel")}
-                                />
+                                <SelectValue placeholder={t("serviceTypeLabel")} />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent className="bg-purple-700 text-white">
-                              <SelectItem value="followers">
-                                {t("followers")}
-                              </SelectItem>
-                              <SelectItem value="subscribers">
-                                {t("subscribers")}
-                              </SelectItem>
+                              <SelectItem value="followers">{t("followers")}</SelectItem>
+                              <SelectItem value="subscribers">{t("subscribers")}</SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                    {(selectedPlatform === "instagram" ||
-                      selectedPlatform === "twitter") &&
+                    {(selectedPlatform === "instagram" || selectedPlatform === "twitter") &&
                       selectedServiceTitle === "followers" && (
                         <FormField
                           control={form.control}
@@ -484,29 +477,26 @@ export default function SellPage() {
                           )}
                         />
                       )}
-                    {selectedPlatform === "telegram" &&
-                      selectedServiceTitle === "subscribers" && (
-                        <FormField
-                          control={form.control}
-                          name="subscribersCount"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>
-                                {t("subscribersCountLabel")}
-                              </FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="number"
-                                  min={1}
-                                  placeholder={t("subscribersCountLabel")}
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      )}
+                    {selectedPlatform === "telegram" && selectedServiceTitle === "subscribers" && (
+                      <FormField
+                        control={form.control}
+                        name="subscribersCount"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t("subscribersCountLabel")}</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                min={1}
+                                placeholder={t("subscribersCountLabel")}
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
                   </>
                 )}
 
@@ -531,10 +521,7 @@ export default function SellPage() {
                     <FormItem>
                       <FormLabel>{t("descriptionLabel")}</FormLabel>
                       <FormControl>
-                        <Textarea
-                          placeholder="Additional details..."
-                          {...field}
-                        />
+                        <Textarea placeholder="Additional details..." {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -545,13 +532,13 @@ export default function SellPage() {
                 <Button
                   type="submit"
                   className={`w-full flex justify-center items-center rounded-md border-2
-                    ${
-                      canPublish && !isSubmitting
-                        ? "bg-telegram-600 hover:bg-telegram-700 border-telegram-600"
-                        : "bg-telegram-400 cursor-not-allowed border-telegram-400"
-                    }
-                    px-4 py-2 shadow-md
-                  `}
+                  ${
+                    canPublish && !isSubmitting
+                      ? "bg-telegram-600 hover:bg-telegram-700 border-telegram-600"
+                      : "bg-telegram-400 cursor-not-allowed border-telegram-400"
+                  }
+                  px-4 py-2 shadow-md
+                `}
                   disabled={!canPublish || isSubmitting}
                 >
                   {isSubmitting ? (
