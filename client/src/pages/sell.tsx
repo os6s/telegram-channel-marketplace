@@ -334,7 +334,7 @@ export default function SellPage() {
                   <FormControl><Input {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
-              )} />
+              )) />
 
               <FormField name="serviceTitle" control={form.control} render={({ field }) => (
                 <FormItem>
@@ -347,11 +347,17 @@ export default function SellPage() {
           )}
 
           <div className="flex justify-between">
-            <Button type="button" variant="secondary" onClick={() => {
-              setListingType(null);
-              setPlatform("");
-              form.reset();
-            }}>رجوع</Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setListingType(null);
+                setPlatform("");
+                form.reset();
+              }}
+            >
+              رجوع
+            </Button>
             <Button type="submit" disabled={!form.formState.isValid}>نشر</Button>
           </div>
         </Card>
