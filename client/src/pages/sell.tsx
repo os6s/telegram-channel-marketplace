@@ -327,22 +327,23 @@ export default function SellPage() {
           )}
 
           {listingType === "service" && (
-            <FormField name="platform" control={form.control} render={({ field }) => (
-              <FormItem>
-                <FormLabel>المنصة</FormLabel>
-                <FormControl><Input {...field} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )) />
+            <>
+              <FormField name="platform" control={form.control} render={({ field }) => (
+                <FormItem>
+                  <FormLabel>المنصة</FormLabel>
+                  <FormControl><Input {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
 
-            <FormField name="serviceTitle" control={form.control} render={({ field }) => (
-              <FormItem>
-                <FormLabel>عنوان الخدمة</FormLabel>
-                <FormControl><Input {...field} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-          </>
+              <FormField name="serviceTitle" control={form.control} render={({ field }) => (
+                <FormItem>
+                  <FormLabel>عنوان الخدمة</FormLabel>
+                  <FormControl><Input {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </>
           )}
 
           <div className="flex justify-between">
