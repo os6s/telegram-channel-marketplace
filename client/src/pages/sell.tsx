@@ -170,9 +170,15 @@ export default function SellPage() {
           <CardTitle>اختر نوع الإعلان</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button className="w-full" onClick={() => setListingType("username")}>بيع يوزر</Button>
-          <Button className="w-full" onClick={() => setListingType("channel")}>بيع قناة</Button>
-          <Button className="w-full" onClick={() => setListingType("service")}>بيع خدمة</Button>
+          <Button className="w-full" onClick={() => setListingType("username")}>
+            بيع يوزر
+          </Button>
+          <Button className="w-full" onClick={() => setListingType("channel")}>
+            بيع قناة
+          </Button>
+          <Button className="w-full" onClick={() => setListingType("service")}>
+            بيع خدمة
+          </Button>
         </CardContent>
       </Card>
     );
@@ -186,11 +192,21 @@ export default function SellPage() {
           <CardTitle>اختر المنصة</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button className="w-full" onClick={() => setPlatform("telegram")}>تيليجرام</Button>
-          <Button className="w-full" onClick={() => setPlatform("twitter")}>تويتر</Button>
-          <Button className="w-full" onClick={() => setPlatform("instagram")}>انستاغرام</Button>
-          <Button className="w-full" onClick={() => setPlatform("discord")}>ديسكورد</Button>
-          <Button variant="secondary" onClick={() => setListingType(null)}>رجوع</Button>
+          <Button className="w-full" onClick={() => setPlatform("telegram")}>
+            تيليجرام
+          </Button>
+          <Button className="w-full" onClick={() => setPlatform("twitter")}>
+            تويتر
+          </Button>
+          <Button className="w-full" onClick={() => setPlatform("instagram")}>
+            انستاغرام
+          </Button>
+          <Button className="w-full" onClick={() => setPlatform("discord")}>
+            ديسكورد
+          </Button>
+          <Button variant="secondary" onClick={() => setListingType(null)}>
+            رجوع
+          </Button>
         </CardContent>
       </Card>
     );
@@ -202,61 +218,87 @@ export default function SellPage() {
         <Card className="p-4 space-y-3">
           {listingType === "username" && (
             <>
-              <FormField name="platform" control={form.control} render={({ field }) => (
-                <FormItem>
-                  <FormLabel>المنصة</FormLabel>
-                  <FormControl>
-                    <Input {...field} disabled />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <FormField
+                name="platform"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>المنصة</FormLabel>
+                    <FormControl>
+                      <Input {...field} disabled />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-              <FormField name="username" control={form.control} render={({ field }) => (
-                <FormItem>
-                  <FormLabel>اسم اليوزر (بالإنجليزي وبداية @)</FormLabel>
-                  <FormControl><Input placeholder="@username" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <FormField
+                name="username"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>اسم اليوزر (بالإنجليزي وبداية @)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="@username" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-              {(platform === "twitter" || platform === "instagram" || platform === "discord") && (
+              {(platform === "twitter" ||
+                platform === "instagram" ||
+                platform === "discord") && (
                 <>
-                  <FormField name="userType" control={form.control} render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>نوع اليوزر</FormLabel>
-                      <FormControl>
-                        <select {...field} className="input">
-                          <option value="">اختر نوع اليوزر</option>
-                          <option value="ثنائي">ثنائي</option>
-                          <option value="ثلاثي">ثلاثي</option>
-                          <option value="رباعي">رباعي</option>
-                          <option value="خماسي">خماسي</option>
-                          <option value="اكثر">اكثر</option>
-                        </select>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-
-                  <FormField name="createdAt" control={form.control} render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>تاريخ إنشاء الحساب (سنة-شهر)</FormLabel>
-                      <FormControl>
-                        <Input type="month" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-
-                  {platform === "twitter" && (
-                    <FormField name="followersCount" control={form.control} render={({ field }) => (
+                  <FormField
+                    name="userType"
+                    control={form.control}
+                    render={({ field }) => (
                       <FormItem>
-                        <FormLabel>عدد المتابعين</FormLabel>
-                        <FormControl><Input type="number" {...field} /></FormControl>
+                        <FormLabel>نوع اليوزر</FormLabel>
+                        <FormControl>
+                          <select {...field} className="input">
+                            <option value="">اختر نوع اليوزر</option>
+                            <option value="ثنائي">ثنائي</option>
+                            <option value="ثلاثي">ثلاثي</option>
+                            <option value="رباعي">رباعي</option>
+                            <option value="خماسي">خماسي</option>
+                            <option value="اكثر">اكثر</option>
+                          </select>
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
-                    )} />
+                    )}
+                  />
+
+                  <FormField
+                    name="createdAt"
+                    control={form.control}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>تاريخ إنشاء الحساب (سنة-شهر)</FormLabel>
+                        <FormControl>
+                          <Input type="month" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {platform === "twitter" && (
+                    <FormField
+                      name="followersCount"
+                      control={form.control}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>عدد المتابعين</FormLabel>
+                          <FormControl>
+                            <Input type="number" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   )}
                 </>
               )}
@@ -265,84 +307,132 @@ export default function SellPage() {
 
           {listingType === "channel" && (
             <>
-              <FormField name="username" control={form.control} render={({ field }) => (
-                <FormItem>
-                  <FormLabel>رابط القناة</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <FormField
+                name="username"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>رابط القناة</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-              <FormField name="giftType" control={form.control} render={({ field }) => (
-                <FormItem>
-                  <FormLabel>نوع الهدية</FormLabel>
-                  <FormControl>
-                    <select {...field} className="input">
-                      <option value="statue-of-liberty">تمثال الحرية</option>
-                      <option value="flame-of-liberty">شعلة الحرية</option>
-                    </select>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <FormField
+                name="giftType"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>نوع الهدية</FormLabel>
+                    <FormControl>
+                      <select {...field} className="input">
+                        <option value="statue-of-liberty">تمثال الحرية</option>
+                        <option value="flame-of-liberty">شعلة الحرية</option>
+                      </select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-              <FormField name="giftCounts.statue-of-liberty" control={form.control} render={({ field }) => (
-                <FormItem>
-                  <FormLabel>عدد تمثال الحرية</FormLabel>
-                  <FormControl><Input type="number" min={0} {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <FormField
+                name="giftCounts.statue-of-liberty"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>عدد تمثال الحرية</FormLabel>
+                    <FormControl>
+                      <Input type="number" min={0} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-              <FormField name="giftCounts.flame-of-liberty" control={form.control} render={({ field }) => (
-                <FormItem>
-                  <FormLabel>عدد شعلة الحرية</FormLabel>
-                  <FormControl><Input type="number" min={0} {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <FormField
+                name="giftCounts.flame-of-liberty"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>عدد شعلة الحرية</FormLabel>
+                    <FormControl>
+                      <Input type="number" min={0} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </>
           )}
 
-          {(listingType === "username" || listingType === "channel" || listingType === "service") && (
+          {(listingType === "username" ||
+            listingType === "channel" ||
+            listingType === "service") && (
             <>
-              <FormField name="price" control={form.control} render={({ field }) => (
-                <FormItem className="flex items-center space-x-2">
-                  <div className="flex-1">
-                    <FormLabel>السعر</FormLabel>
-                    <FormControl><Input type="number" {...field} /></FormControl>
-                  </div>
-                  <span className="mt-7 font-semibold">USDT</span>
-                </FormItem>
-              )} />
+              <FormField
+                name="price"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem className="flex items-center space-x-2">
+                    <div className="flex-1">
+                      <FormLabel>السعر</FormLabel>
+                      <FormControl>
+                        <Input type="number" {...field} />
+                      </FormControl>
+                    </div>
+                    <span className="mt-7 font-semibold">USDT</span>
+                  </FormItem>
+                )}
+              />
 
-              <FormField name="description" control={form.control} render={({ field }) => (
-                <FormItem>
-                  <FormLabel>الوصف (اختياري)</FormLabel>
-                  <FormControl><Textarea {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <FormField
+                name="description"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>الوصف (اختياري)</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </>
           )}
 
           {listingType === "service" && (
             <>
-              <FormField name="platform" control={form.control} render={({ field }) => (
-                <FormItem>
-                  <FormLabel>المنصة</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )) />
+              <FormField
+                name="platform"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>المنصة</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-              <FormField name="serviceTitle" control={form.control} render={({ field }) => (
-                <FormItem>
-                  <FormLabel>عنوان الخدمة</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              <FormField
+                name="serviceTitle"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>عنوان الخدمة</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </>
           )}
 
@@ -358,7 +448,9 @@ export default function SellPage() {
             >
               رجوع
             </Button>
-            <Button type="submit" disabled={!form.formState.isValid}>نشر</Button>
+            <Button type="submit" disabled={!form.formState.isValid}>
+              نشر
+            </Button>
           </div>
         </Card>
       </form>
