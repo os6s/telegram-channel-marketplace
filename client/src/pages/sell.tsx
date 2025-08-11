@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -19,10 +19,9 @@ import { telegramWebApp } from "@/lib/telegram";
 import { apiRequest } from "@/lib/queryClient";
 import { useLanguage } from "@/contexts/language-context";
 
-// Regex لليوزر: لازم تبدأ @ وحروف انجليزية وأرقام فقط، بدون مسافات أو رموز خاصة
+// Regex لليوزر: يبدأ @ وحروف/أرقام/_
 const usernameRegex = /^@[a-zA-Z0-9_]{3,32}$/;
-
-// Regex لتاريخ الإنشاء: سنة وشهر فقط YYYY-MM
+// Regex لتاريخ الإنشاء: YYYY-MM
 const dateRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 const baseSchema = z.object({
@@ -45,8 +44,8 @@ const channelSchema = baseSchema.extend({
   giftType: z.enum(["statue-of-liberty", "flame-of-liberty"]).optional(),
   giftCounts: z
     .object({
-      "statue-of-liberty": z.number().min(0),
-      "flame-of-liberty": z.number().min(0),
+      "statue-of-liberty": z.coerce.number().min(0),
+      "flame-of-liberty": z.coerce.number().min(0),
     })
     .optional(),
 });
@@ -93,7 +92,7 @@ const discordAccountSchema = baseSchema.extend({
   description: z.string().optional(),
 });
 
-// الحزمة الرئيسية للفورم حسب الاختيار
+// اختيار السكيمة حسب النوع والمنصة
 function getSchema(listingType: string, platform?: string) {
   if (listingType === "username") {
     if (platform === "twitter") return twitterAccountSchema;
@@ -113,8 +112,18 @@ export default function SellPage() {
   const [listingType, setListingType] = useState<"username" | "channel" | "service" | null>(null);
   const [platform, setPlatform] = useState<string>("");
 
+  // وسّع الميني أب
+  useEffect(() => {
+    try {
+      telegramWebApp?.expand?.();
+    } catch {}
+  }, []);
+
+  // سكيمة فعّالة تتبدّل ديناميكياً
+  const activeSchema = useMemo(() => getSchema(listingType || "", platform), [listingType, platform]);
+
   const form = useForm<any>({
-    resolver: zodResolver(getSchema(listingType || "", platform)),
+    resolver: zodResolver(activeSchema),
     mode: "onChange",
     defaultValues: {
       type: listingType || undefined,
@@ -131,16 +140,18 @@ export default function SellPage() {
     },
   });
 
+  // ضبط آمن عند تغيّر النوع/المنصة مع الحفاظ على القيم الحالية
   useEffect(() => {
-    if (listingType) {
-      form.setValue("type", listingType);
-      if (!platform) form.setValue("platform", "");
-      else form.setValue("platform", platform);
-    }
-  }, [listingType, platform, form]);
+    const current = form.getValues();
+    form.reset({
+      ...current,
+      type: listingType || undefined,
+      platform: platform || "",
+    });
+  }, [listingType, platform]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSubmit = async (data: any) => {
-    if (!telegramWebApp.user) {
+    if (!telegramWebApp?.user) {
       toast({ title: "خطأ", description: "افتح من تيليجرام", variant: "destructive" });
       return;
     }
@@ -246,9 +257,7 @@ export default function SellPage() {
                 )}
               />
 
-              {(platform === "twitter" ||
-                platform === "instagram" ||
-                platform === "discord") && (
+              {(platform === "twitter" || platform === "instagram" || platform === "discord") && (
                 <>
                   <FormField
                     name="userType"
@@ -368,9 +377,7 @@ export default function SellPage() {
             </>
           )}
 
-          {(listingType === "username" ||
-            listingType === "channel" ||
-            listingType === "service") && (
+          {(listingType === "username" || listingType === "channel" || listingType === "service") && (
             <>
               <FormField
                 name="price"
