@@ -1,40 +1,44 @@
+// client/src/lib/telegram.ts
 declare global {
   interface Window {
     Telegram?: {
       WebApp: {
-        ready(): void;
-        close(): void;
-        expand(): void;
-        enableClosingConfirmation(): void;
-        disableClosingConfirmation(): void;
-        onEvent(eventType: string, eventHandler: () => void): void;
-        offEvent(eventType: string, eventHandler: () => void): void;
-        sendData(data: string): void;
-        switchInlineQuery(query: string, choose_chat_types?: string[]): void;
-        openLink(url: string, options?: { try_instant_view?: boolean }): void;
-        openTelegramLink(url: string): void;
-        openInvoice(url: string, callback?: (status: string) => void): void;
-        showPopup(params: {
-          title?: string;
-          message: string;
-          buttons?: Array<{
-            id?: string;
-            type?: string;
-            text: string;
-          }>;
-        }, callback?: (buttonId: string) => void): void;
-        showAlert(message: string, callback?: () => void): void;
-        showConfirm(message: string, callback?: (confirmed: boolean) => void): void;
-        showScanQrPopup(params: {
-          text?: string;
-        }, callback?: (text: string) => void): void;
-        closeScanQrPopup(): void;
-        readTextFromClipboard(callback?: (text: string) => void): void;
-        requestWriteAccess(callback?: (granted: boolean) => void): void;
-        requestContact(callback?: (granted: boolean) => void): void;
-        invokeCustomMethod(method: string, params: any, callback?: (error: any, result: any) => void): void;
-        initData: string;
-        initDataUnsafe: {
+        // أساسيات
+        ready?(): void;
+        close?(): void;
+        expand?(): void;
+        enableClosingConfirmation?(): void;
+        disableClosingConfirmation?(): void;
+        onEvent?(eventType: string, eventHandler: () => void): void;
+        offEvent?(eventType: string, eventHandler: () => void): void;
+        sendData?(data: string): void;
+        switchInlineQuery?(query: string, choose_chat_types?: string[]): void;
+        openLink?(url: string, options?: { try_instant_view?: boolean }): void;
+        openTelegramLink?(url: string): void;
+        openInvoice?(url: string, callback?: (status: string) => void): void;
+        showPopup?(
+          params: {
+            title?: string;
+            message: string;
+            buttons?: Array<{ id?: string; type?: string; text: string }>;
+          },
+          callback?: (buttonId: string) => void
+        ): void;
+        showAlert?(message: string, callback?: () => void): void;
+        showConfirm?(message: string, callback?: (confirmed: boolean) => void): void;
+        showScanQrPopup?(params: { text?: string }, callback?: (text: string) => void): void;
+        closeScanQrPopup?(): void;
+        readTextFromClipboard?(callback?: (text: string) => void): void;
+        requestWriteAccess?(callback?: (granted: boolean) => void): void;
+        requestContact?(callback?: (granted: boolean) => void): void;
+        invokeCustomMethod?(method: string, params: any, callback?: (error: any, result: any) => void): void;
+
+        // إضافات اختيارية يسبب غيابها كراش إذا ما فحصناها
+        setHeaderColor?(color: string): void;
+        setBackgroundColor?(color: string): void;
+
+        initData?: string;
+        initDataUnsafe?: {
           query_id?: string;
           user?: {
             id: number;
@@ -74,10 +78,10 @@ declare global {
           auth_date: number;
           hash: string;
         };
-        version: string;
-        platform: string;
-        colorScheme: 'light' | 'dark';
-        themeParams: {
+        version?: string;
+        platform?: string;
+        colorScheme?: "light" | "dark";
+        themeParams?: {
           bg_color?: string;
           text_color?: string;
           hint_color?: string;
@@ -92,44 +96,21 @@ declare global {
           subtitle_text_color?: string;
           destructive_text_color?: string;
         };
-        isExpanded: boolean;
-        viewportHeight: number;
-        viewportStableHeight: number;
-        isClosingConfirmationEnabled: boolean;
-        headerColor: string;
-        backgroundColor: string;
-        BackButton: {
+        isExpanded?: boolean;
+        viewportHeight?: number;
+        viewportStableHeight?: number;
+        isClosingConfirmationEnabled?: boolean;
+        headerColor?: string;
+        backgroundColor?: string;
+
+        BackButton?: {
           isVisible: boolean;
           onClick(callback: () => void): void;
           offClick(callback: () => void): void;
           show(): void;
           hide(): void;
         };
-        MainButton: {
-          text: string;
-          color: string;
-          textColor: string;
-          isVisible: boolean;
-          isProgressVisible: boolean; 
-          isActive: boolean;
-          setText(text: string): void;
-          onClick(callback: () => void): void;
-          offClick(callback: () => void): void;
-          show(): void;
-          hide(): void;
-          enable(): void;
-          disable(): void;
-          showProgress(leaveActive?: boolean): void;
-          hideProgress(): void;
-          setParams(params: {
-            text?: string;
-            color?: string;
-            text_color?: string;
-            is_active?: boolean;
-            is_visible?: boolean;
-          }): void;
-        };
-        SecondaryButton: {
+        MainButton?: {
           text: string;
           color: string;
           textColor: string;
@@ -153,19 +134,43 @@ declare global {
             is_visible?: boolean;
           }): void;
         };
-        SettingsButton: {
+        SecondaryButton?: {
+          text: string;
+          color: string;
+          textColor: string;
+          isVisible: boolean;
+          isProgressVisible: boolean;
+          isActive: boolean;
+          setText(text: string): void;
+          onClick(callback: () => void): void;
+          offClick(callback: () => void): void;
+          show(): void;
+          hide(): void;
+          enable(): void;
+          disable(): void;
+          showProgress(leaveActive?: boolean): void;
+          hideProgress(): void;
+          setParams(params: {
+            text?: string;
+            color?: string;
+            text_color?: string;
+            is_active?: boolean;
+            is_visible?: boolean;
+          }): void;
+        };
+        SettingsButton?: {
           isVisible: boolean;
           onClick(callback: () => void): void;
           offClick(callback: () => void): void;
           show(): void;
           hide(): void;
         };
-        HapticFeedback: {
-          impactOccurred(style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'): void;
-          notificationOccurred(type: 'error' | 'success' | 'warning'): void;
+        HapticFeedback?: {
+          impactOccurred(style: "light" | "medium" | "heavy" | "rigid" | "soft"): void;
+          notificationOccurred(type: "error" | "success" | "warning"): void;
           selectionChanged(): void;
         };
-        CloudStorage: {
+        CloudStorage?: {
           setItem(key: string, value: string, callback?: (error: any, success: boolean) => void): void;
           getItem(key: string, callback: (error: any, value?: string) => void): void;
           getItems(keys: string[], callback: (error: any, values?: Record<string, string>) => void): void;
@@ -173,10 +178,10 @@ declare global {
           removeItems(keys: string[], callback?: (error: any, success: boolean) => void): void;
           getKeys(callback: (error: any, keys?: string[]) => void): void;
         };
-        BiometricManager: {
+        BiometricManager?: {
           isInited: boolean;
           isBiometricAvailable: boolean;
-          biometricType: 'finger' | 'face' | 'unknown';
+          biometricType: "finger" | "face" | "unknown";
           isAccessRequested: boolean;
           isAccessGranted: boolean;
           isBiometricTokenSaved: boolean;
@@ -204,7 +209,8 @@ export interface TelegramUser {
 
 export class TelegramWebApp {
   private static instance: TelegramWebApp;
-  
+  private initialized = false;
+
   static getInstance(): TelegramWebApp {
     if (!TelegramWebApp.instance) {
       TelegramWebApp.instance = new TelegramWebApp();
@@ -212,134 +218,146 @@ export class TelegramWebApp {
     return TelegramWebApp.instance;
   }
 
+  private get wa() {
+    return typeof window !== "undefined" ? window.Telegram?.WebApp : undefined;
+  }
+
   get isAvailable(): boolean {
-    return typeof window !== 'undefined' && !!window.Telegram?.WebApp;
+    return !!this.wa;
   }
 
   get webApp() {
-    return window.Telegram?.WebApp;
+    return this.wa;
   }
 
   get user(): TelegramUser | undefined {
-    return this.webApp?.initDataUnsafe.user;
+    return this.wa?.initDataUnsafe?.user;
   }
 
   get themeParams() {
-    return this.webApp?.themeParams || {};
+    return this.wa?.themeParams ?? {};
   }
 
   get colorScheme() {
-    return this.webApp?.colorScheme || 'light';
+    return this.wa?.colorScheme ?? "light";
+  }
+
+  private hasFn<K extends keyof NonNullable<Window["Telegram"]>["WebApp"]>(name: K): boolean {
+    const w = this.wa as any;
+    return !!(w && typeof w[name as string] === "function");
+  }
+
+  private versionAtLeast(min: number): boolean {
+    const v = this.wa?.version;
+    const num = v ? parseFloat(v) : 0;
+    return num >= min;
+    // enableClosingConfirmation أضيفت تقريباً من 6.0
   }
 
   initialize(): void {
+    if (this.initialized) return;
     if (!this.isAvailable) {
-      console.warn('Telegram Web App is not available');
+      console.warn("Telegram Web App is not available");
       return;
     }
 
-    this.webApp!.ready();
-    this.webApp!.expand();
-    
-    // Apply theme colors to CSS variables
+    // ready/expand آمنة مع فحص
+    this.hasFn("ready") && this.wa!.ready!();
+    this.hasFn("expand") && this.wa!.expand!();
+
+    // setHeaderColor/setBackgroundColor لو متاحة
+    const tp = this.wa!.themeParams ?? {};
+    if (tp.header_bg_color && this.hasFn("setHeaderColor")) {
+      this.wa!.setHeaderColor!(tp.header_bg_color);
+    }
+    if (tp.bg_color && this.hasFn("setBackgroundColor")) {
+      this.wa!.setBackgroundColor!(tp.bg_color);
+    }
+
+    // تفعيل تأكيد الإغلاق فقط إذا النسخة >= 6.0 والدالة موجودة
+    if (this.versionAtLeast(6.0) && this.hasFn("enableClosingConfirmation")) {
+      this.wa!.enableClosingConfirmation!();
+    }
+
+    // تطبيق ثيم على CSS
     this.applyTheme();
-    
-    // Enable closing confirmation
-    this.webApp!.enableClosingConfirmation();
+
+    this.initialized = true;
   }
 
   private applyTheme(): void {
-    if (!this.webApp) return;
-
+    if (!this.wa) return;
     const root = document.documentElement;
-    const theme = this.webApp.themeParams;
+    const theme = this.wa.themeParams ?? {};
 
-    if (theme.bg_color) {
-      root.style.setProperty('--tg-bg-color', theme.bg_color);
-    }
-    if (theme.text_color) {
-      root.style.setProperty('--tg-text-color', theme.text_color);
-    }
-    if (theme.button_color) {
-      root.style.setProperty('--tg-button-color', theme.button_color);
-    }
-    if (theme.button_text_color) {
-      root.style.setProperty('--tg-button-text-color', theme.button_text_color);
-    }
+    if (theme.bg_color) root.style.setProperty("--tg-bg-color", theme.bg_color);
+    if (theme.text_color) root.style.setProperty("--tg-text-color", theme.text_color);
+    if (theme.button_color) root.style.setProperty("--tg-button-color", theme.button_color);
+    if (theme.button_text_color) root.style.setProperty("--tg-button-text-color", theme.button_text_color);
   }
 
   showMainButton(text: string, callback: () => void): void {
-    if (!this.webApp) return;
-    
-    this.webApp.MainButton.setText(text);
-    this.webApp.MainButton.onClick(callback);
-    this.webApp.MainButton.show();
+    const mb = this.wa?.MainButton;
+    if (!mb) return;
+    // منع تكدس المستمعين
+    try { mb.offClick?.(callback); } catch {}
+    mb.setText(text);
+    mb.onClick(callback);
+    mb.show();
   }
 
   hideMainButton(): void {
-    if (!this.webApp) return;
-    this.webApp.MainButton.hide();
+    this.wa?.MainButton?.hide();
   }
 
   showBackButton(callback: () => void): void {
-    if (!this.webApp) return;
-    
-    this.webApp.BackButton.onClick(callback);
-    this.webApp.BackButton.show();
+    const bb = this.wa?.BackButton;
+    if (!bb) return;
+    try { bb.offClick?.(callback); } catch {}
+    bb.onClick(callback);
+    bb.show();
   }
 
   hideBackButton(): void {
-    if (!this.webApp) return;
-    this.webApp.BackButton.hide();
+    this.wa?.BackButton?.hide();
   }
 
-  hapticFeedback(type: 'impact' | 'notification' | 'selection', style?: 'light' | 'medium' | 'heavy' | 'error' | 'success' | 'warning'): void {
-    if (!this.webApp) return;
-
-    switch (type) {
-      case 'impact':
-        this.webApp.HapticFeedback.impactOccurred(style as any || 'medium');
-        break;
-      case 'notification':
-        this.webApp.HapticFeedback.notificationOccurred(style as any || 'success');
-        break;
-      case 'selection':
-        this.webApp.HapticFeedback.selectionChanged();
-        break;
-    }
+  hapticFeedback(
+    type: "impact" | "notification" | "selection",
+    style?: "light" | "medium" | "heavy" | "error" | "success" | "warning"
+  ): void {
+    const hf = this.wa?.HapticFeedback;
+    if (!hf) return;
+    if (type === "impact") hf.impactOccurred((style as any) || "medium");
+    else if (type === "notification") hf.notificationOccurred((style as any) || "success");
+    else hf.selectionChanged();
   }
 
   showAlert(message: string): Promise<void> {
     return new Promise((resolve) => {
-      if (!this.webApp) {
-        alert(message);
-        resolve();
-        return;
+      if (!this.hasFn("showAlert")) {
+        window.alert?.(message);
+        return resolve();
       }
-      
-      this.webApp.showAlert(message, () => resolve());
+      this.wa!.showAlert!(message, () => resolve());
     });
   }
 
   showConfirm(message: string): Promise<boolean> {
     return new Promise((resolve) => {
-      if (!this.webApp) {
-        resolve(confirm(message));
-        return;
+      if (!this.hasFn("showConfirm")) {
+        return resolve(window.confirm?.(message) ?? true);
       }
-      
-      this.webApp.showConfirm(message, (confirmed) => resolve(confirmed));
+      this.wa!.showConfirm!(message, (confirmed) => resolve(confirmed));
     });
   }
 
   close(): void {
-    if (!this.webApp) return;
-    this.webApp.close();
+    this.hasFn("close") && this.wa!.close!();
   }
 
   sendData(data: any): void {
-    if (!this.webApp) return;
-    this.webApp.sendData(JSON.stringify(data));
+    this.hasFn("sendData") && this.wa!.sendData!(JSON.stringify(data));
   }
 }
 
