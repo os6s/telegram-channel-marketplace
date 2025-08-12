@@ -49,9 +49,26 @@ export const insertChannelSchema = createInsertSchema(channels).omit({
   isVerified: true,
   isActive: true,
 }).extend({
-  price: z.string().regex(/^\d+(\.\d{1,9})?$/, "Invalid TON amount"),
-  subscribers: z.number().min(1, "Must have at least 1 subscriber"),
-  engagement: z.string().regex(/^\d+(\.\d{1,2})?$/, "Invalid engagement rate"),
+  // أخفّ: نقبل أي سترنغ بطول منطقي. السيرفر يطبّع ويطبّق regex النهائي.
+  username: z.string().trim().min(5, "Username must be at least 5 characters").max(64, "Username cannot exceed 64 characters"),
+
+  // تقبّل رقم أو نص وتحوله لصيغة نص رقمية بدقة TON (حتى 9 منازل)
+  price: z.preprocess(
+    (v) => typeof v === "number" ? v.toString() : v,
+    z.string().regex(/^\d+(\.\d{1,9})?$/, "Invalid TON amount")
+  ),
+
+  // تقبّل "123" أو 123 وتحوّله لعدد صحيح ≥ 1
+  subscribers: z.preprocess(
+    (v) => typeof v === "string" ? parseInt(v, 10) : v,
+    z.number().int().min(1, "Must have at least 1 subscriber")
+  ),
+
+  // تقبّل رقم أو نص وتثبّت دقتـه كسلسلة حتى منزلتين (0–99.99 يُفحَص لاحقاً إذا تريد)
+  engagement: z.preprocess(
+    (v) => typeof v === "number" ? v.toFixed(2) : v,
+    z.string().regex(/^\d+(\.\d{1,2})?$/, "Invalid engagement rate")
+  ),
 });
 
 export const insertActivitySchema = createInsertSchema(activities).omit({
