@@ -6,6 +6,12 @@ import { insertUserSchema, insertChannelSchema, insertActivitySchema } from "@sh
 import { z } from "zod";
 import { registerBotRoutes } from "./telegram-bot";
 
+// استخدم رابط الميني أب من متغيرات البيئة
+const WEBAPP_URL = process.env.WEBAPP_URL ?? "https://your-app.onrender.com";
+if (!process.env.WEBAPP_URL) {
+  console.warn("[WARN] WEBAPP_URL not set. Using fallback:", WEBAPP_URL);
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register webhook route with absolute priority BEFORE any other middleware
   console.log('Registering webhook route with highest priority...');
@@ -43,7 +49,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               inline_keyboard: [[
                 {
                   text: "🚀 Open Marketplace",
-                  web_app: { url: "https://telegram-channel-marketplace.onrender.com" }
+                  web_app: { url: WEBAPP_URL } // CHANGED
                 }
               ]]
             }
@@ -54,7 +60,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await sendTelegramMessage(chatId,
             `👋 Hi ${user.first_name}!\n\n` +
             `Use /start to access the Channel Marketplace.\n\n` +
-            `🌐 Direct link: https://telegram-channel-marketplace.onrender.com`
+            `🌐 Direct link: ${WEBAPP_URL}` // CHANGED
           );
         }
       } else {
@@ -208,6 +214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     next();
   });
+
   // User routes
   app.post("/api/users", async (req, res) => {
     try {
