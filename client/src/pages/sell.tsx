@@ -1,3 +1,4 @@
+// client/src/pages/sell.tsx
 import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -19,9 +20,19 @@ import { telegramWebApp } from "@/lib/telegram";
 import { apiRequest } from "@/lib/queryClient";
 import { useLanguage } from "@/contexts/language-context";
 
-// Regex لليوزر: يبدأ @ وحروف/أرقام/_
-const usernameRegex = /^@[a-zA-Z0-9_]{3,32}$/;
-// Regex لتاريخ الإنشاء: YYYY-MM
+// تطبيع يوزر: يحذف @ و t.me/ ويحوّل لصغير
+function normalizeUsername(input: string) {
+  return String(input || "")
+    .trim()
+    .replace(/^@/, "")
+    .replace(/^https?:\/\/t\.me\//i, "")
+    .replace(/^t\.me\//i, "")
+    .toLowerCase();
+}
+
+// ريجكس نهائي بعد التطبيع
+const usernameRegexFinal = /^[a-z0-9_]{5,32}$/;
+// تاريخ إنشاء: YYYY-MM
 const dateRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 const baseSchema = z.object({
@@ -30,17 +41,22 @@ const baseSchema = z.object({
   description: z.string().optional(),
 });
 
+// يوزرات عامة
 const usernameSchema = baseSchema.extend({
   platform: z.string().min(1, "المنصة مطلوبة"),
-  username: z
-    .string()
-    .min(4, "يجب أن يبدأ @ ويتكون من 3 أحرف على الأقل بعده")
-    .regex(usernameRegex, "اسم اليوزر يجب أن يبدأ @ ويحتوي فقط على حروف وأرقام و_"),
+  username: z.preprocess(
+    (v) => normalizeUsername(String(v ?? "")),
+    z.string().regex(usernameRegexFinal, "اسم غير صالح: 5-32 حروف/أرقام/_")
+  ),
   userType: z.enum(["ثنائي", "ثلاثي", "رباعي", "خماسي", "اكثر"]).optional(),
 });
 
+// قنوات تيليجرام
 const channelSchema = baseSchema.extend({
-  username: z.string().min(1, "رابط القناة مطلوب"),
+  username: z.preprocess(
+    (v) => normalizeUsername(String(v ?? "")),
+    z.string().regex(usernameRegexFinal, "رابط/يوزر قناة غير صالح")
+  ),
   giftType: z.enum(["statue-of-liberty", "flame-of-liberty"]).optional(),
   giftCounts: z
     .object({
@@ -50,6 +66,7 @@ const channelSchema = baseSchema.extend({
     .optional(),
 });
 
+// منصّات أخرى
 const serviceSchema = baseSchema.extend({
   platform: z.string().min(1, "المنصة مطلوبة"),
   serviceTitle: z.string().min(1, "عنوان الخدمة مطلوب"),
@@ -57,11 +74,11 @@ const serviceSchema = baseSchema.extend({
 
 const twitterAccountSchema = baseSchema.extend({
   platform: z.literal("twitter"),
-  username: z
-    .string()
-    .min(4, "يجب أن يبدأ @ ويتكون من 3 أحرف على الأقل بعده")
-    .regex(usernameRegex, "اسم اليوزر يجب أن يبدأ @ ويحتوي فقط على حروف وأرقام و_"),
-  createdAt: z.string().regex(dateRegex, "يجب أن يكون تاريخ الإنشاء بصيغة سنة-شهر (YYYY-MM)"),
+  username: z.preprocess(
+    (v) => normalizeUsername(String(v ?? "")),
+    z.string().regex(usernameRegexFinal, "اسم غير صالح: 5-32 حروف/أرقام/_")
+  ),
+  createdAt: z.string().regex(dateRegex, "سنة-شهر (YYYY-MM)"),
   followersCount: z.string().min(1, "عدد المتابعين مطلوب"),
   userType: z.enum(["ثنائي", "ثلاثي", "رباعي", "خماسي", "اكثر"]).optional(),
   price: z.string().min(1, "السعر مطلوب"),
@@ -74,11 +91,11 @@ const instagramAccountSchema = twitterAccountSchema.extend({
 
 const discordUserSchema = baseSchema.extend({
   platform: z.literal("discord"),
-  username: z
-    .string()
-    .min(4, "يجب أن يبدأ @ ويتكون من 3 أحرف على الأقل بعده")
-    .regex(usernameRegex, "اسم اليوزر يجب أن يبدأ @ ويحتوي فقط على حروف وأرقام و_"),
-  createdAt: z.string().regex(dateRegex, "يجب أن يكون تاريخ الإنشاء بصيغة سنة-شهر (YYYY-MM)"),
+  username: z.preprocess(
+    (v) => normalizeUsername(String(v ?? "")),
+    z.string().regex(usernameRegexFinal, "اسم غير صالح: 5-32 حروف/أرقام/_")
+  ),
+  createdAt: z.string().regex(dateRegex, "سنة-شهر (YYYY-MM)"),
   price: z.string().min(1, "السعر مطلوب"),
   description: z.string().optional(),
   userType: z.enum(["ثنائي", "ثلاثي", "رباعي", "خماسي", "اكثر"]).optional(),
@@ -87,12 +104,12 @@ const discordUserSchema = baseSchema.extend({
 const discordAccountSchema = baseSchema.extend({
   platform: z.literal("discord"),
   username: z.string().min(4, "يوزر الحساب مطلوب"),
-  createdAt: z.string().regex(dateRegex, "يجب أن يكون تاريخ الإنشاء بصيغة سنة-شهر (YYYY-MM)"),
+  createdAt: z.string().regex(dateRegex, "سنة-شهر (YYYY-MM)"),
   price: z.string().min(1, "السعر مطلوب"),
   description: z.string().optional(),
 });
 
-// اختيار السكيمة حسب النوع والمنصة
+// اختيار السكيمة
 function getSchema(listingType: string, platform?: string) {
   if (listingType === "username") {
     if (platform === "twitter") return twitterAccountSchema;
@@ -115,11 +132,10 @@ export default function SellPage() {
   // وسّع الميني أب
   useEffect(() => {
     try {
-      telegramWebApp?.expand?.();
+      telegramWebApp.initialize?.();
     } catch {}
   }, []);
 
-  // سكيمة فعّالة تتبدّل ديناميكياً
   const activeSchema = useMemo(() => getSchema(listingType || "", platform), [listingType, platform]);
 
   const form = useForm<any>({
@@ -140,7 +156,7 @@ export default function SellPage() {
     },
   });
 
-  // ضبط آمن عند تغيّر النوع/المنصة مع الحفاظ على القيم الحالية
+  // ثبات القيم عند تبديل النوع/المنصة
   useEffect(() => {
     const current = form.getValues();
     form.reset({
@@ -148,12 +164,18 @@ export default function SellPage() {
       type: listingType || undefined,
       platform: platform || "",
     });
-  }, [listingType, platform]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listingType, platform]);
 
   const onSubmit = async (data: any) => {
     if (!telegramWebApp?.user) {
       toast({ title: "خطأ", description: "افتح من تيليجرام", variant: "destructive" });
       return;
+    }
+
+    // طبّع اليوزر قبل الإرسال
+    if (data.username) {
+      data.username = normalizeUsername(data.username);
     }
 
     try {
@@ -195,7 +217,6 @@ export default function SellPage() {
     );
   }
 
-  // لو نوع البيع يوزر لازم يختار منصة أول
   if (listingType === "username" && !platform) {
     return (
       <Card className="p-4 space-y-3 min-h-screen">
@@ -248,9 +269,9 @@ export default function SellPage() {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>اسم اليوزر (بالإنجليزي وبداية @)</FormLabel>
+                    <FormLabel>اسم اليوزر</FormLabel>
                     <FormControl>
-                      <Input placeholder="@username" {...field} />
+                      <Input placeholder="@user أو t.me/user" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -321,9 +342,9 @@ export default function SellPage() {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>رابط القناة</FormLabel>
+                    <FormLabel>رابط القناة أو اليوزر</FormLabel>
                     <FormControl>
-                      <Input {...field} />
+                      <Input placeholder="@channel أو t.me/channel" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
