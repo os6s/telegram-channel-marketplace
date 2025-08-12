@@ -1,5 +1,3 @@
-هذا server/routes.ts كامل بعد إضافة normalizeUsername وتطبيقه في مساري POST/PATCH للقنوات.
-
 import type { Express } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
@@ -60,7 +58,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 [
                   {
                     text: "🚀 Open Marketplace",
-                    web_app: { url: WEBAPP_URL }, // CHANGED
+                    web_app: { url: WEBAPP_URL },
                   },
                 ],
               ],
@@ -72,7 +70,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             chatId,
             `👋 Hi ${user.first_name}!\n\n` +
               `Use /start to access the Channel Marketplace.\n\n` +
-              `🌐 Direct link: ${WEBAPP_URL}` // CHANGED
+              `🌐 Direct link: ${WEBAPP_URL}`
           );
         }
       } else {
@@ -294,7 +292,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Seller ID is required. Please authenticate first." });
       }
 
-      // NEW: تطبيع اليوزر
       if (channelData.username) {
         channelData.username = normalizeUsername(channelData.username);
       }
@@ -308,7 +305,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Price cannot be negative" });
       }
 
-      // NEW: ريجكس بعد التطبيع (أحرف صغيرة/أرقام/أندرلاين)
       const usernameRegex = /^[a-z0-9_]{5,32}$/;
       if (!usernameRegex.test(validatedChannelData.username)) {
         return res
@@ -340,7 +336,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "You can only update your own channels" });
       }
 
-      // NEW: تطبيع وفحص اليوزر إذا تم تغييره
       if (updates.username) {
         updates.username = normalizeUsername(updates.username);
         const usernameRegex = /^[a-z0-9_]{5,32}$/;
@@ -394,6 +389,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  // إنشاء إعلان مختصر من صفحة البيع
+  app.post("/api/sell", async (req, res) => {
+    try {
+      const { type, username, price, description, telegramId } = req.body;
+
+      if (!telegramId) return res.status(400).json({ error: "telegramId required" });
+      const seller = await storage.getUserByTelegramId(String(telegramId));
+      if (!seller) return res.status(400).json({ error: "User not found. Open app from Telegram first." });
+
+      if (type !== "channel") {
+        return res.status(501).json({ error: "Only 'channel' listings are supported for now" });
+      }
+
+      const uname = normalizeUsername(username || "");
+      const usernameRegex = /^[a-z0-9_]{5,32}$/;
+      if (!usernameRegex.test(uname)) return res.status(400).json({ error: "Invalid channel username" });
+
+      const dupe = await storage.getChannelByUsername(uname);
+      if (dupe) return res.status(400).json({ error: "Channel username already exists" });
+
+      const payload = {
+        sellerId: seller.id,
+        name: uname,
+        username: uname,
+        description: description || "",
+        category: "general",
+        subscribers: 0,
+        engagement: "0.00",
+        price: String(price),
+        isVerified: false,
+        isActive: true,
+        avatarUrl: null,
+      };
+
+      if (!/^\d+(\.\d{1,9})?$/.test(payload.price)) {
+        return res.status(400).json({ error: "Invalid TON amount" });
+      }
+
+      const channel = await storage.createChannel(payload as any);
+      return res.json({ ok: true, channel });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "Internal error" });
     }
   });
 
