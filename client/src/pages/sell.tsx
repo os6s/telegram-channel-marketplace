@@ -22,146 +22,181 @@ const normalizeUsername = (s: string) =>
     .replace(/^t\.me\//i, "")
     .toLowerCase();
 
-const re_tg_username_4_15_alnum = /^[a-z0-9]{4,15}$/;         // تيليجرام: 4-15 حروف/أرقام فقط
-const re_generic_username_5_32 = /^[a-z0-9_]{5,32}$/;          // عام: 5-32 حروف/أرقام/_
-const re_price = /^\d+(\.\d{1,9})?$/;
+/* Telegram usernames: 4–15, letters/digits/underscore only (NO dot) */
+const RE_TG_USER = /^[a-z0-9_]{4,15}$/;
+
+/* Generic usernames (twitter/instagram/discord/snapchat): 2–15, letters/digits/_/dot */
+const RE_GENERIC_USER = /^[a-z0-9._]{2,15}$/;
+
+/* Price: numeric up to 9 decimals */
+const RE_PRICE = /^\d+(\.\d{1,9})?$/;
 
 const selectCls = "w-full rounded-md border px-3 py-2 bg-background text-foreground";
 
 /* ---------- i18n ---------- */
-const LBL = {
+const T = {
   ar: {
+    title: "بيع / Sell",
     chooseType: "اختر نوع الإعلان",
     sellUsername: "بيع يوزر",
     sellAccount: "بيع حساب",
-    sellChannel: "بيع قناة",
+    sellChannel: "بيع",
     sellService: "بيع خدمة",
     platform: "المنصة",
     choosePlatform: "اختر المنصة",
-    username: "اسم المستخدم / رابط (بدون @ أو t.me/)",
-    invalidTgUser: "اسم غير صالح: 4-15 حروف/أرقام",
-    invalidGenericUser: "اسم غير صالح: 5-32 حروف/أرقام/أندرلاين",
+    usernameLabel: "اسم/رابط (بدون @ أو t.me/)",
+    tgInvalid: "اسم تيليجرام غير صالح: 4-15 حروف/أرقام و _ فقط، بدون .",
+    genInvalid: "اسم غير صالح: 2-15 حروف/أرقام و _ و .",
     tgUserType: "نوع اليوزر",
     NFT: "NFT",
-    normal: "عادي",
+    NORMAL: "عادي",
     price: "السعر",
     currency: "العملة",
     desc: "الوصف (اختياري)",
     post: "نشر",
     back: "رجوع",
-    serviceType: "نوع الخدمة",
-    followers: "متابعين",
-    members: "مشتركين",
-    boostChannel: "تعزيز قناة تيليجرام",
-    boostGroup: "تعزيز مجموعة تيليجرام",
-    target: "الهدف",
-    count: "العدد",
-    channelLink: "رابط القناة / المجموعة",
-    createdAt: "تاريخ إنشاء الحساب (سنة-شهر)",
-    followersCount: "عدد المتابعين",
+    openFromTelegram: "افتح من تيليجرام",
+    sent: "تم إرسال الإعلان",
     channelMode: "نوع القناة",
     modeSubscribers: "قناة مشتركين",
     modeGifts: "قناة هدايا",
+    channelLinkOpt: "رابط القناة (اختياري)",
+    channelUserOpt: "يوزر القناة (اختياري)",
+    needLinkOrUser: "أدخل رابط أو يوزر",
+    subsCount: "عدد المشتركين",
     giftsCount: "عدد الهدايا",
     giftKind: "نوع الهدايا",
     upgraded: "مطوّرة",
     regular: "غير مطوّرة",
-    both: "الإثنان معًا",
-    openFromTelegram: "افتح من تيليجرام",
-    sent: "تم إرسال الإعلان",
-    pendingBackend: "النوع يحتاج مسار /api/listings في الباك إند",
+    both: "الاثنان",
+    serviceType: "نوع الخدمة",
+    followers: "متابعين",
+    members: "مشتركين",
+    boostCh: "تعزيز قناة تيليجرام",
+    boostGp: "تعزيز مجموعة تيليجرام",
+    target: "الهدف",
+    count: "العدد",
   },
   en: {
+    title: "بيع / Sell",
     chooseType: "Choose listing type",
     sellUsername: "Sell Username",
     sellAccount: "Sell Account",
-    sellChannel: "Sell Channel",
+    sellChannel: "Sell",
     sellService: "Sell Service",
     platform: "Platform",
     choosePlatform: "Choose platform",
-    username: "Username / Link (without @ or t.me/)",
-    invalidTgUser: "Invalid: 4–15 letters/digits",
-    invalidGenericUser: "Invalid: 5–32 letters/digits/underscore",
+    usernameLabel: "Username/Link (without @ or t.me/)",
+    tgInvalid: "Invalid Telegram: 4–15 letters/digits/_ only, no dot.",
+    genInvalid: "Invalid: 2–15 letters/digits/_/dot.",
     tgUserType: "Username type",
     NFT: "NFT",
-    normal: "Normal",
+    NORMAL: "Normal",
     price: "Price",
     currency: "Currency",
     desc: "Description (optional)",
     post: "Publish",
     back: "Back",
-    serviceType: "Service type",
-    followers: "Followers",
-    members: "Members",
-    boostChannel: "Boost Telegram Channel",
-    boostGroup: "Boost Telegram Group",
-    target: "Target",
-    count: "Count",
-    channelLink: "Channel / Group link",
-    createdAt: "Account creation (YYYY-MM)",
-    followersCount: "Followers count",
+    openFromTelegram: "Open from Telegram",
+    sent: "Listing submitted",
     channelMode: "Channel mode",
     modeSubscribers: "Subscribers channel",
     modeGifts: "Gifts channel",
+    channelLinkOpt: "Channel link (optional)",
+    channelUserOpt: "Channel username (optional)",
+    needLinkOrUser: "Enter link or username",
+    subsCount: "Subscribers count",
     giftsCount: "Gifts count",
     giftKind: "Gift kind",
     upgraded: "Upgraded",
     regular: "Regular",
     both: "Both",
-    openFromTelegram: "Open from Telegram",
-    sent: "Listing submitted",
-    pendingBackend: "This type needs /api/listings backend",
+    serviceType: "Service type",
+    followers: "Followers",
+    members: "Members",
+    boostCh: "Boost Telegram Channel",
+    boostGp: "Boost Telegram Group",
+    target: "Target",
+    count: "Count",
   },
 };
 
 /* ---------- schemas ---------- */
-const baseSchema = z.object({
-  type: z.enum(["username", "account", "channel", "service"]),
-  price: z.string().regex(re_price, "Invalid price"),
+const baseCommon = {
+  price: z.string().regex(RE_PRICE, "Invalid price"),
   currency: z.enum(["TON", "USDT"]),
   description: z.string().optional(),
-});
+};
 
-// بيع يوزر
-const usernameSchema = baseSchema.extend({
+const usernameSchema = z
+  .object({
+    type: z.literal("username"),
+    platform: z.enum(["telegram", "twitter", "instagram", "discord", "snapchat"]),
+    username: z.preprocess((v) => normalizeUsername(String(v ?? "")), z.string().min(1)),
+    tgUserType: z.enum(["NFT", "NORMAL"]).optional(), // Telegram only
+    ...baseCommon,
+  })
+  .superRefine((val, ctx) => {
+    const u = String(val.username || "");
+    if (val.platform === "telegram") {
+      if (!RE_TG_USER.test(u)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TG_INVALID", path: ["username"] });
+    } else {
+      if (!RE_GENERIC_USER.test(u)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "GEN_INVALID", path: ["username"] });
+    }
+  });
+
+const accountSchema = z.object({
+  type: z.literal("account"),
   platform: z.enum(["telegram", "twitter", "instagram", "discord", "snapchat"]),
-  username: z.preprocess((v) => normalizeUsername(String(v ?? "")), z.string().min(1)),
-  tgUserType: z.enum(["NFT", "NORMAL"]).optional(), // يظهر فقط عندما platform = telegram
-}).superRefine((val, ctx) => {
-  const u = String(val.username || "");
-  if (val.platform === "telegram") {
-    if (!re_tg_username_4_15_alnum.test(u)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TG_4_15", path: ["username"] });
-    }
-  } else {
-    if (!re_generic_username_5_32.test(u)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "GENERIC_5_32", path: ["username"] });
-    }
-  }
-});
-
-// بيع حساب
-const accountSchema = baseSchema.extend({
-  platform: z.enum(["twitter", "instagram", "discord", "snapchat"]),
-  username: z.preprocess((v) => normalizeUsername(String(v ?? "")), z.string().regex(re_generic_username_5_32, "GENERIC_5_32")),
+  username: z.preprocess((v) => normalizeUsername(String(v ?? "")), z.string().regex(RE_GENERIC_USER, "GEN_INVALID")),
   createdAt: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "YYYY-MM"),
   followersCount: z.coerce.number().min(0).optional(),
+  ...baseCommon,
 });
 
-// بيع قناة (نمطين)
-const channelSchema = baseSchema.extend({
-  channelMode: z.enum(["subscribers", "gifts"]),
-  link: z.string().min(1, "required"),
-  subscribersCount: z.coerce.number().min(1).optional(),
-  giftsCount: z.coerce.number().min(1).optional(),
-  giftKind: z.enum(["upgraded", "regular", "both"]).optional(),
-});
+const channelSchema = z
+  .object({
+    type: z.literal("channel"),
+    channelMode: z.enum(["subscribers", "gifts"]),
+    link: z.string().optional(),
+    channelUsername: z.string().optional(), // username-only
+    subscribersCount: z.coerce.number().min(1).optional(),
+    giftsCount: z.coerce.number().min(1).optional(),
+    giftKind: z.enum(["upgraded", "regular", "both"]).optional(),
+    ...baseCommon,
+  })
+  .superRefine((val, ctx) => {
+    const link = val.link?.trim();
+    const uname = val.channelUsername?.trim();
+    if (!link && !uname) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "NEED_LINK_OR_USER", path: ["link"] });
+      return;
+    }
+    const candidate = normalizeUsername(link || uname || "");
+    if (!RE_TG_USER.test(candidate)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TG_INVALID", path: link ? ["link"] : ["channelUsername"] });
+    }
+    if (val.channelMode === "subscribers") {
+      if (!val.subscribersCount || Number(val.subscribersCount) < 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "SUBS_REQUIRED", path: ["subscribersCount"] });
+      }
+    } else {
+      if (!val.giftsCount || Number(val.giftsCount) < 1) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "GIFTS_REQUIRED", path: ["giftsCount"] });
+      }
+      if (!val.giftKind) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "GIFT_KIND_REQUIRED", path: ["giftKind"] });
+      }
+    }
+  });
 
-// بيع خدمة بدون رابط
-const serviceSchema = baseSchema.extend({
+/* خدمة بدون رابط. نوع الخدمة يحدد الهدف والعدد فقط */
+const serviceSchema = z.object({
+  type: z.literal("service"),
   serviceType: z.enum(["followers", "members", "boost_channel", "boost_group"]),
   target: z.enum(["instagram", "twitter", "telegram_channel", "telegram_group"]),
   count: z.coerce.number().min(1),
+  ...baseCommon,
 });
 
 function getSchema(kind: string) {
@@ -169,14 +204,14 @@ function getSchema(kind: string) {
   if (kind === "account") return accountSchema;
   if (kind === "channel") return channelSchema;
   if (kind === "service") return serviceSchema;
-  return baseSchema;
+  return z.any();
 }
 
 /* ---------- component ---------- */
 export default function SellPage() {
   const { toast } = useToast();
   const { language } = useLanguage();
-  const T = language === "ar" ? LBL.ar : LBL.en;
+  const L = language === "ar" ? T.ar : T.en;
 
   const [kind, setKind] = useState<"username" | "account" | "channel" | "service" | null>(null);
   const [platform, setPlatform] = useState<"telegram" | "twitter" | "instagram" | "discord" | "snapchat" | "">("");
@@ -194,23 +229,25 @@ export default function SellPage() {
       type: kind || undefined,
       platform: platform || "",
       username: "",
-      tgUserType: undefined,
+      tgUserType: "",
+      // channel
+      channelMode: "subscribers",
+      link: "",
+      channelUsername: "",
+      subscribersCount: "",
+      giftsCount: "",
+      giftKind: "regular",
+      // service
+      serviceType: "followers",
+      target: "instagram",
+      count: "",
+      // common
       price: "",
       currency: "TON",
       description: "",
       // account
       createdAt: "",
       followersCount: "",
-      // channel
-      channelMode: "subscribers",
-      link: "",
-      subscribersCount: "",
-      giftsCount: "",
-      giftKind: "regular",
-      // service
-      serviceType: "",
-      target: "",
-      count: "",
     },
   });
 
@@ -220,18 +257,33 @@ export default function SellPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, platform]);
 
+  const numericKeyGuard = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const allowed = ["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab", "Home", "End", "Enter", "."];
+    const isNumber = e.key >= "0" && e.key <= "9";
+    if (!isNumber && !allowed.includes(e.key)) e.preventDefault();
+  };
+
   const submit = async (data: any) => {
     if (!telegramWebApp?.user) {
-      toast({ title: "خطأ", description: T.openFromTelegram, variant: "destructive" });
+      toast({ title: "خطأ", description: L.openFromTelegram, variant: "destructive" });
       return;
     }
+
     try {
       const payload = { ...data, telegramId: telegramWebApp.user.id };
-      const isChannel = data.type === "channel";
-      const url = isChannel ? "/api/sell" : "/api/listings"; // listings للأنواع الأخرى
+
+      if (data.type === "channel") {
+        const unified = normalizeUsername(data.link || data.channelUsername || "");
+        payload.username = unified; // ما يتقبل dot، regex تحققها فوق
+        delete payload.link;
+        delete payload.channelUsername;
+      }
+
+      const url = data.type === "channel" ? "/api/sell" : "/api/listings";
       const r = await apiRequest("POST", url, payload);
       if (!r.ok) throw new Error((await r.json()).error || "Error");
-      toast({ title: "OK", description: T.sent });
+
+      toast({ title: "OK", description: L.sent });
       form.reset();
       setKind(null);
       setPlatform("");
@@ -240,43 +292,34 @@ export default function SellPage() {
     }
   };
 
-  // منع الأحرف في السعر
-  const onlyNumericKeys = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const allowed = [
-      "Backspace","Delete","ArrowLeft","ArrowRight","Tab","Home","End","Enter","."
-    ];
-    const isNumber = e.key >= "0" && e.key <= "9";
-    if (!isNumber && !allowed.includes(e.key)) e.preventDefault();
-  };
-
   /* ---------- UI ---------- */
 
   if (!kind) {
     return (
       <Card className="p-4 space-y-3 min-h-screen">
-        <CardHeader><CardTitle>{T.chooseType}</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{L.title}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <Button className="w-full" onClick={() => setKind("username")}>{T.sellUsername}</Button>
-          <Button className="w-full" onClick={() => setKind("account")}>{T.sellAccount}</Button>
-          <Button className="w-full" onClick={() => setKind("channel")}>{T.sellChannel}</Button>
-          <Button className="w-full" onClick={() => setKind("service")}>{T.sellService}</Button>
+          <Button className="w-full" onClick={() => setKind("username")}>{L.sellUsername}</Button>
+          <Button className="w-full" onClick={() => setKind("account")}>{L.sellAccount}</Button>
+          <Button className="w-full" onClick={() => setKind("channel")}>{L.sellChannel}</Button>
+          <Button className="w-full" onClick={() => setKind("service")}>{L.sellService}</Button>
         </CardContent>
       </Card>
     );
   }
 
-  // اختيار منصة لليوزر/الحساب
+  // اختيار المنصة لليوزر/الحساب
   if ((kind === "username" || kind === "account") && !platform) {
     return (
       <Card className="p-4 space-y-3 min-h-screen">
-        <CardHeader><CardTitle>{T.choosePlatform}</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{L.choosePlatform}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          {["telegram","twitter","instagram","discord","snapchat"].map((p) => (
+          {["telegram", "twitter", "instagram", "discord", "snapchat"].map((p) => (
             <Button key={p} className="w-full bg-background border" onClick={() => setPlatform(p as any)}>
               {p}
             </Button>
           ))}
-          <Button variant="secondary" onClick={() => setKind(null)}>{T.back}</Button>
+          <Button variant="secondary" onClick={() => setKind(null)}>{L.back}</Button>
         </CardContent>
       </Card>
     );
@@ -292,7 +335,7 @@ export default function SellPage() {
               variant="secondary"
               onClick={() => { setKind(null); setPlatform(""); form.reset(); }}
             >
-              {T.back}
+              {L.back}
             </Button>
             <div className="ml-auto text-sm opacity-70">
               {kind} {platform && `· ${platform}`}
@@ -307,7 +350,7 @@ export default function SellPage() {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{T.platform}</FormLabel>
+                    <FormLabel>{L.platform}</FormLabel>
                     <FormControl>
                       <Input {...field} readOnly value={platform} className="bg-background" />
                     </FormControl>
@@ -320,7 +363,7 @@ export default function SellPage() {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{T.username}</FormLabel>
+                    <FormLabel>{L.usernameLabel}</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
@@ -330,26 +373,27 @@ export default function SellPage() {
                       />
                     </FormControl>
                     <FormMessage>
-                      {form.formState.errors.username?.message === "TG_4_15" ? T.invalidTgUser :
-                       form.formState.errors.username?.message === "GENERIC_5_32" ? T.invalidGenericUser : null}
+                      {form.formState.errors.username?.message === "TG_INVALID"
+                        ? L.tgInvalid
+                        : form.formState.errors.username?.message === "GEN_INVALID"
+                        ? L.genInvalid
+                        : null}
                     </FormMessage>
                   </FormItem>
                 )}
               />
-
-              {/* نوع اليوزر فقط عند تيليجرام: NFT / عادي */}
               {platform === "telegram" && (
                 <FormField
                   name="tgUserType"
                   control={form.control}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{T.tgUserType}</FormLabel>
+                      <FormLabel>{L.tgUserType}</FormLabel>
                       <FormControl>
                         <select {...field} className={selectCls}>
                           <option value=""></option>
-                          <option value="NFT">{T.NFT}</option>
-                          <option value="NORMAL">{T.normal}</option>
+                          <option value="NFT">{L.NFT}</option>
+                          <option value="NORMAL">{L.NORMAL}</option>
                         </select>
                       </FormControl>
                       <FormMessage />
@@ -368,7 +412,7 @@ export default function SellPage() {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{T.platform}</FormLabel>
+                    <FormLabel>{L.platform}</FormLabel>
                     <FormControl>
                       <Input {...field} readOnly value={platform} className="bg-background" />
                     </FormControl>
@@ -380,7 +424,7 @@ export default function SellPage() {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{T.username}</FormLabel>
+                    <FormLabel>{L.usernameLabel}</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
@@ -390,7 +434,7 @@ export default function SellPage() {
                       />
                     </FormControl>
                     <FormMessage>
-                      {form.formState.errors.username?.message === "GENERIC_5_32" ? T.invalidGenericUser : null}
+                      {form.formState.errors.username?.message === "GEN_INVALID" ? L.genInvalid : null}
                     </FormMessage>
                   </FormItem>
                 )}
@@ -400,7 +444,7 @@ export default function SellPage() {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{T.createdAt}</FormLabel>
+                    <FormLabel>YYYY-MM</FormLabel>
                     <FormControl><Input type="month" {...field} className="bg-background" /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -412,7 +456,7 @@ export default function SellPage() {
                   control={form.control}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{T.followersCount}</FormLabel>
+                      <FormLabel>{language === "ar" ? "عدد المتابعين" : "Followers count"}</FormLabel>
                       <FormControl><Input type="number" min={0} {...field} className="bg-background" /></FormControl>
                       <FormMessage />
                     </FormItem>
@@ -430,20 +474,19 @@ export default function SellPage() {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{T.channelMode}</FormLabel>
+                    <FormLabel>{L.channelMode}</FormLabel>
                     <FormControl>
                       <select
                         {...field}
                         className={selectCls}
                         onChange={(e) => {
                           field.onChange(e);
-                          // تنظيف الحقول
                           form.setValue("subscribersCount", "");
                           form.setValue("giftsCount", "");
                         }}
                       >
-                        <option value="subscribers">{T.modeSubscribers}</option>
-                        <option value="gifts">{T.modeGifts}</option>
+                        <option value="subscribers">{L.modeSubscribers}</option>
+                        <option value="gifts">{L.modeGifts}</option>
                       </select>
                     </FormControl>
                     <FormMessage />
@@ -455,9 +498,35 @@ export default function SellPage() {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{T.channelLink}</FormLabel>
+                    <FormLabel>{L.channelLinkOpt}</FormLabel>
                     <FormControl><Input {...field} className="bg-background" placeholder="t.me/yourchannel" /></FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                name="channelUsername"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{L.channelUserOpt}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        className="bg-background"
+                        placeholder="yourchannel"
+                        onBlur={(e) => field.onChange(normalizeUsername(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage>
+                      {form.formState.errors.link?.message === "NEED_LINK_OR_USER" ||
+                      form.formState.errors.channelUsername?.message === "NEED_LINK_OR_USER"
+                        ? L.needLinkOrUser
+                        : form.formState.errors.link?.message === "TG_INVALID" ||
+                          form.formState.errors.channelUsername?.message === "TG_INVALID"
+                        ? L.tgInvalid
+                        : null}
+                    </FormMessage>
                   </FormItem>
                 )}
               />
@@ -467,7 +536,7 @@ export default function SellPage() {
                   control={form.control}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{T.members}</FormLabel>
+                      <FormLabel>{L.subsCount}</FormLabel>
                       <FormControl><Input type="number" min={1} {...field} className="bg-background" /></FormControl>
                       <FormMessage />
                     </FormItem>
@@ -480,7 +549,7 @@ export default function SellPage() {
                     control={form.control}
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{T.giftsCount}</FormLabel>
+                        <FormLabel>{L.giftsCount}</FormLabel>
                         <FormControl><Input type="number" min={1} {...field} className="bg-background" /></FormControl>
                         <FormMessage />
                       </FormItem>
@@ -491,12 +560,12 @@ export default function SellPage() {
                     control={form.control}
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{T.giftKind}</FormLabel>
+                        <FormLabel>{L.giftKind}</FormLabel>
                         <FormControl>
                           <select {...field} className={selectCls}>
-                            <option value="upgraded">{T.upgraded}</option>
-                            <option value="regular">{T.regular}</option>
-                            <option value="both">{T.both}</option>
+                            <option value="upgraded">{L.upgraded}</option>
+                            <option value="regular">{L.regular}</option>
+                            <option value="both">{L.both}</option>
                           </select>
                         </FormControl>
                         <FormMessage />
@@ -516,14 +585,13 @@ export default function SellPage() {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{T.serviceType}</FormLabel>
+                    <FormLabel>{L.serviceType}</FormLabel>
                     <FormControl>
                       <select
                         {...field}
                         className={selectCls}
                         onChange={(e) => {
                           field.onChange(e);
-                          // ضبط الهدف الافتراضي وفق النوع
                           const v = e.target.value;
                           if (v === "followers") form.setValue("target", "instagram");
                           else if (v === "members") form.setValue("target", "telegram_channel");
@@ -531,10 +599,10 @@ export default function SellPage() {
                           else if (v === "boost_group") form.setValue("target", "telegram_group");
                         }}
                       >
-                        <option value="followers">{T.followers}</option>
-                        <option value="members">{T.members}</option>
-                        <option value="boost_channel">{T.boostChannel}</option>
-                        <option value="boost_group">{T.boostGroup}</option>
+                        <option value="followers">{L.followers}</option>
+                        <option value="members">{L.members}</option>
+                        <option value="boost_channel">{L.boostCh}</option>
+                        <option value="boost_group">{L.boostGp}</option>
                       </select>
                     </FormControl>
                     <FormMessage />
@@ -547,13 +615,13 @@ export default function SellPage() {
                 render={({ field }) => {
                   const st = form.watch("serviceType");
                   const opts =
-                    st === "followers" ? ["instagram","twitter"] :
+                    st === "followers" ? ["instagram", "twitter"] :
                     st === "members" ? ["telegram_channel"] :
                     st === "boost_channel" ? ["telegram_channel"] :
                     st === "boost_group" ? ["telegram_group"] : [];
                   return (
                     <FormItem>
-                      <FormLabel>{T.target}</FormLabel>
+                      <FormLabel>{L.target}</FormLabel>
                       <FormControl>
                         <select {...field} className={selectCls}>
                           {opts.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -569,7 +637,7 @@ export default function SellPage() {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{T.count}</FormLabel>
+                    <FormLabel>{L.count}</FormLabel>
                     <FormControl><Input type="number" min={1} {...field} className="bg-background" /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -578,21 +646,21 @@ export default function SellPage() {
             </>
           )}
 
-          {/* السعر + العملة + وصف (مشترك لكل الأقسام) */}
+          {/* السعر + العملة + الوصف (مشترك لكل الأقسام) */}
           <div className="grid grid-cols-3 gap-3">
             <FormField
               name="price"
               control={form.control}
               render={({ field }) => (
                 <FormItem className="col-span-2">
-                  <FormLabel>{T.price}</FormLabel>
+                  <FormLabel>{L.price}</FormLabel>
                   <FormControl>
                     <Input
                       {...field}
                       inputMode="decimal"
                       placeholder="0.0"
                       className="bg-background"
-                      onKeyDown={onlyNumericKeys}
+                      onKeyDown={numericKeyGuard}
                     />
                   </FormControl>
                   <FormMessage />
@@ -604,7 +672,7 @@ export default function SellPage() {
               control={form.control}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{T.currency}</FormLabel>
+                  <FormLabel>{L.currency}</FormLabel>
                   <FormControl>
                     <select {...field} className={selectCls}>
                       <option value="TON">TON</option>
@@ -622,7 +690,7 @@ export default function SellPage() {
             control={form.control}
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{T.desc}</FormLabel>
+                <FormLabel>{L.desc}</FormLabel>
                 <FormControl><Textarea {...field} className="bg-background" rows={3} /></FormControl>
                 <FormMessage />
               </FormItem>
@@ -631,9 +699,9 @@ export default function SellPage() {
 
           <div className="flex justify-between">
             <Button type="button" variant="secondary" onClick={() => { setKind(null); setPlatform(""); form.reset(); }}>
-              {T.back}
+              {L.back}
             </Button>
-            <Button type="submit" disabled={!form.formState.isValid}>{T.post}</Button>
+            <Button type="submit" disabled={!form.formState.isValid}>{L.post}</Button>
           </div>
         </Card>
       </form>
