@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import cors from "cors"; // ⬅️ أضفنا مكتبة CORS
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
@@ -18,6 +19,24 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const app = express();
+
+// ⬅️ إعداد CORS ليسمح بطلبات من الـ WEBAPP_URL
+const allowedOrigin = process.env.WEBAPP_URL || "*";
+app.use(cors({
+  origin: allowedOrigin,
+  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}));
+
+// ⬅️ ميدل وير يرسل API_BASE_URL للـ frontend
+app.get("/api/config", (req, res) => {
+  res.json({
+    API_BASE_URL: process.env.API_BASE_URL || "",
+    WEBAPP_URL: process.env.WEBAPP_URL || ""
+  });
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -39,11 +58,9 @@ app.use((req, res, next) => {
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
-
       if (logLine.length > 80) {
         logLine = logLine.slice(0, 79) + "…";
       }
-
       log(logLine);
     }
   });
@@ -57,24 +74,16 @@ app.use((req, res, next) => {
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
     res.status(status).json({ message });
     throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || '5000', 10);
   server.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`);
