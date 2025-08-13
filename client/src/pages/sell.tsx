@@ -1,3 +1,4 @@
+// client/src/pages/sell.tsx
 import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -21,203 +22,261 @@ const normalizeUsername = (s: string) =>
     .replace(/^t\.me\//i, "")
     .toLowerCase();
 
-const usernameRegex = /^[a-z0-9_]{5,32}$/;
-const dateRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
+const re_tg_username_4_15_alnum = /^[a-z0-9]{4,15}$/;         // تيليجرام: 4-15 حروف/أرقام فقط
+const re_generic_username_5_32 = /^[a-z0-9_]{5,32}$/;          // عام: 5-32 حروف/أرقام/_
+const re_price = /^\d+(\.\d{1,9})?$/;
 
-type MainType = "username" | "account" | "channel" | "service";
-type Platform = "telegram" | "twitter" | "instagram" | "discord" | "snapchat";
+const selectCls = "w-full rounded-md border px-3 py-2 bg-background text-foreground";
 
-/* ---------- i18n helpers ---------- */
-const labels = {
+/* ---------- i18n ---------- */
+const LBL = {
   ar: {
-    title: "اختر نوع الإعلان",
-    username: "بيع يوزر",
-    account: "بيع حساب",
-    channel: "بيع قناة",
-    service: "بيع خدمة",
+    chooseType: "اختر نوع الإعلان",
+    sellUsername: "بيع يوزر",
+    sellAccount: "بيع حساب",
+    sellChannel: "بيع قناة",
+    sellService: "بيع خدمة",
     platform: "المنصة",
     choosePlatform: "اختر المنصة",
-    usernameField: "اسم المستخدم / رابط (بدون @ أو t.me/)",
+    username: "اسم المستخدم / رابط (بدون @ أو t.me/)",
+    invalidTgUser: "اسم غير صالح: 4-15 حروف/أرقام",
+    invalidGenericUser: "اسم غير صالح: 5-32 حروف/أرقام/أندرلاين",
+    tgUserType: "نوع اليوزر",
+    NFT: "NFT",
+    normal: "عادي",
     price: "السعر",
+    currency: "العملة",
     desc: "الوصف (اختياري)",
     post: "نشر",
     back: "رجوع",
     serviceType: "نوع الخدمة",
     followers: "متابعين",
     members: "مشتركين",
-    boostCh: "تعزيز قناة تيليجرام",
-    boostGp: "تعزيز مجموعة تيليجرام",
+    boostChannel: "تعزيز قناة تيليجرام",
+    boostGroup: "تعزيز مجموعة تيليجرام",
     target: "الهدف",
+    count: "العدد",
     channelLink: "رابط القناة / المجموعة",
     createdAt: "تاريخ إنشاء الحساب (سنة-شهر)",
     followersCount: "عدد المتابعين",
+    channelMode: "نوع القناة",
+    modeSubscribers: "قناة مشتركين",
+    modeGifts: "قناة هدايا",
+    giftsCount: "عدد الهدايا",
+    giftKind: "نوع الهدايا",
+    upgraded: "مطوّرة",
+    regular: "غير مطوّرة",
+    both: "الإثنان معًا",
+    openFromTelegram: "افتح من تيليجرام",
+    sent: "تم إرسال الإعلان",
+    pendingBackend: "النوع يحتاج مسار /api/listings في الباك إند",
   },
   en: {
-    title: "Choose listing type",
-    username: "Sell Username",
-    account: "Sell Account",
-    channel: "Sell Channel",
-    service: "Sell Service",
+    chooseType: "Choose listing type",
+    sellUsername: "Sell Username",
+    sellAccount: "Sell Account",
+    sellChannel: "Sell Channel",
+    sellService: "Sell Service",
     platform: "Platform",
-    choosePlatform: "Choose a platform",
-    usernameField: "Username / Link (without @ or t.me/)",
+    choosePlatform: "Choose platform",
+    username: "Username / Link (without @ or t.me/)",
+    invalidTgUser: "Invalid: 4–15 letters/digits",
+    invalidGenericUser: "Invalid: 5–32 letters/digits/underscore",
+    tgUserType: "Username type",
+    NFT: "NFT",
+    normal: "Normal",
     price: "Price",
+    currency: "Currency",
     desc: "Description (optional)",
-    post: "Post",
+    post: "Publish",
     back: "Back",
-    serviceType: "Service Type",
+    serviceType: "Service type",
     followers: "Followers",
     members: "Members",
-    boostCh: "Boost Telegram Channel",
-    boostGp: "Boost Telegram Group",
+    boostChannel: "Boost Telegram Channel",
+    boostGroup: "Boost Telegram Group",
     target: "Target",
+    count: "Count",
     channelLink: "Channel / Group link",
     createdAt: "Account creation (YYYY-MM)",
     followersCount: "Followers count",
+    channelMode: "Channel mode",
+    modeSubscribers: "Subscribers channel",
+    modeGifts: "Gifts channel",
+    giftsCount: "Gifts count",
+    giftKind: "Gift kind",
+    upgraded: "Upgraded",
+    regular: "Regular",
+    both: "Both",
+    openFromTelegram: "Open from Telegram",
+    sent: "Listing submitted",
+    pendingBackend: "This type needs /api/listings backend",
   },
 };
 
 /* ---------- schemas ---------- */
 const baseSchema = z.object({
   type: z.enum(["username", "account", "channel", "service"]),
-  price: z.string().min(1, "السعر مطلوب"),
+  price: z.string().regex(re_price, "Invalid price"),
+  currency: z.enum(["TON", "USDT"]),
   description: z.string().optional(),
 });
 
+// بيع يوزر
 const usernameSchema = baseSchema.extend({
   platform: z.enum(["telegram", "twitter", "instagram", "discord", "snapchat"]),
-  username: z.preprocess((v) => normalizeUsername(String(v ?? "")),
-    z.string().regex(usernameRegex, "اسم غير صالح: 5-32 حروف/أرقام/_")),
-  userType: z.enum(["ثنائي","ثلاثي","رباعي","خماسي","اكثر"]).optional(),
+  username: z.preprocess((v) => normalizeUsername(String(v ?? "")), z.string().min(1)),
+  tgUserType: z.enum(["NFT", "NORMAL"]).optional(), // يظهر فقط عندما platform = telegram
+}).superRefine((val, ctx) => {
+  const u = String(val.username || "");
+  if (val.platform === "telegram") {
+    if (!re_tg_username_4_15_alnum.test(u)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TG_4_15", path: ["username"] });
+    }
+  } else {
+    if (!re_generic_username_5_32.test(u)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "GENERIC_5_32", path: ["username"] });
+    }
+  }
 });
 
+// بيع حساب
 const accountSchema = baseSchema.extend({
-  platform: z.enum(["twitter","instagram","discord","snapchat"]),
-  username: z.preprocess((v) => normalizeUsername(String(v ?? "")),
-    z.string().min(3, "أدخل يوزر صحيح")),
-  createdAt: z.string().regex(dateRegex, "سنة-شهر (YYYY-MM)"),
+  platform: z.enum(["twitter", "instagram", "discord", "snapchat"]),
+  username: z.preprocess((v) => normalizeUsername(String(v ?? "")), z.string().regex(re_generic_username_5_32, "GENERIC_5_32")),
+  createdAt: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "YYYY-MM"),
   followersCount: z.coerce.number().min(0).optional(),
 });
 
+// بيع قناة (نمطين)
 const channelSchema = baseSchema.extend({
-  username: z.preprocess((v) => normalizeUsername(String(v ?? "")),
-    z.string().regex(usernameRegex, "يوزر/رابط قناة غير صالح")),
+  channelMode: z.enum(["subscribers", "gifts"]),
+  link: z.string().min(1, "required"),
+  subscribersCount: z.coerce.number().min(1).optional(),
+  giftsCount: z.coerce.number().min(1).optional(),
+  giftKind: z.enum(["upgraded", "regular", "both"]).optional(),
 });
 
+// بيع خدمة بدون رابط
 const serviceSchema = baseSchema.extend({
-  serviceType: z.enum(["followers","members","boost_channel","boost_group"]),
-  targetPlatform: z.enum(["instagram","twitter","telegram_channel","telegram_group"]),
-  targetLink: z.string().min(1, "الرابط مطلوب"),
+  serviceType: z.enum(["followers", "members", "boost_channel", "boost_group"]),
+  target: z.enum(["instagram", "twitter", "telegram_channel", "telegram_group"]),
+  count: z.coerce.number().min(1),
 });
 
-function getSchema(mainType: MainType, platform?: Platform) {
-  switch (mainType) {
-    case "username": return usernameSchema;
-    case "account": return accountSchema;
-    case "channel": return channelSchema;
-    case "service": return serviceSchema;
-    default: return baseSchema;
-  }
+function getSchema(kind: string) {
+  if (kind === "username") return usernameSchema;
+  if (kind === "account") return accountSchema;
+  if (kind === "channel") return channelSchema;
+  if (kind === "service") return serviceSchema;
+  return baseSchema;
 }
 
 /* ---------- component ---------- */
 export default function SellPage() {
   const { toast } = useToast();
   const { language } = useLanguage();
-  const L = language === "ar" ? labels.ar : labels.en;
+  const T = language === "ar" ? LBL.ar : LBL.en;
 
-  const [mainType, setMainType] = useState<MainType | null>(null);
-  const [platform, setPlatform] = useState<Platform | "">("");
+  const [kind, setKind] = useState<"username" | "account" | "channel" | "service" | null>(null);
+  const [platform, setPlatform] = useState<"telegram" | "twitter" | "instagram" | "discord" | "snapchat" | "">("");
 
   useEffect(() => {
     try { telegramWebApp?.expand?.(); } catch {}
   }, []);
 
-  const activeSchema = useMemo(() => getSchema((mainType as MainType) || "username", platform as Platform), [mainType, platform]);
+  const schema = useMemo(() => getSchema(kind || ""), [kind]);
 
   const form = useForm<any>({
-    resolver: zodResolver(activeSchema),
+    resolver: zodResolver(schema),
     mode: "onChange",
     defaultValues: {
-      type: mainType || undefined,
+      type: kind || undefined,
       platform: platform || "",
       username: "",
+      tgUserType: undefined,
       price: "",
+      currency: "TON",
       description: "",
-      userType: undefined,
+      // account
       createdAt: "",
       followersCount: "",
-      serviceType: undefined,
-      targetPlatform: undefined,
-      targetLink: "",
+      // channel
+      channelMode: "subscribers",
+      link: "",
+      subscribersCount: "",
+      giftsCount: "",
+      giftKind: "regular",
+      // service
+      serviceType: "",
+      target: "",
+      count: "",
     },
   });
 
   useEffect(() => {
-    const current = form.getValues();
-    form.reset({ ...current, type: mainType || undefined, platform: platform || "" });
-  }, [mainType, platform]); // eslint-disable-line
-
-  const postLabel = useMemo(() => {
-    switch (mainType) {
-      case "username": return `${L.post} (${L.username})`;
-      case "account":  return `${L.post} (${L.account})`;
-      case "channel":  return `${L.post} (${L.channel})`;
-      case "service":  return `${L.post} (${L.service})`;
-      default:         return L.post;
-    }
-  }, [mainType, L]);
+    const v = form.getValues();
+    form.reset({ ...v, type: kind || undefined, platform: platform || "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, platform]);
 
   const submit = async (data: any) => {
     if (!telegramWebApp?.user) {
-      toast({ title: "خطأ", description: "افتح من تيليجرام", variant: "destructive" });
+      toast({ title: "خطأ", description: T.openFromTelegram, variant: "destructive" });
       return;
     }
     try {
       const payload = { ...data, telegramId: telegramWebApp.user.id };
-      // مبدئيًا: القناة فقط تذهب لـ /api/sell -> تنزل للماركت
-      // باقي الأنواع نرسلها إلى /api/listings (نضيفه بالسيرفر أدناه)
       const isChannel = data.type === "channel";
-      const url = isChannel ? "/api/sell" : "/api/listings";
+      const url = isChannel ? "/api/sell" : "/api/listings"; // listings للأنواع الأخرى
       const r = await apiRequest("POST", url, payload);
       if (!r.ok) throw new Error((await r.json()).error || "Error");
-      toast({ title: "تم", description: "تم إرسال الإعلان" });
+      toast({ title: "OK", description: T.sent });
       form.reset();
-      setMainType(null);
+      setKind(null);
       setPlatform("");
-    } catch (e) {
-      toast({ title: "خطأ", description: e instanceof Error ? e.message : "مشكلة", variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "خطأ", description: e?.message ?? "مشكلة", variant: "destructive" });
     }
+  };
+
+  // منع الأحرف في السعر
+  const onlyNumericKeys = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const allowed = [
+      "Backspace","Delete","ArrowLeft","ArrowRight","Tab","Home","End","Enter","."
+    ];
+    const isNumber = e.key >= "0" && e.key <= "9";
+    if (!isNumber && !allowed.includes(e.key)) e.preventDefault();
   };
 
   /* ---------- UI ---------- */
 
-  if (!mainType) {
+  if (!kind) {
     return (
       <Card className="p-4 space-y-3 min-h-screen">
-        <CardHeader><CardTitle>{L.title}</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{T.chooseType}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <Button className="w-full" onClick={() => setMainType("username")}>{L.username}</Button>
-          <Button className="w-full" onClick={() => setMainType("account")}>{L.account}</Button>
-          <Button className="w-full" onClick={() => setMainType("channel")}>{L.channel}</Button>
-          <Button className="w-full" onClick={() => setMainType("service")}>{L.service}</Button>
+          <Button className="w-full" onClick={() => setKind("username")}>{T.sellUsername}</Button>
+          <Button className="w-full" onClick={() => setKind("account")}>{T.sellAccount}</Button>
+          <Button className="w-full" onClick={() => setKind("channel")}>{T.sellChannel}</Button>
+          <Button className="w-full" onClick={() => setKind("service")}>{T.sellService}</Button>
         </CardContent>
       </Card>
     );
   }
 
-  // اختيار المنصة لليوزر/الحساب
-  if ((mainType === "username" || mainType === "account") && !platform) {
+  // اختيار منصة لليوزر/الحساب
+  if ((kind === "username" || kind === "account") && !platform) {
     return (
       <Card className="p-4 space-y-3 min-h-screen">
-        <CardHeader><CardTitle>{L.platform}</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{T.choosePlatform}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <Button className="w-full bg-background border" onClick={() => setPlatform("telegram")}>Telegram</Button>
-          <Button className="w-full bg-background border" onClick={() => setPlatform("twitter")}>Twitter</Button>
-          <Button className="w-full bg-background border" onClick={() => setPlatform("instagram")}>Instagram</Button>
-          <Button className="w-full bg-background border" onClick={() => setPlatform("discord")}>Discord</Button>
-          <Button className="w-full bg-background border" onClick={() => setPlatform("snapchat")}>Snapchat</Button>
-          <Button variant="secondary" onClick={() => setMainType(null)}>{L.back}</Button>
+          {["telegram","twitter","instagram","discord","snapchat"].map((p) => (
+            <Button key={p} className="w-full bg-background border" onClick={() => setPlatform(p as any)}>
+              {p}
+            </Button>
+          ))}
+          <Button variant="secondary" onClick={() => setKind(null)}>{T.back}</Button>
         </CardContent>
       </Card>
     );
@@ -227,69 +286,70 @@ export default function SellPage() {
     <Form {...form}>
       <form onSubmit={form.handleSubmit(submit)} className="space-y-4 min-h-screen p-4">
         <Card className="p-4 space-y-3">
-          {/* type + platform */}
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => { setMainType(null); setPlatform(""); form.reset(); }}>
-              {L.back}
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => { setKind(null); setPlatform(""); form.reset(); }}
+            >
+              {T.back}
             </Button>
             <div className="ml-auto text-sm opacity-70">
-              {mainType === "username" && L.username}
-              {mainType === "account"  && L.account}
-              {mainType === "channel"  && L.channel}
-              {mainType === "service"  && L.service}
-              {platform && ` · ${platform}`}
+              {kind} {platform && `· ${platform}`}
             </div>
           </div>
 
-          {/* platform field for username/account */}
-          {(mainType === "username" || mainType === "account") && (
-            <FormField
-              name="platform"
-              control={form.control}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{L.platform}</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={platform} readOnly className="bg-background" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          )}
-
-          {/* username/account fields */}
-          {(mainType === "username" || mainType === "account") && (
+          {/* بيع يوزر */}
+          {kind === "username" && (
             <>
               <FormField
-                name="username"
+                name="platform"
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{L.usernameField}</FormLabel>
+                    <FormLabel>{T.platform}</FormLabel>
                     <FormControl>
-                      <Input placeholder="username" {...field} onBlur={(e) => field.onChange(normalizeUsername(e.target.value))} className="bg-background"/>
+                      <Input {...field} readOnly value={platform} className="bg-background" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              <FormField
+                name="username"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{T.username}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="username"
+                        className="bg-background"
+                        onBlur={(e) => field.onChange(normalizeUsername(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage>
+                      {form.formState.errors.username?.message === "TG_4_15" ? T.invalidTgUser :
+                       form.formState.errors.username?.message === "GENERIC_5_32" ? T.invalidGenericUser : null}
+                    </FormMessage>
+                  </FormItem>
+                )}
+              />
 
-              {mainType === "username" && (
+              {/* نوع اليوزر فقط عند تيليجرام: NFT / عادي */}
+              {platform === "telegram" && (
                 <FormField
-                  name="userType"
+                  name="tgUserType"
                   control={form.control}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>نوع اليوزر</FormLabel>
+                      <FormLabel>{T.tgUserType}</FormLabel>
                       <FormControl>
-                        <select {...field} className="w-full rounded-md border px-3 py-2 bg-background">
-                          <option value="">{language==="ar"?"اختر":"Choose"}</option>
-                          <option value="ثنائي">ثنائي</option>
-                          <option value="ثلاثي">ثلاثي</option>
-                          <option value="رباعي">رباعي</option>
-                          <option value="خماسي">خماسي</option>
-                          <option value="اكثر">اكثر</option>
+                        <select {...field} className={selectCls}>
+                          <option value=""></option>
+                          <option value="NFT">{T.NFT}</option>
+                          <option value="NORMAL">{T.normal}</option>
                         </select>
                       </FormControl>
                       <FormMessage />
@@ -297,111 +357,206 @@ export default function SellPage() {
                   )}
                 />
               )}
+            </>
+          )}
 
-              {mainType === "account" && (
-                <>
-                  <FormField
-                    name="createdAt"
-                    control={form.control}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{L.createdAt}</FormLabel>
-                        <FormControl>
-                          <Input type="month" {...field} className="bg-background" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  {(platform === "twitter" || platform === "instagram") && (
-                    <FormField
-                      name="followersCount"
-                      control={form.control}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{L.followersCount}</FormLabel>
-                          <FormControl>
-                            <Input type="number" min={0} {...field} className="bg-background"/>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+          {/* بيع حساب */}
+          {kind === "account" && (
+            <>
+              <FormField
+                name="platform"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{T.platform}</FormLabel>
+                    <FormControl>
+                      <Input {...field} readOnly value={platform} className="bg-background" />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                name="username"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{T.username}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="handle"
+                        className="bg-background"
+                        onBlur={(e) => field.onChange(normalizeUsername(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage>
+                      {form.formState.errors.username?.message === "GENERIC_5_32" ? T.invalidGenericUser : null}
+                    </FormMessage>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                name="createdAt"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{T.createdAt}</FormLabel>
+                    <FormControl><Input type="month" {...field} className="bg-background" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {(platform === "twitter" || platform === "instagram") && (
+                <FormField
+                  name="followersCount"
+                  control={form.control}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{T.followersCount}</FormLabel>
+                      <FormControl><Input type="number" min={0} {...field} className="bg-background" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
-                </>
+                />
               )}
             </>
           )}
 
-          {/* channel */}
-          {mainType === "channel" && (
-            <FormField
-              name="username"
-              control={form.control}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{L.channelLink}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="channel" {...field} onBlur={(e) => field.onChange(normalizeUsername(e.target.value))} className="bg-background"/>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          )}
-
-          {/* service */}
-          {mainType === "service" && (
+          {/* بيع قناة تيليجرام */}
+          {kind === "channel" && (
             <>
               <FormField
-                name="serviceType"
+                name="channelMode"
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{L.serviceType}</FormLabel>
+                    <FormLabel>{T.channelMode}</FormLabel>
                     <FormControl>
                       <select
                         {...field}
-                        className="w-full rounded-md border px-3 py-2 bg-background"
+                        className={selectCls}
                         onChange={(e) => {
                           field.onChange(e);
-                          // عيّن المنصات المتاحة
-                          const val = e.target.value;
-                          if (val === "followers") form.setValue("targetPlatform", "instagram");
-                          else if (val === "members") form.setValue("targetPlatform", "telegram_channel");
-                          else if (val === "boost_channel") form.setValue("targetPlatform", "telegram_channel");
-                          else if (val === "boost_group") form.setValue("targetPlatform", "telegram_group");
+                          // تنظيف الحقول
+                          form.setValue("subscribersCount", "");
+                          form.setValue("giftsCount", "");
                         }}
                       >
-                        <option value="">{language==="ar"?"اختر":"Choose"}</option>
-                        <option value="followers">{L.followers}</option>
-                        <option value="members">{L.members}</option>
-                        <option value="boost_channel">{L.boostCh}</option>
-                        <option value="boost_group">{L.boostGp}</option>
+                        <option value="subscribers">{T.modeSubscribers}</option>
+                        <option value="gifts">{T.modeGifts}</option>
                       </select>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
               <FormField
-                name="targetPlatform"
+                name="link"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{T.channelLink}</FormLabel>
+                    <FormControl><Input {...field} className="bg-background" placeholder="t.me/yourchannel" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {form.watch("channelMode") === "subscribers" ? (
+                <FormField
+                  name="subscribersCount"
+                  control={form.control}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{T.members}</FormLabel>
+                      <FormControl><Input type="number" min={1} {...field} className="bg-background" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : (
+                <>
+                  <FormField
+                    name="giftsCount"
+                    control={form.control}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{T.giftsCount}</FormLabel>
+                        <FormControl><Input type="number" min={1} {...field} className="bg-background" /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    name="giftKind"
+                    control={form.control}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{T.giftKind}</FormLabel>
+                        <FormControl>
+                          <select {...field} className={selectCls}>
+                            <option value="upgraded">{T.upgraded}</option>
+                            <option value="regular">{T.regular}</option>
+                            <option value="both">{T.both}</option>
+                          </select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
+            </>
+          )}
+
+          {/* بيع خدمة بدون رابط */}
+          {kind === "service" && (
+            <>
+              <FormField
+                name="serviceType"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{T.serviceType}</FormLabel>
+                    <FormControl>
+                      <select
+                        {...field}
+                        className={selectCls}
+                        onChange={(e) => {
+                          field.onChange(e);
+                          // ضبط الهدف الافتراضي وفق النوع
+                          const v = e.target.value;
+                          if (v === "followers") form.setValue("target", "instagram");
+                          else if (v === "members") form.setValue("target", "telegram_channel");
+                          else if (v === "boost_channel") form.setValue("target", "telegram_channel");
+                          else if (v === "boost_group") form.setValue("target", "telegram_group");
+                        }}
+                      >
+                        <option value="followers">{T.followers}</option>
+                        <option value="members">{T.members}</option>
+                        <option value="boost_channel">{T.boostChannel}</option>
+                        <option value="boost_group">{T.boostGroup}</option>
+                      </select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                name="target"
                 control={form.control}
                 render={({ field }) => {
                   const st = form.watch("serviceType");
-                  const options =
+                  const opts =
                     st === "followers" ? ["instagram","twitter"] :
                     st === "members" ? ["telegram_channel"] :
                     st === "boost_channel" ? ["telegram_channel"] :
                     st === "boost_group" ? ["telegram_group"] : [];
                   return (
                     <FormItem>
-                      <FormLabel>{L.target}</FormLabel>
+                      <FormLabel>{T.target}</FormLabel>
                       <FormControl>
-                        <select {...field} className="w-full rounded-md border px-3 py-2 bg-background">
-                          <option value="">{language==="ar"?"اختر":"Choose"}</option>
-                          {options.map((op) => <option key={op} value={op}>{op}</option>)}
+                        <select {...field} className={selectCls}>
+                          {opts.map((o) => <option key={o} value={o}>{o}</option>)}
                         </select>
                       </FormControl>
                       <FormMessage />
@@ -409,16 +564,13 @@ export default function SellPage() {
                   );
                 }}
               />
-
               <FormField
-                name="targetLink"
+                name="count"
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{L.channelLink}</FormLabel>
-                    <FormControl>
-                      <Input {...field} className="bg-background" />
-                    </FormControl>
+                    <FormLabel>{T.count}</FormLabel>
+                    <FormControl><Input type="number" min={1} {...field} className="bg-background" /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -426,40 +578,62 @@ export default function SellPage() {
             </>
           )}
 
-          {/* common: price + desc */}
-          <FormField
-            name="price"
-            control={form.control}
-            render={({ field }) => (
-              <FormItem className="flex items-center gap-2">
-                <div className="flex-1">
-                  <FormLabel>{L.price}</FormLabel>
+          {/* السعر + العملة + وصف (مشترك لكل الأقسام) */}
+          <div className="grid grid-cols-3 gap-3">
+            <FormField
+              name="price"
+              control={form.control}
+              render={({ field }) => (
+                <FormItem className="col-span-2">
+                  <FormLabel>{T.price}</FormLabel>
                   <FormControl>
-                    <Input type="number" step="0.000000001" {...field} className="bg-background"/>
+                    <Input
+                      {...field}
+                      inputMode="decimal"
+                      placeholder="0.0"
+                      className="bg-background"
+                      onKeyDown={onlyNumericKeys}
+                    />
                   </FormControl>
-                </div>
-                <span className="mt-7 font-semibold">TON</span>
-              </FormItem>
-            )}
-          />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              name="currency"
+              control={form.control}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{T.currency}</FormLabel>
+                  <FormControl>
+                    <select {...field} className={selectCls}>
+                      <option value="TON">TON</option>
+                      <option value="USDT">USDT</option>
+                    </select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
 
           <FormField
             name="description"
             control={form.control}
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{L.desc}</FormLabel>
-                <FormControl>
-                  <Textarea {...field} className="bg-background"/>
-                </FormControl>
+                <FormLabel>{T.desc}</FormLabel>
+                <FormControl><Textarea {...field} className="bg-background" rows={3} /></FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
 
           <div className="flex justify-between">
-            <Button variant="secondary" onClick={() => { setMainType(null); setPlatform(""); form.reset(); }}>{L.back}</Button>
-            <Button type="submit" disabled={!form.formState.isValid}>{postLabel}</Button>
+            <Button type="button" variant="secondary" onClick={() => { setKind(null); setPlatform(""); form.reset(); }}>
+              {T.back}
+            </Button>
+            <Button type="submit" disabled={!form.formState.isValid}>{T.post}</Button>
           </div>
         </Card>
       </form>
