@@ -25,6 +25,12 @@ function normalizeUsername(input: string) {
 export async function registerRoutes(app: Express): Promise<Server> {
   console.log("Registering webhook route with highest priority...");
 
+  app.get("/api/config", (_req, res) => {
+    res.json({
+      API_BASE_URL: process.env.API_BASE_URL || "",
+      WEBAPP_URL,
+    });
+  });
   // Webhook endpoint (POST فقط)
   app.post("/webhook/telegram", express.json(), async (req, res) => {
     console.log("POST /webhook/telegram - Telegram update received");
