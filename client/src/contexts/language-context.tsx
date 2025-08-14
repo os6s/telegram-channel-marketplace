@@ -38,8 +38,16 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const t = useMemo(
     () => (key: string) => {
-      const val = getByPath(bundles[language], key);
-      return (typeof val === "string" ? val : undefined) ?? key;
+      // 1) جرب لغة المستخدم أولاً
+      const primary = getByPath(bundles[language], key);
+      if (typeof primary === "string") return primary;
+
+      // 2) لو مفقود، جرب الإنجليزية
+      const fallback = getByPath(bundles.en, key);
+      if (typeof fallback === "string") return fallback;
+
+      // 3) لو مفقود حتى بالإنجليزي رجع المفتاح نفسه
+      return key;
     },
     [language]
   );
