@@ -1,10 +1,9 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+// client/src/components/settings-modal.tsx
+import * as Dialog from "@radix-ui/react-dialog";
 import { useTheme } from "@/contexts/theme-context";
 import { useLanguage } from "@/contexts/language-context";
-import { Moon, Sun, Settings, Globe } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
 
 interface SettingsModalProps {
   open: boolean;
@@ -12,60 +11,61 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            {t('settings')}
-          </DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-6 py-4">
-          {/* Dark Mode Toggle */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {theme === 'dark' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
-              <div>
-                <p className="font-medium">{t('darkMode')}</p>
-              </div>
-            </div>
-            <Switch
-              checked={theme === 'dark'}
-              onCheckedChange={toggleTheme}
-            />
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 w-[90vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-4 shadow-lg">
+          <div className="flex items-center justify-between mb-3">
+            <Dialog.Title className="text-lg font-semibold">{t("settings.title")}</Dialog.Title>
+            <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
+              <X className="w-5 h-5" />
+            </Button>
           </div>
 
-          {/* Language Selection */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Globe className="h-5 w-5" />
-              <div>
-                <p className="font-medium">{t('language')}</p>
-              </div>
+          {/* Language */}
+          <div className="mb-4">
+            <div className="text-sm mb-2">{t("settings.language")}</div>
+            <div className="flex gap-2">
+              <Button
+                variant={language === "en" ? "default" : "outline"}
+                onClick={() => setLanguage("en")}
+              >
+                EN
+              </Button>
+              <Button
+                variant={language === "ar" ? "default" : "outline"}
+                onClick={() => setLanguage("ar")}
+              >
+                AR
+              </Button>
             </div>
-            <Select value={language} onValueChange={(value: 'en' | 'ar') => setLanguage(value)}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder={t('language')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">{t('english')}</SelectItem>
-                <SelectItem value="ar">{t('arabic')}</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
-        </div>
 
-        <div className="flex justify-end">
-          <Button onClick={() => onOpenChange(false)}>
-            {t('save')}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+          {/* Theme */}
+          <div className="mb-2">
+            <div className="text-sm mb-2">{t("settings.theme")}</div>
+            <div className="flex gap-2">
+              <Button variant={theme === "light" ? "default" : "outline"} onClick={() => setTheme("light")}>
+                {t("settings.light")}
+              </Button>
+              <Button variant={theme === "dark" ? "default" : "outline"} onClick={() => setTheme("dark")}>
+                {t("settings.dark")}
+              </Button>
+              <Button variant={theme === "system" ? "default" : "outline"} onClick={() => setTheme("system")}>
+                {t("settings.system")}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <Button onClick={() => onOpenChange(false)}>{t("settings.close")}</Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
