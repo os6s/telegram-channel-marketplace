@@ -1,39 +1,70 @@
+// client/src/pages/sell/parts/UsernameForm.tsx
 import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { useLanguage } from "@/contexts/language-context";
 
-export default function UsernameForm({ form, L, platform }:{
-  form:any; L:any; platform:string;
+export default function UsernameForm({
+  form,
+  platform,
+}: {
+  form: any;
+  platform: string;
 }) {
-  const selectCls = "w-full rounded-md border px-3 py-2 bg-background text-foreground";
+  const { t } = useLanguage();
+  const selectCls =
+    "w-full rounded-md border px-3 py-2 bg-background text-foreground";
+
   return (
     <>
-      <FormField name="platform" control={form.control} render={({field})=>(
-        <FormItem>
-          <FormLabel>{L.platform}</FormLabel>
-          <FormControl><Input {...field} readOnly value={platform} className="bg-background" /></FormControl>
-        </FormItem>
-      )}/>
-      <FormField name="username" control={form.control} render={({field})=>(
-        <FormItem>
-          <FormLabel>{L.usernameLabel}</FormLabel>
-          <FormControl><Input {...field} placeholder="username" className="bg-background" /></FormControl>
-          <FormMessage />
-        </FormItem>
-      )}/>
-      {platform==="telegram" && (
-        <FormField name="tgUserType" control={form.control} render={({field})=>(
+      <FormField
+        name="platform"
+        control={form.control}
+        render={({ field }) => (
           <FormItem>
-            <FormLabel>{L.tgUserType}</FormLabel>
+            <FormLabel>{t("sell.platform")}</FormLabel>
             <FormControl>
-              <select {...field} className={selectCls}>
-                <option value=""></option>
-                <option value="NFT">{L.NFT}</option>
-                <option value="NORMAL">{L.NORMAL}</option>
-              </select>
+              <Input {...field} readOnly value={platform} className="bg-background" />
             </FormControl>
-            <FormMessage/>
           </FormItem>
-        )}/>
+        )}
+      />
+
+      <FormField
+        name="username"
+        control={form.control}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t("sell.usernameLabel")}</FormLabel>
+            <FormControl>
+              <Input
+                {...field}
+                placeholder="username"
+                className="bg-background"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {platform === "telegram" && (
+        <FormField
+          name="tgUserType"
+          control={form.control}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t("sell.tgUserType")}</FormLabel>
+              <FormControl>
+                <select {...field} className={selectCls}>
+                  <option value=""></option>
+                  <option value="NFT">{t("sell.NFT")}</option>
+                  <option value="NORMAL">{t("sell.NORMAL")}</option>
+                </select>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
       )}
     </>
   );
