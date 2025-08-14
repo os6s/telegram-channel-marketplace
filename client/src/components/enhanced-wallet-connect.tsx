@@ -1,3 +1,4 @@
+// client/src/components/enhanced-wallet-connect.tsx
 import { useState, useEffect, useCallback, useRef } from "react";
 import { TonConnectButton, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
 import { Button } from "@/components/ui/button";
@@ -5,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Wallet, CheckCircle, ExternalLink, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { WebApp } from '@telegram-web-app/core';
+import { useLanguage } from "@/contexts/language-context";
 
 export interface TonWallet {
   address: string;
@@ -18,11 +20,12 @@ interface WalletConnectProps {
   enableTelegramWallet?: boolean;
 }
 
-export function WalletConnect({ 
-  onWalletConnect, 
+export function WalletConnect({
+  onWalletConnect,
   onWalletDisconnect,
   enableTelegramWallet = true
 }: WalletConnectProps) {
+  const { t } = useLanguage();
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
   const [localWallet, setLocalWallet] = useState<TonWallet | null>(null);
@@ -33,7 +36,6 @@ export function WalletConnect({
   const [webApp, setWebApp] = useState<WebApp | null>(null);
   const toastShownRef = useRef(false);
 
-  // تحقق من بيئة Telegram WebApp
   useEffect(() => {
     if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
       const tgWebApp = new WebApp(window.Telegram.WebApp);
@@ -57,7 +59,6 @@ export function WalletConnect({
     }
   }, [localWallet]);
 
-  // جلب الرصيد مع تحسين الأداء
   const fetchBalance = useCallback(async (address: string): Promise<string> => {
     try {
       setIsLoading(true);
@@ -80,17 +81,16 @@ export function WalletConnect({
     } catch (error) {
       console.error('Failed to fetch balance:', error);
       toast({
-        title: "Balance Error",
-        description: "Could not fetch wallet balance",
+        title: t("wallet.balanceErrorTitle"),
+        description: t("wallet.balanceErrorDesc"),
         variant: "destructive",
       });
       return '0.000';
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, t]);
 
-  // إدارة حالة المحفظة مع منع تكرار الإشعارات
   useEffect(() => {
     if (!wallet) {
       if (localWallet) {
@@ -121,30 +121,28 @@ export function WalletConnect({
         if (webApp) webApp.BackButton.show();
 
         toast({
-          title: "Wallet Connected",
-          description: `Connected to ${formatAddress(wallet.account.address)}`,
+          title: t("wallet.connected"),
+          description: t("wallet.connectedTo", { address: formatAddress(wallet.account.address) }),
           duration: 3000,
         });
       };
 
       initializeWallet();
     }
-  }, [wallet, fetchBalance, onWalletConnect, onWalletDisconnect, toast, webApp]);
+  }, [wallet, fetchBalance, onWalletConnect, onWalletDisconnect, toast, webApp, t]);
 
-  // تنسيق العنوان للعرض
   const formatAddress = (address: string): string => {
     if (!address) return '';
     if (address.length <= 10) return address;
     return `${address.slice(0, 4)}...${address.slice(-4)}`;
   };
 
-  // فصل المحفظة مع إشعارات الخطأ
   const handleDisconnect = async () => {
     try {
       await tonConnectUI.disconnect();
       toast({
-        title: "Wallet Disconnected",
-        description: "Your wallet has been disconnected successfully",
+        title: t("wallet.disconnected"),
+        description: t("wallet.disconnectedDesc"),
       });
       onWalletDisconnect?.();
       toastShownRef.current = false;
@@ -154,29 +152,31 @@ export function WalletConnect({
     } catch (error) {
       console.error('Wallet disconnection error:', error);
       toast({
-        title: "Disconnection Failed",
-        description: "Failed to disconnect wallet. Please try again.",
+        title: t("wallet.disconnectFailedTitle"),
+        description: t("wallet.disconnectFailedDesc"),
         variant: "destructive",
       });
     }
   };
 
-  // دمج محفظة تيليجرام (زر فقط داخل تيليجرام)
   const connectTelegramWallet = () => {
     if (!webApp) return;
-    
-    webApp.openInvoice({
-      currency: 'TON',
-      amount: '0', // فتح المحفظة فقط
-      description: 'Connect your Telegram Wallet'
-    }, (status) => {
-      if (status === 'paid') {
-        toast({
-          title: "Telegram Wallet Connected",
-          description: "Your Telegram Wallet is now connected",
-        });
+
+    webApp.openInvoice(
+      {
+        currency: 'TON',
+        amount: '0',
+        description: t("wallet.connectTgDesc"),
+      },
+      (status) => {
+        if (status === 'paid') {
+          toast({
+            title: t("wallet.tgConnected"),
+            description: t("wallet.tgConnectedDesc"),
+          });
+        }
       }
-    });
+    );
   };
 
   if (isLoading) {
@@ -205,33 +205,33 @@ export function WalletConnect({
               {formatAddress(localWallet.address)}
               <ExternalLink className="w-3 h-3 ml-1" />
             </Button>
-            
+
             <div className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-md text-sm font-medium">
               {balance} TON
             </div>
           </div>
-          
+
           <Button
             variant="outline"
             size="sm"
             onClick={handleDisconnect}
             className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/50"
           >
-            Disconnect
+            {t("wallet.disconnect")}
           </Button>
         </div>
       )}
 
       {enableTelegramWallet && webApp && !localWallet && (
         <div className="mt-3">
-          <Button 
+          <Button
             onClick={connectTelegramWallet}
             className="w-full bg-telegram-500 hover:bg-telegram-600 text-white"
           >
             <Wallet className="w-4 h-4 mr-2" />
-            {webApp.initDataUnsafe.user?.first_name 
-              ? `Connect ${webApp.initDataUnsafe.user.first_name}'s Wallet` 
-              : 'Connect Telegram Wallet'}
+            {webApp.initDataUnsafe.user?.first_name
+              ? t("wallet.connectTgWithName", { name: webApp.initDataUnsafe.user.first_name })
+              : t("wallet.connectTg")}
           </Button>
         </div>
       )}
@@ -244,9 +244,9 @@ export function WalletConnect({
                 <Wallet className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h4 className="font-medium text-sm">Secure TON Wallet Connection</h4>
+                <h4 className="font-medium text-sm">{t("wallet.secureTitle")}</h4>
                 <p className="text-gray-500 dark:text-gray-400 text-xs mt-1">
-                  Connect your TON wallet to interact with the app. Your private keys never leave your device.
+                  {t("wallet.secureDesc")}
                 </p>
               </div>
             </div>
@@ -257,5 +257,4 @@ export function WalletConnect({
   );
 }
 
-// Export for backward compatibility
 export { WalletConnect as EnhancedWalletConnect };
