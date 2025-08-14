@@ -52,7 +52,7 @@ function BottomNavigation() {
           <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
         </svg>
       ),
-      label: t("nav.marketplace"),
+      label: t("market.title"),
     },
     {
       path: "/sell",
@@ -61,7 +61,7 @@ function BottomNavigation() {
           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
         </svg>
       ),
-      label: t("nav.sell"),
+      label: t("sell.title"),
     },
     {
       path: "/activity",
@@ -70,7 +70,8 @@ function BottomNavigation() {
           <path d="M9,5V7H15V5H9M12,2A7,7 0 0,1 19,9C19,11.38 17.81,13.47 16,14.74V17A1,1 0 0,1 15,18H9A1,1 0 0,1 8,17V14.74C6.19,13.47 5,11.38 5,9A7,7 0 0,1 12,2M9,12H15A2,2 0 0,1 17,14V15H7V14A2,2 0 0,1 9,12Z" />
         </svg>
       ),
-      label: t("nav.activity"),
+      // تأكد من إضافة activity.title في en/ar.json
+      label: t("activity.title"),
     },
     {
       path: "/profile",
@@ -79,7 +80,7 @@ function BottomNavigation() {
           <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
         </svg>
       ),
-      label: t("nav.profile"),
+      label: t("profile.title"),
     },
   ] as const;
 
