@@ -1,4 +1,3 @@
-// client/src/contexts/language-context.tsx
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import en from "@/locales/en.json";
 import ar from "@/locales/ar.json";
@@ -15,7 +14,12 @@ interface LanguageContextType {
 const bundles: Record<Language, Dict> = { en, ar };
 
 function getByPath(obj: Dict, path: string): string | undefined {
-  return path.split(".").reduce<any>((acc, k) => (acc && k in acc ? acc[k] : undefined), obj);
+  return path
+    .split(".")
+    .reduce<any>((acc, k) => {
+      if (acc && typeof acc === "object" && k in acc) return acc[k];
+      return undefined;
+    }, obj);
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
@@ -38,16 +42,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const t = useMemo(
     () => (key: string) => {
-      // 1) جرب لغة المستخدم أولاً
-      const primary = getByPath(bundles[language], key);
-      if (typeof primary === "string") return primary;
-
-      // 2) لو مفقود، جرب الإنجليزية
-      const fallback = getByPath(bundles.en, key);
-      if (typeof fallback === "string") return fallback;
-
-      // 3) لو مفقود حتى بالإنجليزي رجع المفتاح نفسه
-      return key;
+      const val = getByPath(bundles[language], key);
+      return (typeof val === "string" ? val : undefined) ?? key;
     },
     [language]
   );
