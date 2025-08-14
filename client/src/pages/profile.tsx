@@ -11,25 +11,26 @@ import { WalletConnect } from "@/components/wallet-connect";
 import { ChannelCard } from "@/components/channel-card";
 import { SettingsModal } from "@/components/settings-modal";
 import { telegramWebApp } from "@/lib/telegram";
-import { useTon, type TonWallet } from "@/lib/ton-connect"; // CHANGED
+import { useTon, type TonWallet } from "@/lib/ton-connect";
 import { type Channel, type User } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/contexts/language-context";
 
 export default function Profile() {
   const [connectedWallet, setConnectedWallet] = useState<TonWallet | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { t } = useLanguage();
 
   // TonConnect via Provider
-  const { wallet, getBalance } = useTon(); // CHANGED
+  const { wallet, getBalance } = useTon();
 
   // Telegram user
   const telegramUser = telegramWebApp.user;
   const userId = telegramUser?.id.toString() || "temp-user-id";
 
-  // مزامنة حالة المحفظة من الـ Provider وتحديث البروفايل إذا تغيّرت
   useEffect(() => {
     (async () => {
       if (wallet?.address) {
@@ -41,7 +42,6 @@ export default function Profile() {
         };
         setConnectedWallet(merged);
 
-        // اربط المحفظة بالبروفايل إذا اختلفت
         if (user && user.tonWallet !== wallet.address) {
           updateWalletMutation.mutate(wallet.address);
         }
@@ -50,7 +50,7 @@ export default function Profile() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wallet?.address]); // CHANGED
+  }, [wallet?.address]);
 
   // Fetch or create user profile
   const { data: user } = useQuery({
@@ -60,16 +60,15 @@ export default function Profile() {
         const response = await fetch(`/api/users/${userId}`);
         if (response.ok) return (await response.json()) as User;
 
-        // Create user if not exists
         if (telegramUser) {
-          const createResponse = await apiRequest("POST", "/api/users", {
+          const created = await apiRequest("POST", "/api/users", {
             telegramId: telegramUser.id.toString(),
             username: telegramUser.username,
             firstName: telegramUser.first_name,
             lastName: telegramUser.last_name,
             tonWallet: connectedWallet?.address ?? undefined,
           });
-          return (await createResponse.json()) as User;
+          return created as User;
         }
       } catch (error) {
         console.error("Failed to fetch/create user:", error);
@@ -97,19 +96,18 @@ export default function Profile() {
       const response = await apiRequest("PATCH", `/api/users/${userId}`, {
         tonWallet: walletAddress,
       });
-      return await response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users", userId] });
       toast({
-        title: "Wallet Connected",
-        description: "Your TON wallet has been linked to your profile",
+        title: t("profile.walletConnected"),
+        description: t("profile.walletLinked"),
       });
     },
   });
 
-  // يبقى التوقيع نفسه حتى يبقى WalletConnect متوافق
-  const handleWalletConnect = (w: TonWallet) => { // CHANGED
+  const handleWalletConnect = (w: TonWallet) => {
     setConnectedWallet(w);
     if (user && user.tonWallet !== w.address) {
       updateWalletMutation.mutate(w.address);
@@ -155,9 +153,11 @@ export default function Profile() {
                 <ArrowLeft className="w-4 h-4" />
               </Button>
               <div>
-                <h1 className="text-lg font-semibold text-foreground">Profile</h1>
+                <h1 className="text-lg font-semibold text-foreground">
+                  {t("profile.title")}
+                </h1>
                 <p className="text-xs text-muted-foreground">
-                  Manage your account and listings
+                  {t("profile.subtitle")}
                 </p>
               </div>
             </div>
@@ -188,11 +188,11 @@ export default function Profile() {
                 )}
                 <div className="flex items-center space-x-2 mt-2">
                   {telegramUser?.is_premium && (
-                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
-                      ⭐ Premium
-                    </Badge>
+                    <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">⭐ {t("profile.premium")}</Badge>
                   )}
-                  <Badge variant="secondary">Member since {new Date().getFullYear()}</Badge>
+                  <Badge variant="secondary">
+                    {t("profile.memberSince", { year: String(new Date().getFullYear()) })}
+                  </Badge>
                 </div>
               </div>
             </div>
@@ -202,13 +202,13 @@ export default function Profile() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <Wallet className="w-5 h-5 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">TON Wallet</span>
+                  <span className="text-sm text-muted-foreground">{t("profile.tonWallet")}</span>
                 </div>
                 <WalletConnect onWalletConnect={handleWalletConnect} />
               </div>
               {connectedWallet && (
                 <div className="mt-2 text-sm text-muted-foreground">
-                  Balance: {connectedWallet.balance} TON
+                  {t("profile.balance")}: {connectedWallet.balance} TON
                 </div>
               )}
             </div>
@@ -223,7 +223,7 @@ export default function Profile() {
                 <Plus className="w-5 h-5 text-telegram-500" />
               </div>
               <div className="text-2xl font-bold text-foreground">{stats.activeChannels}</div>
-              <div className="text-sm text-muted-foreground">Active Listings</div>
+              <div className="text-sm text-muted-foreground">{t("profile.stats.activeListings")}</div>
             </CardContent>
           </Card>
 
@@ -233,7 +233,7 @@ export default function Profile() {
                 <DollarSign className="w-5 h-5 text-green-500" />
               </div>
               <div className="text-2xl font-bold text-foreground">{stats.totalValue}</div>
-              <div className="text-sm text-muted-foreground">Total Value (TON)</div>
+              <div className="text-sm text-muted-foreground">{t("profile.stats.totalValueTon")}</div>
             </CardContent>
           </Card>
 
@@ -247,7 +247,7 @@ export default function Profile() {
                   ? `${(stats.totalSubscribers / 1000).toFixed(1)}K`
                   : stats.totalSubscribers}
               </div>
-              <div className="text-sm text-muted-foreground">Total Reach</div>
+              <div className="text-sm text-muted-foreground">{t("profile.stats.totalReach")}</div>
             </CardContent>
           </Card>
         </div>
@@ -255,22 +255,20 @@ export default function Profile() {
         {/* Tabs */}
         <Tabs defaultValue="channels" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="channels">My Channels</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
+            <TabsTrigger value="channels">{t("profile.tabs.myChannels")}</TabsTrigger>
+            <TabsTrigger value="activity">{t("profile.tabs.activity")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="channels" className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-foreground">My Channel Listings</h3>
+              <h3 className="text-lg font-semibold text-foreground">{t("profile.myChannelListings")}</h3>
               <Button
                 size="sm"
                 className="bg-telegram-500 hover:bg-telegram-600"
-                onClick={() => {
-                  window.location.href = "/sell-channel";
-                }}
+                onClick={() => (window.location.href = "/sell-channel")}
               >
                 <Plus className="w-4 h-4 mr-1" />
-                List Channel
+                {t("profile.listChannel")}
               </Button>
             </div>
 
@@ -296,18 +294,14 @@ export default function Profile() {
               <Card>
                 <CardContent className="p-8 text-center">
                   <div className="text-muted-foreground text-6xl mb-4">📺</div>
-                  <h3 className="font-medium text-foreground mb-2">No channels listed yet</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Start selling your Telegram channels on the marketplace
-                  </p>
+                  <h3 className="font-medium text-foreground mb-2">{t("profile.empty.noChannelsTitle")}</h3>
+                  <p className="text-sm text-muted-foreground mb-4">{t("profile.empty.noChannelsDesc")}</p>
                   <Button
                     className="bg-telegram-500 hover:bg-telegram-600"
-                    onClick={() => {
-                      window.location.href = "/sell-channel";
-                    }}
+                    onClick={() => (window.location.href = "/sell-channel")}
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    List Your First Channel
+                    {t("profile.empty.cta")}
                   </Button>
                 </CardContent>
               </Card>
@@ -335,17 +329,15 @@ export default function Profile() {
             <Card>
               <CardContent className="p-8 text-center">
                 <div className="text-muted-foreground text-6xl mb-4">📊</div>
-                <h3 className="font-medium text-foreground mb-2">View Full Activity</h3>
+                <h3 className="font-medium text-foreground mb-2">{t("profile.activity.title")}</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Access your complete transaction history and marketplace activity.
+                  {t("profile.activity.desc")}
                 </p>
                 <Button
                   className="bg-telegram-500 hover:bg-telegram-600"
-                  onClick={() => {
-                    window.location.href = "/activity";
-                  }}
+                  onClick={() => (window.location.href = "/activity")}
                 >
-                  Open Activity Page
+                  {t("profile.activity.open")}
                 </Button>
               </CardContent>
             </Card>
