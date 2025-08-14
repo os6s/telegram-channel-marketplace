@@ -25,7 +25,7 @@ function getSchema(kind: string) {
   return undefined as any;
 }
 
-export default function SellPage() {
+export default function sellpage() {
   const { toast } = useToast();
   const { t } = useLanguage();
 
