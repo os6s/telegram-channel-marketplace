@@ -1,3 +1,3 @@
-import SellPage from "./SellPage";
+import SellPage from "./sellpage";
 
 export default SellPage;
