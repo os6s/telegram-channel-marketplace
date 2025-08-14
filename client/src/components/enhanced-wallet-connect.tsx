@@ -1,17 +1,17 @@
-// client/src/components/enhanced-wallet-connect.tsx
+// client/src/components/wallet-connect.tsx
 import { useState, useEffect, useCallback, useRef } from "react";
-import { TonConnectButton, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
+import { TonConnectButton, useTonConnectUI, useTonWallet } from "@tonconnect/ui-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Wallet, CheckCircle, ExternalLink, Loader2 } from "lucide-react";
+import { Wallet as WalletIcon, CheckCircle, ExternalLink, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { WebApp } from '@telegram-web-app/core';
+import { WebApp } from "@telegram-web-app/core";
 import { useLanguage } from "@/contexts/language-context";
 
 export interface TonWallet {
   address: string;
   balance: string;
-  network: 'mainnet' | 'testnet';
+  network: "mainnet" | "testnet";
 }
 
 interface WalletConnectProps {
@@ -23,39 +23,32 @@ interface WalletConnectProps {
 export function WalletConnect({
   onWalletConnect,
   onWalletDisconnect,
-  enableTelegramWallet = true
+  enableTelegramWallet = true,
 }: WalletConnectProps) {
-  const { t } = useLanguage();
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
   const [localWallet, setLocalWallet] = useState<TonWallet | null>(null);
-  const [balance, setBalance] = useState<string>('0.000');
+  const [balance, setBalance] = useState<string>("0.000");
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   const [webApp, setWebApp] = useState<WebApp | null>(null);
   const toastShownRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
+    if (typeof window !== "undefined" && window.Telegram?.WebApp) {
       const tgWebApp = new WebApp(window.Telegram.WebApp);
       setWebApp(tgWebApp);
       tgWebApp.ready();
       tgWebApp.expand();
-      tgWebApp.setBackgroundColor('#ffffff');
+      tgWebApp.setBackgroundColor("#ffffff");
       tgWebApp.enableClosingConfirmation();
-
       tgWebApp.BackButton.onClick(() => {
-        if (localWallet) {
-          handleDisconnect();
-        } else {
-          tgWebApp.BackButton.hide();
-        }
+        if (localWallet) handleDisconnect();
+        else tgWebApp.BackButton.hide();
       });
-
-      return () => {
-        tgWebApp.BackButton.offClick();
-      };
+      return () => tgWebApp.BackButton.offClick();
     }
   }, [localWallet]);
 
@@ -66,26 +59,19 @@ export function WalletConnect({
         `https://toncenter.com/api/v2/getAddressInformation?address=${address}`,
         {
           headers: {
-            'Accept': 'application/json',
-            'X-API-Key': process.env.NEXT_PUBLIC_TON_API_KEY || ''
-          }
+            Accept: "application/json",
+            "X-API-Key": process.env.NEXT_PUBLIC_TON_API_KEY || "",
+          },
         }
       );
-
-      if (!response.ok) throw new Error('Network response was not ok');
-
+      if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
-      const balanceInNano = data.result?.balance || '0';
+      const balanceInNano = data.result?.balance || "0";
       const balanceInTon = (parseInt(balanceInNano) / 1_000_000_000).toFixed(3);
       return balanceInTon;
-    } catch (error) {
-      console.error('Failed to fetch balance:', error);
-      toast({
-        title: t("wallet.balanceErrorTitle"),
-        description: t("wallet.balanceErrorDesc"),
-        variant: "destructive",
-      });
-      return '0.000';
+    } catch {
+      toast({ title: t("toast.error"), description: t("toast.somethingWrong"), variant: "destructive" });
+      return "0.000";
     } finally {
       setIsLoading(false);
     }
@@ -95,7 +81,7 @@ export function WalletConnect({
     if (!wallet) {
       if (localWallet) {
         setLocalWallet(null);
-        setBalance('0.000');
+        setBalance("0.000");
         onWalletDisconnect?.();
       }
       toastShownRef.current = false;
@@ -105,76 +91,45 @@ export function WalletConnect({
 
     if (wallet && !toastShownRef.current) {
       toastShownRef.current = true;
-
-      const initializeWallet = async () => {
+      (async () => {
         const balanceInTon = await fetchBalance(wallet.account.address);
         const tonWallet: TonWallet = {
           address: wallet.account.address,
           balance: balanceInTon,
-          network: wallet.account.chain === '-239' ? 'mainnet' : 'testnet',
+          network: wallet.account.chain === "-239" ? "mainnet" : "testnet",
         };
-
         setLocalWallet(tonWallet);
         setBalance(balanceInTon);
         onWalletConnect?.(tonWallet);
-
         if (webApp) webApp.BackButton.show();
-
-        toast({
-          title: t("wallet.connected"),
-          description: t("wallet.connectedTo", { address: formatAddress(wallet.account.address) }),
-          duration: 3000,
-        });
-      };
-
-      initializeWallet();
+        toast({ title: t("wallet.connected"), description: formatAddress(wallet.account.address), duration: 3000 });
+      })();
     }
-  }, [wallet, fetchBalance, onWalletConnect, onWalletDisconnect, toast, webApp, t]);
+  }, [wallet, fetchBalance, onWalletConnect, onWalletDisconnect, toast, webApp, t, localWallet]);
 
-  const formatAddress = (address: string): string => {
-    if (!address) return '';
-    if (address.length <= 10) return address;
-    return `${address.slice(0, 4)}...${address.slice(-4)}`;
-  };
+  const formatAddress = (address: string): string =>
+    !address ? "" : address.length <= 10 ? address : `${address.slice(0, 4)}...${address.slice(-4)}`;
 
   const handleDisconnect = async () => {
     try {
       await tonConnectUI.disconnect();
-      toast({
-        title: t("wallet.disconnected"),
-        description: t("wallet.disconnectedDesc"),
-      });
+      toast({ title: t("wallet.disconnect") });
       onWalletDisconnect?.();
       toastShownRef.current = false;
       if (webApp) webApp.BackButton.hide();
       setLocalWallet(null);
-      setBalance('0.000');
-    } catch (error) {
-      console.error('Wallet disconnection error:', error);
-      toast({
-        title: t("wallet.disconnectFailedTitle"),
-        description: t("wallet.disconnectFailedDesc"),
-        variant: "destructive",
-      });
+      setBalance("0.000");
+    } catch {
+      toast({ title: t("toast.error"), description: t("toast.somethingWrong"), variant: "destructive" });
     }
   };
 
   const connectTelegramWallet = () => {
     if (!webApp) return;
-
     webApp.openInvoice(
-      {
-        currency: 'TON',
-        amount: '0',
-        description: t("wallet.connectTgDesc"),
-      },
+      { currency: "TON", amount: "0", description: t("wallet.connectTelegram") },
       (status) => {
-        if (status === 'paid') {
-          toast({
-            title: t("wallet.tgConnected"),
-            description: t("wallet.tgConnectedDesc"),
-          });
-        }
+        if (status === "paid") toast({ title: t("wallet.connected") });
       }
     );
   };
@@ -189,9 +144,7 @@ export function WalletConnect({
 
   return (
     <div className="space-y-4">
-      {!localWallet && (
-        <TonConnectButton className="w-full mb-4" />
-      )}
+      {!localWallet && <TonConnectButton className="w-full mb-4" />}
 
       {localWallet && (
         <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -199,18 +152,16 @@ export function WalletConnect({
             <Button
               variant="outline"
               className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 border-green-200 dark:border-green-800 hover:bg-green-200 dark:hover:bg-green-800"
-              onClick={() => window.open(`https://tonviewer.com/${localWallet.address}`, '_blank')}
+              onClick={() => window.open(`https://tonviewer.com/${localWallet.address}`, "_blank")}
             >
               <CheckCircle className="w-4 h-4 mr-2" />
               {formatAddress(localWallet.address)}
               <ExternalLink className="w-3 h-3 ml-1" />
             </Button>
-
             <div className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-md text-sm font-medium">
               {balance} TON
             </div>
           </div>
-
           <Button
             variant="outline"
             size="sm"
@@ -224,14 +175,9 @@ export function WalletConnect({
 
       {enableTelegramWallet && webApp && !localWallet && (
         <div className="mt-3">
-          <Button
-            onClick={connectTelegramWallet}
-            className="w-full bg-telegram-500 hover:bg-telegram-600 text-white"
-          >
-            <Wallet className="w-4 h-4 mr-2" />
-            {webApp.initDataUnsafe.user?.first_name
-              ? t("wallet.connectTgWithName", { name: webApp.initDataUnsafe.user.first_name })
-              : t("wallet.connectTg")}
+          <Button onClick={connectTelegramWallet} className="w-full bg-telegram-500 hover:bg-telegram-600 text-white">
+            <WalletIcon className="w-4 h-4 mr-2" />
+            {t("wallet.connectTelegram")}
           </Button>
         </div>
       )}
@@ -241,12 +187,12 @@ export function WalletConnect({
           <CardContent className="pt-4">
             <div className="text-center space-y-3">
               <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center mx-auto">
-                <Wallet className="w-6 h-6 text-white" />
+                <WalletIcon className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h4 className="font-medium text-sm">{t("wallet.secureTitle")}</h4>
+                <h4 className="font-medium text-sm">{t("wallet.connect")}</h4>
                 <p className="text-gray-500 dark:text-gray-400 text-xs mt-1">
-                  {t("wallet.secureDesc")}
+                  {t("toast.openFromTelegram")}
                 </p>
               </div>
             </div>
@@ -257,4 +203,5 @@ export function WalletConnect({
   );
 }
 
+// Backward alias
 export { WalletConnect as EnhancedWalletConnect };
