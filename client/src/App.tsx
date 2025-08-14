@@ -12,7 +12,7 @@ import { useTelegram } from "@/hooks/use-telegram";
 import { TonConnectUIProvider } from "@tonconnect/ui-react";
 
 // Lazy load pages for better performance
-const Marketplace = lazy(() => import("@/components/enhanced-marketplace"));
+const Marketplace = lazy(() => import("@/pages/marketplace"));
 const SellPage = lazy(() => import("@/pages/sell"));  // <-- تم التعديل هنا
 const Activity = lazy(() => import("@/pages/activity"));
 const Profile = lazy(() => import("@/pages/profile"));
