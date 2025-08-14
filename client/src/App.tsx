@@ -13,7 +13,7 @@ import { TonConnectUIProvider } from "@tonconnect/ui-react";
 
 // Lazy pages
 const Marketplace = lazy(() => import("@/pages/marketplace"));
-const SellPage = lazy(() => import("@/pages/sell"));
+const sellpage = lazy(() => import("@/pages/sell"));
 const Activity = lazy(() => import("@/pages/activity"));
 const Profile = lazy(() => import("@/pages/profile"));
 const NotFound = lazy(() => import("@/pages/not-found"));
