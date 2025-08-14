@@ -68,7 +68,7 @@ export default function SellPage() {
 
   const submit = async (data: any) => {
     if (!telegramWebApp?.user) {
-      toast({ title: t("common.error") || "Error", description: t("sell.openFromTelegram"), variant: "destructive" });
+      toast({ title: t("toast.error"), description: t("sell.openFromTelegram"), variant: "destructive" });
       return;
     }
 
@@ -85,7 +85,7 @@ export default function SellPage() {
       toast({ title: "OK", description: t("sell.sent") });
       form.reset(); setKind(null); setPlatform("");
     } catch (e: any) {
-      toast({ title: t("common.error") || "Error", description: e?.message || "Error", variant: "destructive" });
+      toast({ title: t("toast.error"), description: e?.message || "Error", variant: "destructive" });
     }
   };
 
