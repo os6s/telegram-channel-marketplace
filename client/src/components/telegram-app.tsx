@@ -26,15 +26,17 @@ export function TelegramApp({ children }: TelegramAppProps) {
   }
 
   return (
-    <div 
+    <div
       className="telegram-mini-app"
-      style={{
-        backgroundColor: webAppData.theme.bg_color || undefined,
-        color: webAppData.theme.text_color || undefined,
-        minHeight: `${webAppData.viewportHeight}px`,
-        height: '100vh',
-        overflow: 'hidden auto'
-      }}
+      style={
+        {
+          "--tg-theme-bg-color": webAppData.theme.bg_color || "",
+          "--tg-theme-text-color": webAppData.theme.text_color || "",
+          minHeight: `${webAppData.viewportHeight}px`,
+          height: "100vh",
+          overflow: "hidden auto",
+        } as React.CSSProperties
+      }
     >
       {children}
     </div>
