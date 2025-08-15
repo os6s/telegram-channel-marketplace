@@ -15,7 +15,7 @@ export default function AccountForm({ form, platform }: { form: any; platform: s
           <FormItem>
             <FormLabel>{t("sell.platform")}</FormLabel>
             <FormControl>
-              <Input {...field} readOnly value={platform} className="bg-background" />
+              <Input {...field} readOnly value={platform} className="bg-card text-foreground" />
             </FormControl>
           </FormItem>
         )}
@@ -28,7 +28,7 @@ export default function AccountForm({ form, platform }: { form: any; platform: s
           <FormItem>
             <FormLabel>{t("sell.usernameLabel")}</FormLabel>
             <FormControl>
-              <Input {...field} placeholder="handle" className="bg-background" />
+              <Input {...field} placeholder="handle" className="bg-card text-foreground" />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -42,7 +42,7 @@ export default function AccountForm({ form, platform }: { form: any; platform: s
           <FormItem>
             <FormLabel>YYYY-MM</FormLabel>
             <FormControl>
-              <Input type="month" {...field} className="bg-background" />
+              <Input type="month" {...field} className="bg-card text-foreground" />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -57,7 +57,7 @@ export default function AccountForm({ form, platform }: { form: any; platform: s
             <FormItem>
               <FormLabel>{t("sell.followers")}</FormLabel>
               <FormControl>
-                <Input type="number" min={0} {...field} className="bg-background" />
+                <Input type="number" min={0} {...field} className="bg-card text-foreground" />
               </FormControl>
               <FormMessage />
             </FormItem>
