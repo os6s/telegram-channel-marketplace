@@ -25,7 +25,7 @@ function getSchema(kind: string) {
   return undefined as any;
 }
 
-export default function sellpage() {
+export default function SellPage() {
   const { toast } = useToast();
   const { t } = useLanguage();
 
@@ -68,11 +68,11 @@ export default function sellpage() {
 
   const submit = async (data: any) => {
     if (!telegramWebApp?.user) {
-      toast({ title: t("toast.error"), description: t("sell.openFromTelegram"), variant: "destructive" });
+      toast({ title: t("toast.error") || "Error", description: t("sell.openFromTelegram"), variant: "destructive" });
       return;
     }
 
-    const payload = { ...data, telegramId: telegramWebApp.user.id };
+    const payload: any = { ...data, telegramId: telegramWebApp.user.id };
     if (data.type === "channel") {
       // unify link/username to username for backend /api/sell
       payload.username = (data.channelUsername || data.link || "").trim();
@@ -85,7 +85,7 @@ export default function sellpage() {
       toast({ title: "OK", description: t("sell.sent") });
       form.reset(); setKind(null); setPlatform("");
     } catch (e: any) {
-      toast({ title: t("toast.error"), description: e?.message || "Error", variant: "destructive" });
+      toast({ title: t("toast.error") || "Error", description: e?.message || "Error", variant: "destructive" });
     }
   };
 
@@ -123,7 +123,7 @@ export default function sellpage() {
   }
 
   return (
-    <Form {...form}>
+    <Form key={`${kind ?? 'none'}-${platform || 'none'}`} {...form}>
       <form onSubmit={form.handleSubmit(submit)} className="space-y-4 min-h-screen p-4">
         <Card className="p-4 space-y-3">
           <div className="flex gap-2">
@@ -133,7 +133,7 @@ export default function sellpage() {
             <div className="ml-auto text-sm opacity-70">{kind} {platform && `· ${platform}`}</div>
           </div>
 
-          {/* parts (each part uses useLanguage() internally) */}
+          {/* parts */}
           {kind === "username" && <UsernameForm form={form} platform={platform} />}
           {kind === "account"  && <AccountForm  form={form} platform={platform} />}
           {kind === "channel"  && <ChannelForm  form={form} />}
@@ -176,7 +176,9 @@ export default function sellpage() {
             <Button type="button" variant="secondary" onClick={() => { setKind(null); setPlatform(""); form.reset(); }}>
               {t("sell.back")}
             </Button>
-            <Button type="submit" disabled={!form.formState.isValid}>{t("sell.post")}</Button>
+            <Button type="submit" disabled={form.formState.isSubmitting || !form.formState.isValid}>
+              {t("sell.post")}
+            </Button>
           </div>
         </Card>
       </form>
