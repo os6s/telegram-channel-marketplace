@@ -11,7 +11,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();            // theme: "light" | "dark"
   const { language, setLanguage, t } = useLanguage();
 
   return (
@@ -30,18 +30,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           <div className="mb-4">
             <div className="text-sm mb-2">{t("settings.language")}</div>
             <div className="flex gap-2">
-              <Button
-                variant={language === "en" ? "default" : "outline"}
-                onClick={() => setLanguage("en")}
-              >
-                EN
-              </Button>
-              <Button
-                variant={language === "ar" ? "default" : "outline"}
-                onClick={() => setLanguage("ar")}
-              >
-                AR
-              </Button>
+              <Button variant={language === "en" ? "default" : "outline"} onClick={() => setLanguage("en")}>EN</Button>
+              <Button variant={language === "ar" ? "default" : "outline"} onClick={() => setLanguage("ar")}>AR</Button>
             </div>
           </div>
 
@@ -54,9 +44,6 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               </Button>
               <Button variant={theme === "dark" ? "default" : "outline"} onClick={() => setTheme("dark")}>
                 {t("settings.dark")}
-              </Button>
-              <Button variant={theme === "system" ? "default" : "outline"} onClick={() => setTheme("system")}>
-                {t("settings.system")}
               </Button>
             </div>
           </div>
