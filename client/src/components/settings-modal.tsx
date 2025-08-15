@@ -1,4 +1,3 @@
-// client/src/components/settings-modal.tsx
 import * as Dialog from "@radix-ui/react-dialog";
 import { useTheme } from "@/contexts/theme-context";
 import { useLanguage } from "@/contexts/language-context";
@@ -11,7 +10,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
-  const { theme, setTheme } = useTheme();            // theme: "light" | "dark"
+  const { theme, setTheme } = useTheme();            // ← صار يدعم "system"
   const { language, setLanguage, t } = useLanguage();
 
   return (
@@ -44,6 +43,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               </Button>
               <Button variant={theme === "dark" ? "default" : "outline"} onClick={() => setTheme("dark")}>
                 {t("settings.dark")}
+              </Button>
+              <Button variant={theme === "system" ? "default" : "outline"} onClick={() => setTheme("system")}>
+                {t("settings.system")}
               </Button>
             </div>
           </div>
