@@ -1,18 +1,26 @@
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 
-type ThemePref = "light" | "dark" | "system";   // تفضيل المستخدم
-type Resolved = "light" | "dark";               // الثيم الفعلي المطبق
+type ThemePref = "light" | "dark" | "system";
+type Resolved = "light" | "dark";
 
 interface ThemeContextType {
-  theme: ThemePref;                  // ما يراه المستخدم (light/dark/system)
-  setTheme: (t: ThemePref) => void;  // يحدد التفضيل
-  toggleTheme: () => void;           // سويتش سريع بين light/dark
+  theme: ThemePref;
+  setTheme: (t: ThemePref) => void;
+  toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 function getSystem(): Resolved {
   if (typeof window === "undefined") return "light";
+
+  // أولاً نحاول نأخذ من تيليجرام إذا متوفر
+  const tg = (window as any)?.Telegram?.WebApp;
+  if (tg?.colorScheme === "dark" || tg?.colorScheme === "light") {
+    return tg.colorScheme as Resolved;
+  }
+
+  // إذا ماكو، نستخدم ثيم النظام
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
@@ -25,13 +33,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return "system";
   });
 
-  // احسب الثيم الفعلي المطبق
   const resolved: Resolved = useMemo(() => {
     if (theme === "system") return getSystem();
     return theme;
   }, [theme]);
 
-  // طبّق/أزل كلاس dark + خزّن التفضيل
   useEffect(() => {
     const root = document.documentElement;
     if (resolved === "dark") root.classList.add("dark");
@@ -39,7 +45,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     try { localStorage.setItem("theme", theme); } catch {}
   }, [resolved, theme]);
 
-  // استمع لتغيّر النظام إذا كان التفضيل "system"
   useEffect(() => {
     if (theme !== "system" || typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -53,12 +58,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener?.("change", onChange);
   }, [theme]);
 
-  // (اختياري) لا نسمح لتيليجرام يغيّر بعد ما المستخدم يختار يدوياً
   useEffect(() => {
     const tg = (window as any)?.Telegram?.WebApp;
     if (!tg?.onEvent) return;
+
     const handler = () => {
-      // طبّق فقط إذا التفضيل "system"
       const pref = (localStorage.getItem("theme") as ThemePref | null) || "system";
       if (pref !== "system") return;
       const scheme = tg.colorScheme as Resolved | undefined;
@@ -67,11 +71,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       if (scheme === "dark") root.classList.add("dark");
       else root.classList.remove("dark");
     };
+
     tg.onEvent?.("themeChanged", handler);
     return () => tg.offEvent?.("themeChanged", handler);
   }, []);
 
-  const toggleTheme = () => setTheme(prev => (prev === "dark" ? "light" : "dark"));
+  const toggleTheme = () => {
+    setTheme(prev => {
+      const next = prev === "dark" ? "light" : "dark";
+      localStorage.setItem("theme", next);
+      return next;
+    });
+  };
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>
