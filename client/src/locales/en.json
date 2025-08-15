@@ -160,5 +160,20 @@
     "title": "Page Not Found",
     "desc": "The page you're looking for doesn't exist.",
     "back": "Go back home"
+  },
+
+  "errors": {
+    "PRICE": "Enter a valid price (e.g. 12 or 12.5).",
+    "TG": "Invalid Telegram username/link.",
+    "TG_USER_TYPE_REQ": "Select a Telegram username type.",
+    "TT": "Invalid TikTok handle.",
+    "GEN": "Invalid username/handle.",
+    "MONTH": "Use YYYY-MM format.",
+    "NEED_LINK_OR_USER": "Enter a channel link or username.",
+    "SUBS": "Enter a valid subscribers count (≥ 1).",
+    "GIFS": "Enter a valid gifts count (≥ 1).",
+    "GIFT_KIND": "Select a gift kind.",
+    "COUNT_MIN": "Count must be at least 1.",
+    "TARGET_MISMATCH": "Service type does not match the selected target."
   }
 }
