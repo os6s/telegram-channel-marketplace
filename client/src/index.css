@@ -56,7 +56,6 @@
     --telegram-button-text: 255 255 255;
   }
 
-  /* Manual DARK mode override */
   html.force-theme.dark {
     --background: 224 71.4% 4.1%;
     --foreground: 210 20% 98%;
@@ -84,7 +83,6 @@
     --telegram-button-text: 255 255 255;
   }
 
-  /* Manual LIGHT mode override */
   html.force-theme:not(.dark) {
     --background: 0 0% 100%;
     --foreground: 224 71.4% 4.1%;
@@ -112,13 +110,11 @@
     --telegram-button-text: 255 255 255;
   }
 
-  /* Default Telegram Mini App styles */
   .telegram-mini-app {
     background: var(--tg-theme-bg-color, hsl(var(--background)));
     color: var(--tg-theme-text-color, hsl(var(--foreground)));
   }
 
-  /* Ignore Telegram values in manual mode */
   html.force-theme .telegram-mini-app {
     background: hsl(var(--background));
     color: hsl(var(--foreground));
