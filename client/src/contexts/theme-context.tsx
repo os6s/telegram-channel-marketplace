@@ -34,7 +34,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [theme]
   );
 
-  // Apply classes and save
   useEffect(() => {
     const root = document.documentElement;
 
@@ -47,7 +46,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     try { localStorage.setItem("theme", theme); } catch {}
   }, [resolved, theme]);
 
-  // System color scheme listener
   useEffect(() => {
     if (theme !== "system" || typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -60,7 +58,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener?.("change", onChange);
   }, [theme]);
 
-  // Telegram theme listener
   useEffect(() => {
     const tg = (window as any)?.Telegram?.WebApp;
     if (!tg?.onEvent) return;
