@@ -2,8 +2,13 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { getTelegramTheme } from "@/lib/telegram-webapp";
 
-type Theme = "light" | "dark";
-interface ThemeContextType { theme: Theme; toggleTheme: () => void; }
+export type Theme = "light" | "dark";
+
+interface ThemeContextType {
+  theme: Theme;
+  setTheme: (t: Theme) => void;   // ← متاحة للاستخدام من أي مكان (Settings/Profile)
+  toggleTheme: () => void;
+}
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
@@ -33,26 +38,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // react to Telegram live theme changes (إن وُجدت)
+  // react to Telegram live theme changes
   useEffect(() => {
     const tg = (window as any)?.Telegram?.WebApp;
     if (!tg?.onEvent) return;
     const handler = () => {
-      const scheme = tg.colorScheme; // "dark" | "light"
+      const scheme = tg.colorScheme as Theme | undefined; // "dark" | "light"
       if (scheme === "dark" || scheme === "light") setTheme(scheme);
     };
     tg.onEvent?.("themeChanged", handler);
     return () => tg.offEvent?.("themeChanged", handler);
   }, []);
 
-  // react to system changes لو الثيم مو مخزّن (اختياري)
+  // react to system changes لو الثيم غير مخزّن
   useEffect(() => {
     const mq = typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
     if (!mq) return;
     const onChange = () => {
-      // لا نغيّر لو المستخدم اختار يدويًا وخزّناه
       const stored = (localStorage.getItem("theme") as Theme | null);
-      if (stored === "dark" || stored === "light") return;
+      if (stored === "dark" || stored === "light") return; // المستخدم مختار يدويًا
       setTheme(mq.matches ? "dark" : "light");
     };
     mq.addEventListener?.("change", onChange);
@@ -61,7 +65,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const toggleTheme = () => setTheme(prev => (prev === "light" ? "dark" : "light"));
 
-  return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
 }
 
 export function useTheme() {
