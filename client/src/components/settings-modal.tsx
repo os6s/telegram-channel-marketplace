@@ -10,7 +10,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
-  const { theme, setTheme } = useTheme();            // ← صار يدعم "system"
+  const { theme, setTheme } = useTheme(); // theme: "light" | "dark" | "system"
   const { language, setLanguage, t } = useLanguage();
 
   return (
@@ -36,7 +36,14 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
           {/* Theme */}
           <div className="mb-2">
-            <div className="text-sm mb-2">{t("settings.theme")}</div>
+            <div className="text-sm mb-2">
+              {t("settings.theme")}{" "}
+              <span className="text-xs text-muted-foreground">
+                {theme === "system"
+                  ? "(Following Telegram)"
+                  : "(Manual Override)"}
+              </span>
+            </div>
             <div className="flex gap-2">
               <Button variant={theme === "light" ? "default" : "outline"} onClick={() => setTheme("light")}>
                 {t("settings.light")}
