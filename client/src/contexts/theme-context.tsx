@@ -11,14 +11,12 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-function getSystem(): Resolved {
+function systemResolved(): Resolved {
   if (typeof window === "undefined") return "light";
-
   const tg = (window as any)?.Telegram?.WebApp;
   if (tg?.colorScheme === "dark" || tg?.colorScheme === "light") {
     return tg.colorScheme as Resolved;
   }
-
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
@@ -28,73 +26,63 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       const stored = localStorage.getItem("theme") as ThemePref | null;
       if (stored === "light" || stored === "dark" || stored === "system") return stored;
     } catch {}
-    return "system"; // default for new users
+    return "system";
   });
 
-  const resolved: Resolved = useMemo(() => {
-    if (theme === "system") return getSystem();
-    return theme;
-  }, [theme]);
+  const resolved: Resolved = useMemo(
+    () => (theme === "system" ? systemResolved() : theme),
+    [theme]
+  );
 
-  // Force apply theme immediately
-  const applyThemeNow = (mode: ThemePref) => {
-    setThemeState(mode);
-    localStorage.setItem("theme", mode);
-    const root = document.documentElement;
-    if (mode === "dark") root.classList.add("dark");
-    else root.classList.remove("dark");
-  };
-
-  // Apply resolved theme when it changes
+  // Apply classes and save
   useEffect(() => {
     const root = document.documentElement;
+
     if (resolved === "dark") root.classList.add("dark");
     else root.classList.remove("dark");
-  }, [resolved]);
 
-  // Listen for system color scheme changes only in "system" mode
+    if (theme === "system") root.classList.remove("force-theme");
+    else root.classList.add("force-theme");
+
+    try { localStorage.setItem("theme", theme); } catch {}
+  }, [resolved, theme]);
+
+  // System color scheme listener
   useEffect(() => {
     if (theme !== "system" || typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => {
-      const next = mq.matches ? "dark" : "light";
       const root = document.documentElement;
-      if (next === "dark") root.classList.add("dark");
+      if (mq.matches) root.classList.add("dark");
       else root.classList.remove("dark");
     };
     mq.addEventListener?.("change", onChange);
     return () => mq.removeEventListener?.("change", onChange);
   }, [theme]);
 
-  // Listen for Telegram theme changes only in "system" mode
+  // Telegram theme listener
   useEffect(() => {
     const tg = (window as any)?.Telegram?.WebApp;
     if (!tg?.onEvent) return;
-
     if (theme !== "system") {
       tg.offEvent?.("themeChanged");
       return;
     }
-
     const handler = () => {
       const scheme = tg.colorScheme as Resolved | undefined;
-      if (!scheme) return;
       const root = document.documentElement;
       if (scheme === "dark") root.classList.add("dark");
       else root.classList.remove("dark");
     };
-
-    tg.onEvent?.("themeChanged", handler);
+    tg.onEvent("themeChanged", handler);
     return () => tg.offEvent?.("themeChanged", handler);
   }, [theme]);
 
-  const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    applyThemeNow(next);
-  };
+  const setTheme = (t: ThemePref) => setThemeState(t);
+  const toggleTheme = () => setThemeState(prev => (prev === "dark" ? "light" : "dark"));
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme: applyThemeNow, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );
