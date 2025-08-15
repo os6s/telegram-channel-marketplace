@@ -14,23 +14,21 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 function getSystem(): Resolved {
   if (typeof window === "undefined") return "light";
 
-  // أولاً نحاول نأخذ من تيليجرام إذا متوفر
   const tg = (window as any)?.Telegram?.WebApp;
   if (tg?.colorScheme === "dark" || tg?.colorScheme === "light") {
     return tg.colorScheme as Resolved;
   }
 
-  // إذا ماكو، نستخدم ثيم النظام
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<ThemePref>(() => {
+  const [theme, setThemeState] = useState<ThemePref>(() => {
     try {
       const stored = localStorage.getItem("theme") as ThemePref | null;
       if (stored === "light" || stored === "dark" || stored === "system") return stored;
     } catch {}
-    return "system";
+    return "system"; // default for new users
   });
 
   const resolved: Resolved = useMemo(() => {
@@ -38,13 +36,23 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return theme;
   }, [theme]);
 
+  // Force apply theme immediately
+  const applyThemeNow = (mode: ThemePref) => {
+    setThemeState(mode);
+    localStorage.setItem("theme", mode);
+    const root = document.documentElement;
+    if (mode === "dark") root.classList.add("dark");
+    else root.classList.remove("dark");
+  };
+
+  // Apply resolved theme when it changes
   useEffect(() => {
     const root = document.documentElement;
     if (resolved === "dark") root.classList.add("dark");
     else root.classList.remove("dark");
-    try { localStorage.setItem("theme", theme); } catch {}
-  }, [resolved, theme]);
+  }, [resolved]);
 
+  // Listen for system color scheme changes only in "system" mode
   useEffect(() => {
     if (theme !== "system" || typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -58,13 +66,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener?.("change", onChange);
   }, [theme]);
 
+  // Listen for Telegram theme changes only in "system" mode
   useEffect(() => {
     const tg = (window as any)?.Telegram?.WebApp;
     if (!tg?.onEvent) return;
 
+    if (theme !== "system") {
+      tg.offEvent?.("themeChanged");
+      return;
+    }
+
     const handler = () => {
-      const pref = (localStorage.getItem("theme") as ThemePref | null) || "system";
-      if (pref !== "system") return;
       const scheme = tg.colorScheme as Resolved | undefined;
       if (!scheme) return;
       const root = document.documentElement;
@@ -74,18 +86,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     tg.onEvent?.("themeChanged", handler);
     return () => tg.offEvent?.("themeChanged", handler);
-  }, []);
+  }, [theme]);
 
   const toggleTheme = () => {
-    setTheme(prev => {
-      const next = prev === "dark" ? "light" : "dark";
-      localStorage.setItem("theme", next);
-      return next;
-    });
+    const next = theme === "dark" ? "light" : "dark";
+    applyThemeNow(next);
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme: applyThemeNow, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );
