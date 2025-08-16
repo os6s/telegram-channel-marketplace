@@ -13,16 +13,16 @@
   --popover: 0 0% 100%;
   --popover-foreground: 222.2 84% 4.9%;
 
-  --primary: 221.2 83.2% 53.3%;
+  --primary: 221.2 83.2% 53.3%;          /* أزرق */
   --primary-foreground: 210 40% 98%;
 
-  --secondary: 210 40% 96.1%;
+  --secondary: 210 40% 96.1%;            /* رمادي فاتح */
   --secondary-foreground: 222.2 47.4% 11.2%;
 
   --muted: 210 40% 96.1%;
   --muted-foreground: 215.4 16.3% 46.9%;
 
-  --accent: 210 40% 96.1%;
+  --accent: 210 40% 96.1%;               /* نفس secondary */
   --accent-foreground: 222.2 47.4% 11.2%;
 
   --border: 214.3 31.8% 91.4%;
@@ -42,10 +42,10 @@
   --popover: 222.2 84% 4.9%;
   --popover-foreground: 210 40% 98%;
 
-  --primary: 217.2 91.2% 59.8%;
+  --primary: 217.2 91.2% 59.8%;          /* أزرق فاتح */
   --primary-foreground: 222.2 47.4% 11.2%;
 
-  --secondary: 217.2 32.6% 17.5%;
+  --secondary: 217.2 32.6% 17.5%;        /* رمادي غامق */
   --secondary-foreground: 210 40% 98%;
 
   --muted: 217.2 32.6% 17.5%;
@@ -61,25 +61,24 @@
 
 /* ===== Telegram Mini App integration ===== */
 .telegram-mini-app {
-  /* في وضع system: استخدم قيم تيليجرام إن وجدت، وإلا متغيّراتنا */
   background: var(--tg-theme-bg-color, hsl(var(--background)));
   color: var(--tg-theme-text-color, hsl(var(--foreground)));
 }
 
-/* عندما يختار المستخدم Light/Dark يدويًا (force-theme من ThemeProvider) */
+/* manual mode (force-theme) */
 html.force-theme .telegram-mini-app {
   background: hsl(var(--background)) !important;
   color: hsl(var(--foreground)) !important;
 }
 
-/* لا تترك طبقات سوداء: امنع وراثة bg من تيليجرام داخل manual mode */
+/* خففنا: ماكو شفافية. */
 html.force-theme .telegram-mini-app,
 html.force-theme .telegram-mini-app * {
-  background-color: transparent;
-  color: inherit;
+  background-color: unset;
+  color: unset;
 }
 
-/* عناصر بحاجة لخلفية وحدود واضحة في كل ثيم */
+/* عناصر لازم تبقى واضحة */
 html.force-theme .telegram-mini-app input,
 html.force-theme .telegram-mini-app select,
 html.force-theme .telegram-mini-app textarea,
