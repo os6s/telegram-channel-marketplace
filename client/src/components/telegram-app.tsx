@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useMemo } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
 
 interface TelegramAppProps {
@@ -12,7 +12,7 @@ export function TelegramApp({ children }: TelegramAppProps) {
     return (
       <div className="flex items-center justify-center min-h-screen safe-area-inset">
         <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-telegram-500 mx-auto"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-telegram-500 mx-auto" />
           <h2 className="text-lg font-medium">Telegram Channel Marketplace</h2>
           <p className="text-sm text-muted-foreground">Loading your marketplace...</p>
           {!isTelegramEnvironment && (
@@ -25,19 +25,28 @@ export function TelegramApp({ children }: TelegramAppProps) {
     );
   }
 
+  const style = useMemo(() => {
+    const force = document.documentElement.classList.contains("force-theme");
+    // إذا عندك تحكم يدوي، لا تمرر قيم تيليجرام حتى لا تغطي على CSS vars
+    if (force) {
+      return {
+        minHeight: `${webAppData.viewportHeight}px`,
+        height: "100vh",
+        overflow: "hidden auto",
+      } as React.CSSProperties;
+    }
+    // خلاف ذلك، مرر متغيرات تيليجرام كـ CSS Vars (والـ index.css عندك يقرئها)
+    return {
+      "--tg-theme-bg-color": webAppData.theme.bg_color || "",
+      "--tg-theme-text-color": webAppData.theme.text_color || "",
+      minHeight: `${webAppData.viewportHeight}px`,
+      height: "100vh",
+      overflow: "hidden auto",
+    } as React.CSSProperties;
+  }, [webAppData]);
+
   return (
-    <div
-      className="telegram-mini-app"
-      style={
-        {
-          "--tg-theme-bg-color": webAppData.theme.bg_color || "",
-          "--tg-theme-text-color": webAppData.theme.text_color || "",
-          minHeight: `${webAppData.viewportHeight}px`,
-          height: "100vh",
-          overflow: "hidden auto",
-        } as React.CSSProperties
-      }
-    >
+    <div className="telegram-mini-app bg-background text-foreground" style={style}>
       {children}
     </div>
   );
