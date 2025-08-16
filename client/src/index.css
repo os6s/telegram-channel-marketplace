@@ -71,14 +71,7 @@ html.force-theme .telegram-mini-app {
   color: hsl(var(--foreground)) !important;
 }
 
-/* خففنا: ماكو شفافية. */
-html.force-theme .telegram-mini-app,
-html.force-theme .telegram-mini-app * {
-  background-color: unset;
-  color: unset;
-}
-
-/* عناصر لازم تبقى واضحة */
+/* عناصر تحتاج خلفية واضحة */
 html.force-theme .telegram-mini-app input,
 html.force-theme .telegram-mini-app select,
 html.force-theme .telegram-mini-app textarea,
