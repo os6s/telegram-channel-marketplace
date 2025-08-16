@@ -24,10 +24,6 @@
     --input: 220 13% 91%;
     --ring: 262.1 83.3% 57.8%;
     --radius: 0.5rem;
-    --telegram-bg: 248 250 252;
-    --telegram-text: 17 24 39;
-    --telegram-button: 59 130 246;
-    --telegram-button-text: 255 255 255;
   }
 
   .dark {
@@ -50,73 +46,58 @@
     --border: 215 27.9% 16.9%;
     --input: 215 27.9% 16.9%;
     --ring: 263.4 70% 50.4%;
-    --telegram-bg: 17 24 39;
-    --telegram-text: 255 255 255;
-    --telegram-button: 59 130 246;
-    --telegram-button-text: 255 255 255;
-  }
-
-  html.force-theme.dark {
-    --background: 224 71.4% 4.1%;
-    --foreground: 210 20% 98%;
-    --card: 224 71.4% 4.1%;
-    --card-foreground: 210 20% 98%;
-    --popover: 224 71.4% 4.1%;
-    --popover-foreground: 210 20% 98%;
-    --primary: 263.4 70% 50.4%;
-    --primary-foreground: 210 20% 98%;
-    --secondary: 215 27.9% 16.9%;
-    --secondary-foreground: 210 20% 98%;
-    --muted: 215 27.9% 16.9%;
-    --muted-foreground: 217.9 10.6% 64.9%;
-    --accent: 215 27.9% 16.9%;
-    --accent-foreground: 210 20% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 20% 98%;
-    --border: 215 27.9% 16.9%;
-    --input: 215 27.9% 16.9%;
-    --ring: 263.4 70% 50.4%;
     --radius: 0.5rem;
-    --telegram-bg: 17 24 39;
-    --telegram-text: 255 255 255;
-    --telegram-button: 59 130 246;
-    --telegram-button-text: 255 255 255;
   }
 
-  html.force-theme:not(.dark) {
-    --background: 0 0% 100%;
-    --foreground: 224 71.4% 4.1%;
-    --card: 0 0% 100%;
-    --card-foreground: 224 71.4% 4.1%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 224 71.4% 4.1%;
-    --primary: 262.1 83.3% 57.8%;
-    --primary-foreground: 210 20% 98%;
-    --secondary: 220 14.3% 95.9%;
-    --secondary-foreground: 220.9 39.3% 11%;
-    --muted: 220 14.3% 95.9%;
-    --muted-foreground: 220 8.9% 46.1%;
-    --accent: 220 14.3% 95.9%;
-    --accent-foreground: 220.9 39.3% 11%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 20% 98%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 262.1 83.3% 57.8%;
-    --radius: 0.5rem;
-    --telegram-bg: 248 250 252;
-    --telegram-text: 17 24 39;
-    --telegram-button: 59 130 246;
-    --telegram-button-text: 255 255 255;
-  }
-
-  .telegram-mini-app {
-    background: var(--tg-theme-bg-color, hsl(var(--background)));
-    color: var(--tg-theme-text-color, hsl(var(--foreground)));
-  }
-
+  /* Force override mode (user picked manually) */
   html.force-theme .telegram-mini-app {
-    background: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+    fill: hsl(var(--foreground)) !important;
+    stroke: hsl(var(--foreground)) !important;
+  }
+
+  html.force-theme button,
+  html.force-theme input,
+  html.force-theme select,
+  html.force-theme textarea {
+    background: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+  }
+
+  html.force-theme .bg-card {
+    background: hsl(var(--card)) !important;
+    color: hsl(var(--card-foreground)) !important;
+  }
+
+  html.force-theme .bg-popover {
+    background: hsl(var(--popover)) !important;
+    color: hsl(var(--popover-foreground)) !important;
+  }
+
+  html.force-theme .text-muted-foreground {
+    color: hsl(var(--muted-foreground)) !important;
+  }
+
+  html.force-theme .bg-primary {
+    background: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+  }
+
+  html.force-theme .bg-secondary {
+    background: hsl(var(--secondary)) !important;
+    color: hsl(var(--secondary-foreground)) !important;
+  }
+
+  html.force-theme .bg-accent {
+    background: hsl(var(--accent)) !important;
+    color: hsl(var(--accent-foreground)) !important;
+  }
+
+  html.force-theme .bg-destructive {
+    background: hsl(var(--destructive)) !important;
+    color: hsl(var(--destructive-foreground)) !important;
   }
 }
