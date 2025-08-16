@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 
 export interface TelegramUser {
   id: number;
@@ -23,7 +23,7 @@ export interface TelegramTheme {
 export interface TelegramWebAppData {
   user?: TelegramUser;
   theme: TelegramTheme;
-  colorScheme: 'light' | 'dark';
+  colorScheme: "light" | "dark";
   isExpanded: boolean;
   viewportHeight: number;
   isClosingConfirmationEnabled: boolean;
@@ -33,188 +33,127 @@ export function useTelegram() {
   const [isReady, setIsReady] = useState(false);
   const [webAppData, setWebAppData] = useState<TelegramWebAppData>({
     theme: {},
-    colorScheme: 'light',
+    colorScheme: "light",
     isExpanded: false,
-    viewportHeight: window.innerHeight,
-    isClosingConfirmationEnabled: false
+    viewportHeight: (typeof window !== "undefined" ? window.innerHeight : 600),
+    isClosingConfirmationEnabled: false,
   });
 
   useEffect(() => {
     const initTelegram = () => {
-      if (window.Telegram?.WebApp) {
-        const tg = window.Telegram.WebApp;
-        
-        // Initialize Web App
-        tg.ready();
-        tg.expand();
-        
-        // Enable closing confirmation
-        tg.enableClosingConfirmation();
-        
-        // Set header color to match theme
-        if (tg.themeParams.bg_color) {
-          tg.setHeaderColor(tg.themeParams.bg_color);
-        }
-        
-        // Update state with Telegram data
-        setWebAppData({
-          user: tg.initDataUnsafe.user,
-          theme: tg.themeParams,
-          colorScheme: tg.colorScheme,
-          isExpanded: tg.isExpanded,
-          viewportHeight: tg.viewportHeight || window.innerHeight,
-          isClosingConfirmationEnabled: true
-        });
-
-        // Apply Telegram theme to CSS variables
-        applyTelegramTheme(tg.themeParams);
-        
-        // Listen for viewport changes
-        tg.onEvent('viewportChanged', () => {
-          setWebAppData(prev => ({
-            ...prev,
-            viewportHeight: tg.viewportHeight || window.innerHeight,
-            isExpanded: tg.isExpanded
-          }));
-        });
-        
-        // Listen for theme changes
-        tg.onEvent('themeChanged', () => {
-          const newTheme = tg.themeParams;
-          applyTelegramTheme(newTheme);
-          setWebAppData(prev => ({
-            ...prev,
-            theme: newTheme,
-            colorScheme: tg.colorScheme
-          }));
-        });
-        
+      const tg = (window as any)?.Telegram?.WebApp;
+      if (!tg) {
         setIsReady(true);
-      } else {
-        // Fallback for development/browser testing
-        setIsReady(true);
+        return;
       }
+
+      try {
+        tg.ready();
+        tg.expand?.();
+        tg.enableClosingConfirmation?.();
+      } catch {}
+
+      // Only set TG-specific vars if you want CSS fallback to use them.
+      // Do NOT touch --background/--foreground/etc (Tailwind tokens use HSL).
+      const root = document.documentElement;
+      if (tg.themeParams?.bg_color) {
+        root.style.setProperty("--tg-theme-bg-color", tg.themeParams.bg_color);
+      }
+      if (tg.themeParams?.text_color) {
+        root.style.setProperty("--tg-theme-text-color", tg.themeParams.text_color);
+      }
+
+      setWebAppData({
+        user: tg.initDataUnsafe?.user,
+        theme: tg.themeParams || {},
+        colorScheme: tg.colorScheme === "dark" ? "dark" : "light",
+        isExpanded: !!tg.isExpanded,
+        viewportHeight: tg.viewportHeight || window.innerHeight,
+        isClosingConfirmationEnabled: true,
+      });
+
+      const onViewport = () => {
+        setWebAppData(prev => ({
+          ...prev,
+          viewportHeight: tg.viewportHeight || window.innerHeight,
+          isExpanded: !!tg.isExpanded,
+        }));
+      };
+
+      const onTheme = () => {
+        const tp = tg.themeParams || {};
+        if (tp.bg_color) root.style.setProperty("--tg-theme-bg-color", tp.bg_color);
+        if (tp.text_color) root.style.setProperty("--tg-theme-text-color", tp.text_color);
+        setWebAppData(prev => ({
+          ...prev,
+          theme: tp,
+          colorScheme: tg.colorScheme === "dark" ? "dark" : "light",
+        }));
+      };
+
+      tg.onEvent?.("viewportChanged", onViewport);
+      tg.onEvent?.("themeChanged", onTheme);
+
+      setIsReady(true);
+
+      return () => {
+        tg.offEvent?.("viewportChanged", onViewport);
+        tg.offEvent?.("themeChanged", onTheme);
+      };
     };
 
-    if (window.Telegram?.WebApp) {
+    if ((window as any)?.Telegram?.WebApp) {
       initTelegram();
     } else {
-      // Wait for Telegram script to load
-      const script = document.createElement('script');
-      script.src = 'https://telegram.org/js/telegram-web-app.js';
+      // optional: load script in browser dev
+      const script = document.createElement("script");
+      script.src = "https://telegram.org/js/telegram-web-app.js";
       script.onload = initTelegram;
       document.head.appendChild(script);
+      return () => {
+        // no-op
+      };
     }
   }, []);
 
-  // Apply Telegram theme colors to CSS variables
-  const applyTelegramTheme = (theme: TelegramTheme) => {
-    const root = document.documentElement;
-    
-    // Apply all available theme colors
-    if (theme.bg_color) {
-      root.style.setProperty('--tg-theme-bg-color', theme.bg_color);
-      root.style.setProperty('--background', theme.bg_color);
-    }
-    if (theme.text_color) {
-      root.style.setProperty('--tg-theme-text-color', theme.text_color);
-      root.style.setProperty('--foreground', theme.text_color);
-    }
-    if (theme.hint_color) {
-      root.style.setProperty('--tg-theme-hint-color', theme.hint_color);
-      root.style.setProperty('--muted-foreground', theme.hint_color);
-    }
-    if (theme.button_color) {
-      root.style.setProperty('--tg-theme-button-color', theme.button_color);
-      root.style.setProperty('--primary', theme.button_color);
-    }
-    if (theme.button_text_color) {
-      root.style.setProperty('--tg-theme-button-text-color', theme.button_text_color);
-      root.style.setProperty('--primary-foreground', theme.button_text_color);
-    }
-    if (theme.link_color) {
-      root.style.setProperty('--tg-theme-link-color', theme.link_color);
-      root.style.setProperty('--accent', theme.link_color);
-    }
-    if (theme.secondary_bg_color) {
-      root.style.setProperty('--tg-theme-secondary-bg-color', theme.secondary_bg_color);
-      root.style.setProperty('--card', theme.secondary_bg_color);
-    }
-    
-    // Update document background
-    document.body.style.backgroundColor = theme.bg_color || '#ffffff';
-  };
+  const hapticFeedback = useMemo(() => {
+    const tg = (window as any)?.Telegram?.WebApp;
+    return tg?.HapticFeedback || null;
+  }, []);
 
-  // Haptic feedback functions
-  const hapticFeedback = {
-    impact: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft' = 'medium') => {
-      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(style);
-    },
-    notification: (type: 'error' | 'success' | 'warning' = 'success') => {
-      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred(type);
-    },
-    selection: () => {
-      window.Telegram?.WebApp?.HapticFeedback?.selectionChanged();
-    }
-  };
-
-  // Main button control
   const mainButton = {
-    show: (text: string, onClick: () => void) => {
-      if (window.Telegram?.WebApp?.MainButton) {
-        const btn = window.Telegram.WebApp.MainButton;
-        btn.setText(text);
-        btn.enable();
-        btn.show();
-        btn.offClick(onClick); // Remove previous listeners
-        btn.onClick(onClick);
-      }
+    show(text: string, onClick: () => void) {
+      const btn = (window as any)?.Telegram?.WebApp?.MainButton;
+      if (!btn) return;
+      btn.setText(text);
+      btn.enable();
+      btn.show();
+      btn.onClick(onClick);
     },
-    hide: () => {
-      window.Telegram?.WebApp?.MainButton?.hide();
+    hide() { (window as any)?.Telegram?.WebApp?.MainButton?.hide?.(); },
+    enable() { (window as any)?.Telegram?.WebApp?.MainButton?.enable?.(); },
+    disable() { (window as any)?.Telegram?.WebApp?.MainButton?.disable?.(); },
+    setLoader(loading: boolean) {
+      const btn = (window as any)?.Telegram?.WebApp?.MainButton;
+      if (!btn) return;
+      loading ? btn.showProgress?.() : btn.hideProgress?.();
     },
-    enable: () => {
-      window.Telegram?.WebApp?.MainButton?.enable();
-    },
-    disable: () => {
-      window.Telegram?.WebApp?.MainButton?.disable();
-    },
-    setLoader: (loading: boolean) => {
-      if (window.Telegram?.WebApp?.MainButton) {
-        if (loading) {
-          window.Telegram.WebApp.MainButton.showProgress();
-        } else {
-          window.Telegram.WebApp.MainButton.hideProgress();
-        }
-      }
-    }
   };
 
-  // Back button control
   const backButton = {
-    show: (onClick: () => void) => {
-      if (window.Telegram?.WebApp?.BackButton) {
-        const btn = window.Telegram.WebApp.BackButton;
-        btn.offClick(onClick); // Remove previous listeners
-        btn.onClick(onClick);
-        btn.show();
-      }
+    show(onClick: () => void) {
+      const btn = (window as any)?.Telegram?.WebApp?.BackButton;
+      if (!btn) return;
+      btn.onClick(onClick);
+      btn.show();
     },
-    hide: () => {
-      window.Telegram?.WebApp?.BackButton?.hide();
-    }
+    hide() { (window as any)?.Telegram?.WebApp?.BackButton?.hide?.(); },
   };
 
-  // Close app
-  const close = () => {
-    window.Telegram?.WebApp?.close();
-  };
-
-  // Send data to bot (note: sendData might not be available in all versions)
+  const close = () => (window as any)?.Telegram?.WebApp?.close?.();
   const sendData = (data: string) => {
-    if (window.Telegram?.WebApp && 'sendData' in window.Telegram.WebApp) {
-      (window.Telegram.WebApp as any).sendData(data);
-    }
+    const wa = (window as any)?.Telegram?.WebApp;
+    if (wa && "sendData" in wa) (wa as any).sendData(data);
   };
 
   return {
@@ -225,11 +164,9 @@ export function useTelegram() {
     backButton,
     close,
     sendData,
-    isTelegramEnvironment: !!window.Telegram?.WebApp
+    isTelegramEnvironment: !!(window as any)?.Telegram?.WebApp,
   };
 }
 
-// Utility function to check if running in Telegram
-export const isTelegramWebApp = () => {
-  return typeof window !== 'undefined' && !!window.Telegram?.WebApp;
-};
+export const isTelegramWebApp = () =>
+  typeof window !== "undefined" && !!(window as any)?.Telegram?.WebApp;
