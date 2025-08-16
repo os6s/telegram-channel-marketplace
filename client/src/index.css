@@ -46,10 +46,9 @@
     --border: 215 27.9% 16.9%;
     --input: 215 27.9% 16.9%;
     --ring: 263.4 70% 50.4%;
-    --radius: 0.5rem;
   }
 
-  /* Force override mode (user picked manually) */
+  /* عندما يختار المستخدم ثيم يدوي (ليس system) */
   html.force-theme .telegram-mini-app {
     background: hsl(var(--background)) !important;
     color: hsl(var(--foreground)) !important;
@@ -58,46 +57,90 @@
     stroke: hsl(var(--foreground)) !important;
   }
 
-  html.force-theme button,
-  html.force-theme input,
-  html.force-theme select,
-  html.force-theme textarea {
+  html.force-theme .telegram-mini-app button,
+  html.force-theme .telegram-mini-app input,
+  html.force-theme .telegram-mini-app select,
+  html.force-theme .telegram-mini-app textarea {
     background: hsl(var(--background)) !important;
     color: hsl(var(--foreground)) !important;
     border-color: hsl(var(--border)) !important;
   }
 
-  html.force-theme .bg-card {
+  html.force-theme .telegram-mini-app .bg-card {
     background: hsl(var(--card)) !important;
     color: hsl(var(--card-foreground)) !important;
   }
 
-  html.force-theme .bg-popover {
+  html.force-theme .telegram-mini-app .bg-popover {
     background: hsl(var(--popover)) !important;
     color: hsl(var(--popover-foreground)) !important;
   }
 
-  html.force-theme .text-muted-foreground {
+  html.force-theme .telegram-mini-app .text-muted-foreground {
     color: hsl(var(--muted-foreground)) !important;
   }
 
-  html.force-theme .bg-primary {
+  html.force-theme .telegram-mini-app .bg-primary {
     background: hsl(var(--primary)) !important;
     color: hsl(var(--primary-foreground)) !important;
   }
 
-  html.force-theme .bg-secondary {
+  html.force-theme .telegram-mini-app .bg-secondary {
     background: hsl(var(--secondary)) !important;
     color: hsl(var(--secondary-foreground)) !important;
   }
 
-  html.force-theme .bg-accent {
+  html.force-theme .telegram-mini-app .bg-accent {
     background: hsl(var(--accent)) !important;
     color: hsl(var(--accent-foreground)) !important;
   }
 
-  html.force-theme .bg-destructive {
+  html.force-theme .telegram-mini-app .bg-destructive {
     background: hsl(var(--destructive)) !important;
     color: hsl(var(--destructive-foreground)) !important;
+  }
+
+  [dir="rtl"] { direction: rtl; }
+  [dir="rtl"] .rtl-flip { transform: scaleX(-1); }
+
+  * { @apply border-border; }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    margin: 0; padding: 0; overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    scrollbar-width: none; -ms-overflow-style: none;
+  }
+  body::-webkit-scrollbar { display: none; }
+
+  #root {
+    min-height: 100vh; min-height: 100svh;
+    display: flex; flex-direction: column;
+  }
+
+  .telegram-mini-app {
+    /* افتراضيًا: استخدم قيم تيليجرام، وإلا متغيّراتنا */
+    background: var(--tg-theme-bg-color, hsl(var(--background)));
+    color: var(--tg-theme-text-color, hsl(var(--foreground)));
+  }
+
+  * { transition: background-color .2s ease, border-color .2s ease, color .2s ease; }
+
+  .safe-area-inset {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+  .line-clamp-2 {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
 }
