@@ -53,13 +53,13 @@ export function useTelegram() {
         tg.enableClosingConfirmation?.();
       } catch {}
 
-      // Only set TG-specific vars if you want CSS fallback to use them.
-      // Do NOT touch --background/--foreground/etc (Tailwind tokens use HSL).
       const root = document.documentElement;
-      if (tg.themeParams?.bg_color) {
+      const skip = root.classList.contains("force-theme");
+
+      if (!skip && tg.themeParams?.bg_color) {
         root.style.setProperty("--tg-theme-bg-color", tg.themeParams.bg_color);
       }
-      if (tg.themeParams?.text_color) {
+      if (!skip && tg.themeParams?.text_color) {
         root.style.setProperty("--tg-theme-text-color", tg.themeParams.text_color);
       }
 
@@ -73,7 +73,7 @@ export function useTelegram() {
       });
 
       const onViewport = () => {
-        setWebAppData(prev => ({
+        setWebAppData((prev) => ({
           ...prev,
           viewportHeight: tg.viewportHeight || window.innerHeight,
           isExpanded: !!tg.isExpanded,
@@ -82,9 +82,12 @@ export function useTelegram() {
 
       const onTheme = () => {
         const tp = tg.themeParams || {};
-        if (tp.bg_color) root.style.setProperty("--tg-theme-bg-color", tp.bg_color);
-        if (tp.text_color) root.style.setProperty("--tg-theme-text-color", tp.text_color);
-        setWebAppData(prev => ({
+        const root = document.documentElement;
+        const skip = root.classList.contains("force-theme");
+        if (!skip && tp.bg_color) root.style.setProperty("--tg-theme-bg-color", tp.bg_color);
+        if (!skip && tp.text_color) root.style.setProperty("--tg-theme-text-color", tp.text_color);
+
+        setWebAppData((prev) => ({
           ...prev,
           theme: tp,
           colorScheme: tg.colorScheme === "dark" ? "dark" : "light",
@@ -105,14 +108,10 @@ export function useTelegram() {
     if ((window as any)?.Telegram?.WebApp) {
       initTelegram();
     } else {
-      // optional: load script in browser dev
       const script = document.createElement("script");
       script.src = "https://telegram.org/js/telegram-web-app.js";
       script.onload = initTelegram;
       document.head.appendChild(script);
-      return () => {
-        // no-op
-      };
     }
   }, []);
 
