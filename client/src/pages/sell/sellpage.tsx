@@ -1,4 +1,3 @@
-// client/src/pages/sellpage.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -32,16 +31,14 @@ export default function SellPage() {
   const [kind, setKind] = useState<"username" | "account" | "channel" | "service" | null>(null);
   const [platform, setPlatform] = useState<"telegram" | "twitter" | "instagram" | "discord" | "snapchat" | "tiktok" | "">("");
 
-  useEffect(() => {
-    try { telegramWebApp?.expand?.(); } catch {}
-  }, []);
+  useEffect(() => { try { telegramWebApp?.expand?.(); } catch {} }, []);
 
   const schema = useMemo(() => getSchema(kind || ""), [kind]);
 
   const form = useForm<any>({
     resolver: schema ? zodResolver(schema) : undefined,
     mode: "onChange",
-    shouldUnregister: true, // <-- مهم: الحقول المخفية لا تمنع الفاليديشن
+    shouldUnregister: true,
     defaultValues: {
       type: kind || undefined,
       platform: platform || "",
@@ -59,7 +56,6 @@ export default function SellPage() {
     },
   });
 
-  // حدّث مجرد قيم type/platform بدون reset شامل
   useEffect(() => {
     form.setValue("type", kind || undefined, { shouldValidate: true });
   }, [kind, form]);
@@ -83,7 +79,6 @@ export default function SellPage() {
     const payload: any = { ...data, telegramId: telegramWebApp.user.id };
 
     if (data.type === "channel") {
-      // توحيد الإدخال للباك
       payload.username = (data.channelUsername || data.link || "").trim();
       delete payload.link;
       delete payload.channelUsername;
@@ -93,15 +88,13 @@ export default function SellPage() {
     try {
       await apiRequest("POST", url, payload);
       toast({ title: "OK", description: t("sell.sent") });
-      form.reset();
-      setKind(null);
-      setPlatform("");
+      form.reset(); setKind(null); setPlatform("");
     } catch (e: any) {
       toast({ title: t("toast.error") || "Error", description: e?.message || "Error", variant: "destructive" });
     }
   };
 
-  // الخطوة 1: اختيار النوع
+  // الخطوة 1
   if (!kind) {
     return (
       <Card className="p-4 space-y-3 min-h-screen">
@@ -116,7 +109,7 @@ export default function SellPage() {
     );
   }
 
-  // الخطوة 2: اختيار المنصّة لليوزر/الحساب
+  // الخطوة 2: اختيار المنصّة لليوزر/الحساب (ألوان عبر variants)
   if ((kind === "username" || kind === "account") && !platform) {
     const list = ["telegram","twitter","instagram","discord","snapchat","tiktok"];
     return (
@@ -124,7 +117,12 @@ export default function SellPage() {
         <CardHeader><CardTitle>{t("sell.platform")}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {list.map(p => (
-            <Button key={p} className="w-full bg-background border" onClick={() => setPlatform(p as any)}>
+            <Button
+              key={p}
+              className="w-full"
+              variant={platform === p ? "default" : "outline"}
+              onClick={() => setPlatform(p as any)}
+            >
               {p}
             </Button>
           ))}
@@ -135,7 +133,6 @@ export default function SellPage() {
   }
 
   return (
-    // نستخدم key لتبديل الـ resolver عندما يتغير kind
     <Form key={`form-${kind || "none"}`} {...form}>
       <form onSubmit={form.handleSubmit(submit)} className="space-y-4 min-h-screen p-4">
         <Card className="p-4 space-y-3">
@@ -207,8 +204,7 @@ export default function SellPage() {
             >
               {t("sell.back")}
             </Button>
-            {/* لا نعطل الزر على أساس isValid لأنه يتأثر بالحقول المخفية */}
-            <Button type="submit" disabled={form.formState.isSubmitting || !schema}>
+            <Button type="submit" variant="default" disabled={form.formState.isSubmitting || !schema}>
               {t("sell.post")}
             </Button>
           </div>
