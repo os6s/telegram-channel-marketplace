@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
 
 interface TelegramAppProps {
@@ -7,12 +7,6 @@ interface TelegramAppProps {
 
 export function TelegramApp({ children }: TelegramAppProps) {
   const { isReady, webAppData, isTelegramEnvironment } = useTelegram();
-  const [isForced, setIsForced] = useState(false);
-
-  // Compute "force-theme" after mount to avoid SSR/early access issues
-  useEffect(() => {
-    setIsForced(document.documentElement.classList.contains("force-theme"));
-  }, []);
 
   if (!isReady) {
     return (
@@ -31,20 +25,15 @@ export function TelegramApp({ children }: TelegramAppProps) {
     );
   }
 
-  const theme = webAppData?.theme || {};
-  const style: React.CSSProperties = {
-    // Only use Telegram-provided colors when NOT forcing a manual theme
-    ...(isForced ? {} : {
-      ["--tg-theme-bg-color" as any]: theme.bg_color || "",
-      ["--tg-theme-text-color" as any]: theme.text_color || "",
-    }),
-    minHeight: `${webAppData?.viewportHeight || 0}px`,
-    height: "100vh",
-    overflow: "hidden auto",
-  };
-
   return (
-    <div className="telegram-mini-app" style={style}>
+    <div
+      className="telegram-mini-app min-h-screen"
+      style={{
+        minHeight: `${webAppData.viewportHeight}px`,
+        height: "100vh",
+        overflow: "hidden auto",
+      }}
+    >
       {children}
     </div>
   );
