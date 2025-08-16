@@ -1,9 +1,8 @@
-import { ReactNode } from "react";
+// client/src/components/telegram-app.tsx
+import { ReactNode, useMemo } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
 
-interface TelegramAppProps {
-  children: ReactNode;
-}
+interface TelegramAppProps { children: ReactNode; }
 
 export function TelegramApp({ children }: TelegramAppProps) {
   const { isReady, webAppData, isTelegramEnvironment } = useTelegram();
@@ -25,20 +24,27 @@ export function TelegramApp({ children }: TelegramAppProps) {
     );
   }
 
+  const isForced = useMemo(
+    () => document.documentElement.classList.contains("force-theme"),
+    []
+  );
+
+  const style: React.CSSProperties = {
+    // Only feed Telegram colors when NOT forced
+    ...(isForced
+      ? {}
+      : {
+          // these let your CSS read Telegram-provided colors (fallbacks in CSS handle the rest)
+          ["--tg-theme-bg-color" as any]: webAppData.theme.bg_color || "",
+          ["--tg-theme-text-color" as any]: webAppData.theme.text_color || "",
+        }),
+    minHeight: `${webAppData.viewportHeight}px`,
+    height: "100vh",
+    overflow: "hidden auto",
+  };
+
   return (
-    <div
-      className="telegram-mini-app bg-background text-foreground"
-      style={
-        {
-          // Telegram يعين قيم، لكن اذا المستخدم اختار يدوي (force-theme) راح نستخدم CSS Variables
-          "--tg-theme-bg-color": webAppData.theme.bg_color || "",
-          "--tg-theme-text-color": webAppData.theme.text_color || "",
-          minHeight: `${webAppData.viewportHeight}px`,
-          height: "100vh",
-          overflow: "hidden auto",
-        } as React.CSSProperties
-      }
-    >
+    <div className="telegram-mini-app" style={style}>
       {children}
     </div>
   );
