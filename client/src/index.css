@@ -64,8 +64,27 @@
   color: var(--tg-theme-text-color, hsl(var(--foreground)));
 }
 
-/* When user explicitly overrides to light/dark → ignore Telegram theme */
+/* ===== Force theme overrides (when user selects manually) ===== */
 html.force-theme .telegram-mini-app {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
+}
+
+/* منع ألوان تيليجرام من السيطرة عند اختيار Light/Dark يدوي */
+html.force-theme .telegram-mini-app,
+html.force-theme .telegram-mini-app * {
+  background-color: transparent;
+  color: inherit;
+}
+
+/* ضمان وضوح عناصر الإدخال والبطاقات */
+html.force-theme .telegram-mini-app input,
+html.force-theme .telegram-mini-app select,
+html.force-theme .telegram-mini-app textarea,
+html.force-theme .telegram-mini-app button,
+html.force-theme .telegram-mini-app .bg-card,
+html.force-theme .telegram-mini-app .bg-popover {
+  background: hsl(var(--card)) !important;
+  color: hsl(var(--card-foreground)) !important;
+  border-color: hsl(var(--border)) !important;
 }
