@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ===== Default light theme (Telegram or system) ===== */
+/* ===== Default light theme ===== */
 :root {
   --background: 0 0% 100%;
   --foreground: 222.2 84% 4.9%;
@@ -64,37 +64,34 @@
   color: var(--tg-theme-text-color, hsl(var(--foreground)));
 }
 
-/* ===== Force theme overrides (when user selects manually) ===== */
-html.force-theme {
-  /* عطّل قيم تيليجرام */
-  --tg-theme-bg-color: initial !important;
-  --tg-theme-text-color: initial !important;
-}
-
-html.force-theme body,
-html.force-theme #root {
-  background: hsl(var(--background)) !important;
-  color: hsl(var(--foreground)) !important;
-}
-
+/* ===== Force theme overrides (user picked Light/Dark) ===== */
 html.force-theme .telegram-mini-app {
   background: hsl(var(--background)) !important;
   color: hsl(var(--foreground)) !important;
 }
 
-/* ضمان وضوح عناصر الإدخال والبطاقات */
-html.force-theme .telegram-mini-app input,
-html.force-theme .telegram-mini-app select,
-html.force-theme .telegram-mini-app textarea,
-html.force-theme .telegram-mini-app button {
+html.force-theme body,
+html.force-theme #root,
+html.force-theme .telegram-mini-app {
+  background: hsl(var(--background)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+/* عناصر واجهة أساسية */
+html.force-theme .bg-card { background: hsl(var(--card)) !important; color: hsl(var(--card-foreground)) !important; }
+html.force-theme .bg-popover { background: hsl(var(--popover)) !important; color: hsl(var(--popover-foreground)) !important; }
+html.force-theme .text-muted-foreground { color: hsl(var(--muted-foreground)) !important; }
+
+html.force-theme input,
+html.force-theme select,
+html.force-theme textarea,
+html.force-theme button {
   background: hsl(var(--card)) !important;
   color: hsl(var(--card-foreground)) !important;
   border-color: hsl(var(--border)) !important;
 }
 
-html.force-theme .telegram-mini-app .bg-card,
-html.force-theme .telegram-mini-app .bg-popover {
-  background: hsl(var(--card)) !important;
-  color: hsl(var(--card-foreground)) !important;
-  border-color: hsl(var(--border)) !important;
-}
+/* Base */
+* { @apply border-border; }
+body { @apply bg-background text-foreground font-sans antialiased; margin:0; padding:0; }
+#root { min-height: 100vh; min-height: 100svh; display:flex; flex-direction:column; }
