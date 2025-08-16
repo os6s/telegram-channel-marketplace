@@ -1,16 +1,18 @@
+// client/src/main.tsx
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { ErrorBoundary } from "./ErrorBoundary";
 
-// (Optional) catch silent runtime errors in Telegram
-window.addEventListener("error", e => console.log("GlobalError:", e.error || e.message));
-window.addEventListener("unhandledrejection", e => console.log("Unhandled:", e.reason));
+// اطبع أي أخطاء عامة بدل ما تبقى الشاشة فاضية
+window.addEventListener("error", (e) => console.log("GlobalError:", e.error || e.message));
+window.addEventListener("unhandledrejection", (e) => console.log("Unhandled:", (e as any).reason));
 
-// Initialize Telegram Web App early
-if (typeof window !== "undefined" && window.Telegram?.WebApp) {
+// تهيئة Telegram WebApp مبكراً
+if (typeof window !== "undefined" && (window as any).Telegram?.WebApp) {
   try {
-    window.Telegram.WebApp.ready();
-    window.Telegram.WebApp.expand();
+    (window as any).Telegram.WebApp.ready();
+    (window as any).Telegram.WebApp.expand();
   } catch {}
   const viewport = document.querySelector('meta[name="viewport"]');
   if (viewport) {
@@ -21,4 +23,8 @@ if (typeof window !== "undefined" && window.Telegram?.WebApp) {
   }
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);
