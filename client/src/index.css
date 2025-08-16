@@ -65,23 +65,33 @@
 }
 
 /* ===== Force theme overrides (when user selects manually) ===== */
-html.force-theme .telegram-mini-app {
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
+html.force-theme {
+  /* عطّل قيم تيليجرام */
+  --tg-theme-bg-color: initial !important;
+  --tg-theme-text-color: initial !important;
 }
 
-/* منع ألوان تيليجرام من السيطرة عند اختيار Light/Dark يدوي */
-html.force-theme .telegram-mini-app,
-html.force-theme .telegram-mini-app * {
-  background-color: transparent;
-  color: inherit;
+html.force-theme body,
+html.force-theme #root {
+  background: hsl(var(--background)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+html.force-theme .telegram-mini-app {
+  background: hsl(var(--background)) !important;
+  color: hsl(var(--foreground)) !important;
 }
 
 /* ضمان وضوح عناصر الإدخال والبطاقات */
 html.force-theme .telegram-mini-app input,
 html.force-theme .telegram-mini-app select,
 html.force-theme .telegram-mini-app textarea,
-html.force-theme .telegram-mini-app button,
+html.force-theme .telegram-mini-app button {
+  background: hsl(var(--card)) !important;
+  color: hsl(var(--card-foreground)) !important;
+  border-color: hsl(var(--border)) !important;
+}
+
 html.force-theme .telegram-mini-app .bg-card,
 html.force-theme .telegram-mini-app .bg-popover {
   background: hsl(var(--card)) !important;
