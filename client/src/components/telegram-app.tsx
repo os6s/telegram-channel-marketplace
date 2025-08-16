@@ -1,36 +1,51 @@
 // client/src/components/telegram-app.tsx
-import { ReactNode, useEffect, useMemo } from "react";
+import { ReactNode, useMemo, useEffect } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
 import { useTheme } from "@/contexts/theme-context";
 
 interface Props { children: ReactNode }
 
 export function TelegramApp({ children }: Props) {
-  // hooks دائماً بأول السطر وبنفس الترتيب
   const { isReady, webAppData, isTelegramEnvironment } = useTelegram();
   const { theme } = useTheme(); // "light" | "dark" | "system"
 
-  // لون الهيدر لتيليجرام (خاصًا Desktop)
+  // حساب ألوان حسب الثيم
+  const resolvedScheme =
+    theme === "system" ? webAppData.colorScheme : theme;
+
+  const bgColor =
+    theme === "system"
+      ? (webAppData.theme?.bg_color ||
+         (webAppData.colorScheme === "dark" ? "#0f0f0f" : "#ffffff"))
+      : (theme === "dark" ? "#0f0f0f" : "#ffffff");
+
+  const textColor =
+    theme === "system"
+      ? (webAppData.theme?.text_color ||
+         (webAppData.colorScheme === "dark" ? "#ffffff" : "#000000"))
+      : (theme === "dark" ? "#ffffff" : "#000000");
+
+  // setHeaderColor + setBackgroundColor
   useEffect(() => {
     const tg = (window as any)?.Telegram?.WebApp;
-    if (!tg?.setHeaderColor) return;
+    if (!tg) return;
 
-    const color =
-      theme === "system"
-        ? (webAppData.theme?.secondary_bg_color ||
-           (webAppData.colorScheme === "dark" ? "#0f0f0f" : "#ffffff"))
-        : (theme === "dark" ? "#0f0f0f" : "#ffffff");
+    try {
+      tg.setHeaderColor(resolvedScheme === "dark" ? "secondary_bg_color" : "bg_color");
+    } catch {}
 
-    try { tg.setHeaderColor(color); } catch {}
-  }, [theme, webAppData.colorScheme, webAppData.theme?.secondary_bg_color]);
+    try {
+      tg.setBackgroundColor(bgColor);
+    } catch {}
+  }, [resolvedScheme, bgColor]);
 
-  // ستايل الحاوية: نتبع تيليجرام فقط عند "system"
   const containerStyle = useMemo<React.CSSProperties>(() => {
     const base: React.CSSProperties = {
       minHeight: `${webAppData.viewportHeight || window.innerHeight}px`,
       height: "100vh",
       overflow: "hidden auto",
     };
+
     if (theme === "system") {
       return {
         ...base,
@@ -48,7 +63,9 @@ export function TelegramApp({ children }: Props) {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-telegram-500 mx-auto" />
           <h2 className="text-lg font-medium">Telegram Channel Marketplace</h2>
           {!isTelegramEnvironment && (
-            <p className="text-xs text-muted-foreground mt-2">Open via Telegram for full features</p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Open via Telegram for full features
+            </p>
           )}
         </div>
       </div>
