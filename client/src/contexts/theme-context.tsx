@@ -35,22 +35,34 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [theme]
   );
 
-  // Apply resolved mode + force flag
+  // Apply html classes and persist
   useEffect(() => {
     const root = document.documentElement;
-
-    // dark class for Tailwind (darkMode: 'class')
+    // dark class
     if (resolved === "dark") root.classList.add("dark");
     else root.classList.remove("dark");
-
-    // add/remove force-theme to override Telegram injected variables when user chooses manually
+    // force-theme class
     if (theme === "system") root.classList.remove("force-theme");
     else root.classList.add("force-theme");
-
     try { localStorage.setItem("theme", theme); } catch {}
+
+    // Sync Telegram chrome when forced
+    const tg = (window as any)?.Telegram?.WebApp;
+    if (tg?.setBackgroundColor && tg?.setHeaderColor) {
+      if (theme === "light") {
+        tg.setBackgroundColor("#ffffff");          // match :root light
+        tg.setHeaderColor("bg_color");
+      } else if (theme === "dark") {
+        tg.setBackgroundColor("#0b1220");          // close to your dark bg (adjust if needed)
+        tg.setHeaderColor("secondary_bg_color");
+      } else {
+        // system: let Telegram drive it
+        tg.setHeaderColor("bg_color");
+      }
+    }
   }, [resolved, theme]);
 
-  // Listen to OS changes only when system
+  // Listen system changes only in system mode
   useEffect(() => {
     if (theme !== "system" || typeof window === "undefined") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -63,14 +75,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener?.("change", onChange);
   }, [theme]);
 
-  // Listen to Telegram theme changes only when system
+  // Listen Telegram theme only in system mode
   useEffect(() => {
     const tg = (window as any)?.Telegram?.WebApp;
     if (!tg?.onEvent) return;
-    if (theme !== "system") {
-      tg.offEvent?.("themeChanged");
-      return;
-    }
+    if (theme !== "system") return;
+
     const handler = () => {
       const scheme = tg.colorScheme as Resolved | undefined;
       const root = document.documentElement;
