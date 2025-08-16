@@ -15,6 +15,7 @@ import { type Channel, type User } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
+import { ActivityTimeline, type ActivityEvent } from "@/components/activity-timeline";
 
 export default function Profile() {
   const [connectedWallet, setConnectedWallet] = useState<TonWallet | null>(null);
@@ -98,6 +99,31 @@ export default function Profile() {
     return { activeChannels, totalValue: totalValue.toFixed(2), totalSubscribers };
   })();
 
+  // ✅ بيانات نشاط البائع (وهمية حالياً – Frontend فقط)
+  const sellerActivity: ActivityEvent[] = [
+    {
+      id: "e1",
+      type: "LISTED",
+      title: "You listed @mychannel",
+      subtitle: "Price: 120 TON",
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "e2",
+      type: "UPDATED",
+      title: "Updated @mychannel",
+      subtitle: "Price changed to 150 TON",
+      createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+    },
+    {
+      id: "e3",
+      type: "SOLD",
+      title: "You sold @oldgroup",
+      subtitle: "for 300 TON",
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-background">
       <header className="bg-card border-b border-border sticky top-0 z-50">
@@ -123,7 +149,7 @@ export default function Profile() {
             <div className="flex items-center space-x-4">
               <Avatar className="w-16 h-16">
                 <AvatarImage src={telegramUser?.photo_url} />
-                <AvatarFallback className="bg-primary text-primary-foreground text-xl">
+                <AvatarFallback className="bg-telegram-500 text-white text-xl">
                   {telegramUser?.first_name?.charAt(0) || "U"}
                 </AvatarFallback>
               </Avatar>
@@ -163,7 +189,7 @@ export default function Profile() {
         <div className="grid grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="flex items-center justify-center mb-2"><Plus className="w-5 h-5 text-primary" /></div>
+              <div className="flex items-center justify-center mb-2"><Plus className="w-5 h-5 text-telegram-500" /></div>
               <div className="text-2xl font-bold text-foreground">{stats.activeChannels}</div>
               <div className="text-sm text-muted-foreground">{t("profilePage.stats.activeListings")}</div>
             </CardContent>
@@ -195,7 +221,7 @@ export default function Profile() {
           <TabsContent value="channels" className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-foreground">{t("profilePage.listingsHeader")}</h3>
-              <Button size="sm" variant="default" onClick={() => (window.location.href = "/sell")}>
+              <Button size="sm" className="bg-telegram-500 hover:bg-telegram-600" onClick={() => (window.location.href = "/sell")}>
                 <Plus className="w-4 h-4 mr-1" />
                 {t("profilePage.listChannel")}
               </Button>
@@ -225,7 +251,7 @@ export default function Profile() {
                   <div className="text-muted-foreground text-6xl mb-4">📺</div>
                   <h3 className="font-medium text-foreground mb-2">{t("profilePage.emptyTitle")}</h3>
                   <p className="text-sm text-muted-foreground mb-4">{t("profilePage.emptyDesc")}</p>
-                  <Button variant="default" onClick={() => (window.location.href = "/sell")}>
+                  <Button className="bg-telegram-500 hover:bg-telegram-600" onClick={() => (window.location.href = "/sell")}>
                     <Plus className="w-4 h-4 mr-2" />
                     {t("profilePage.listFirst")}
                   </Button>
@@ -248,16 +274,10 @@ export default function Profile() {
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-4">
-            <Card>
-              <CardContent className="p-8 text-center">
-                <div className="text-muted-foreground text-6xl mb-4">📊</div>
-                <h3 className="font-medium text-foreground mb-2">{t("activityPage.title")}</h3>
-                <p className="text-sm text-muted-foreground mb-4">{t("activityPage.subtitle")}</p>
-                <Button variant="default" onClick={() => (window.location.href = "/activity")}>
-                  {t("profilePage.openActivity")}
-                </Button>
-              </CardContent>
-            </Card>
+            <ActivityTimeline
+              events={sellerActivity}
+              emptyText={t("activityPage.empty") || "No seller activity yet"}
+            />
           </TabsContent>
         </Tabs>
       </div>
