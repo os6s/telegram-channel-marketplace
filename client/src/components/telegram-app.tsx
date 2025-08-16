@@ -1,11 +1,18 @@
-// client/src/components/telegram-app.tsx
-import { ReactNode, useMemo } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
 
-interface TelegramAppProps { children: ReactNode; }
+interface TelegramAppProps {
+  children: ReactNode;
+}
 
 export function TelegramApp({ children }: TelegramAppProps) {
   const { isReady, webAppData, isTelegramEnvironment } = useTelegram();
+  const [isForced, setIsForced] = useState(false);
+
+  // Compute "force-theme" after mount to avoid SSR/early access issues
+  useEffect(() => {
+    setIsForced(document.documentElement.classList.contains("force-theme"));
+  }, []);
 
   if (!isReady) {
     return (
@@ -24,21 +31,14 @@ export function TelegramApp({ children }: TelegramAppProps) {
     );
   }
 
-  const isForced = useMemo(
-    () => document.documentElement.classList.contains("force-theme"),
-    []
-  );
-
+  const theme = webAppData?.theme || {};
   const style: React.CSSProperties = {
-    // Only feed Telegram colors when NOT forced
-    ...(isForced
-      ? {}
-      : {
-          // these let your CSS read Telegram-provided colors (fallbacks in CSS handle the rest)
-          ["--tg-theme-bg-color" as any]: webAppData.theme.bg_color || "",
-          ["--tg-theme-text-color" as any]: webAppData.theme.text_color || "",
-        }),
-    minHeight: `${webAppData.viewportHeight}px`,
+    // Only use Telegram-provided colors when NOT forcing a manual theme
+    ...(isForced ? {} : {
+      ["--tg-theme-bg-color" as any]: theme.bg_color || "",
+      ["--tg-theme-text-color" as any]: theme.text_color || "",
+    }),
+    minHeight: `${webAppData?.viewportHeight || 0}px`,
     height: "100vh",
     overflow: "hidden auto",
   };
