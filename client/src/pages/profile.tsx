@@ -123,7 +123,7 @@ export default function Profile() {
             <div className="flex items-center space-x-4">
               <Avatar className="w-16 h-16">
                 <AvatarImage src={telegramUser?.photo_url} />
-                <AvatarFallback className="bg-telegram-500 text-white text-xl">
+                <AvatarFallback className="bg-primary text-primary-foreground text-xl">
                   {telegramUser?.first_name?.charAt(0) || "U"}
                 </AvatarFallback>
               </Avatar>
@@ -163,7 +163,7 @@ export default function Profile() {
         <div className="grid grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="flex items-center justify-center mb-2"><Plus className="w-5 h-5 text-telegram-500" /></div>
+              <div className="flex items-center justify-center mb-2"><Plus className="w-5 h-5 text-primary" /></div>
               <div className="text-2xl font-bold text-foreground">{stats.activeChannels}</div>
               <div className="text-sm text-muted-foreground">{t("profilePage.stats.activeListings")}</div>
             </CardContent>
@@ -195,7 +195,7 @@ export default function Profile() {
           <TabsContent value="channels" className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-foreground">{t("profilePage.listingsHeader")}</h3>
-              <Button size="sm" className="bg-telegram-500 hover:bg-telegram-600" onClick={() => (window.location.href = "/sell")}>
+              <Button size="sm" variant="default" onClick={() => (window.location.href = "/sell")}>
                 <Plus className="w-4 h-4 mr-1" />
                 {t("profilePage.listChannel")}
               </Button>
@@ -225,7 +225,7 @@ export default function Profile() {
                   <div className="text-muted-foreground text-6xl mb-4">📺</div>
                   <h3 className="font-medium text-foreground mb-2">{t("profilePage.emptyTitle")}</h3>
                   <p className="text-sm text-muted-foreground mb-4">{t("profilePage.emptyDesc")}</p>
-                  <Button className="bg-telegram-500 hover:bg-telegram-600" onClick={() => (window.location.href = "/sell")}>
+                  <Button variant="default" onClick={() => (window.location.href = "/sell")}>
                     <Plus className="w-4 h-4 mr-2" />
                     {t("profilePage.listFirst")}
                   </Button>
@@ -253,7 +253,7 @@ export default function Profile() {
                 <div className="text-muted-foreground text-6xl mb-4">📊</div>
                 <h3 className="font-medium text-foreground mb-2">{t("activityPage.title")}</h3>
                 <p className="text-sm text-muted-foreground mb-4">{t("activityPage.subtitle")}</p>
-                <Button className="bg-telegram-500 hover:bg-telegram-600" onClick={() => (window.location.href = "/activity")}>
+                <Button variant="default" onClick={() => (window.location.href = "/activity")}>
                   {t("profilePage.openActivity")}
                 </Button>
               </CardContent>
