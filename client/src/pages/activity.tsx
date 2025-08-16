@@ -1,20 +1,33 @@
-import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
 import { ActivityTimeline, type ActivityEvent } from "@/components/activity-timeline";
 import { useLanguage } from "@/contexts/language-context";
 
 export default function Activity() {
   const { t } = useLanguage();
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["/api/activity", "global"],
-    queryFn: async () => {
-      // API المتوقّع: يرجّع مصفوفة ActivityEvent
-      const res = await fetch("/api/activity?scope=global&limit=50");
-      if (!res.ok) throw new Error("Failed to fetch activity");
-      return (await res.json()) as ActivityEvent[];
+  // بيانات وهمية
+  const data: ActivityEvent[] = [
+    {
+      id: "1",
+      type: "LISTED",
+      title: "Listed @coolchannel",
+      subtitle: "by @seller123 • 120 TON",
+      createdAt: new Date().toISOString(),
     },
-  });
+    {
+      id: "2",
+      type: "SOLD",
+      title: "Sold @bignews",
+      subtitle: "to @buyer • 250 TON",
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "3",
+      type: "UPDATED",
+      title: "Updated @funnyclips",
+      subtitle: "price changed to 99 TON",
+      createdAt: new Date().toISOString(),
+    },
+  ];
 
   return (
     <div className="min-h-screen px-4 py-6">
@@ -27,20 +40,10 @@ export default function Activity() {
         </p>
       </header>
 
-      {isLoading ? (
-        <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">Loading…</CardContent>
-        </Card>
-      ) : isError ? (
-        <Card>
-          <CardContent className="p-6 text-sm text-destructive-foreground">Failed to load activity.</CardContent>
-        </Card>
-      ) : (
-        <ActivityTimeline
-          events={data || []}
-          emptyText={t("activityPage.empty") || "No marketplace activity yet"}
-        />
-      )}
+      <ActivityTimeline
+        events={data}
+        emptyText={t("activityPage.empty") || "No marketplace activity yet"}
+      />
     </div>
   );
 }
