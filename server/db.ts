@@ -3,7 +3,7 @@ import pg from "pg";
 import * as schema from "@shared/schema";
 
 const { Pool } = pg;
-import { eq, and, ilike, gte, lte, sql } from "drizzle-orm";
+import { eq, and, gte, lte, sql } from "drizzle-orm";
 import type { User, Channel, Activity, InsertUser, InsertChannel, InsertActivity } from "@shared/schema";
 import type { IStorage } from "./storage";
 
@@ -14,7 +14,6 @@ export class PostgreSQLStorage implements IStorage {
 
   constructor(connectionString: string) {
     console.log('Initializing PostgreSQL connection...');
-    
     this.pool = new pg.Pool({
       connectionString,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
@@ -22,15 +21,8 @@ export class PostgreSQLStorage implements IStorage {
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,
     });
-    
-    this.pool.on('connect', () => {
-      console.log('Connected to PostgreSQL database');
-    });
-    
-    this.pool.on('error', (err) => {
-      console.error('PostgreSQL connection error:', err);
-    });
-    
+    this.pool.on('connect', () => { console.log('Connected to PostgreSQL database'); });
+    this.pool.on('error', (err) => { console.error('PostgreSQL connection error:', err); });
     this.db = drizzle(this.pool, { schema });
   }
 
@@ -72,40 +64,23 @@ export class PostgreSQLStorage implements IStorage {
     sellerId?: string;
   }): Promise<Channel[]> {
     let query = this.db.select().from(schema.channels);
-    
     const conditions = [];
-    
-    if (filters?.category) {
-      conditions.push(eq(schema.channels.category, filters.category));
-    }
-    
-    if (filters?.minSubscribers) {
-      conditions.push(gte(schema.channels.subscribers, filters.minSubscribers));
-    }
-    
-    if (filters?.maxPrice) {
-      conditions.push(lte(schema.channels.price, filters.maxPrice));
-    }
-    
+
+    if (filters?.category) conditions.push(eq(schema.channels.category, filters.category));
+    if (filters?.minSubscribers) conditions.push(gte(schema.channels.subscribers, filters.minSubscribers));
+    if (filters?.maxPrice) conditions.push(lte(schema.channels.price, filters.maxPrice));
     if (filters?.search) {
       conditions.push(
         sql`${schema.channels.name} ILIKE ${`%${filters.search}%`} OR ${schema.channels.description} ILIKE ${`%${filters.search}%`}`
       );
     }
-    
-    if (filters?.sellerId) {
-      conditions.push(eq(schema.channels.sellerId, filters.sellerId));
-    }
-    
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as any;
-    }
-    
+    if (filters?.sellerId) conditions.push(eq(schema.channels.sellerId, filters.sellerId));
+
+    if (conditions.length > 0) query = (query.where(and(...conditions)) as any);
     return await query;
   }
 
-  async createChannel(channel: any): Promise<Channel> {
-    // Channel data already includes sellerId from routes
+  async createChannel(channel: InsertChannel | any): Promise<Channel> {
     const result = await this.db.insert(schema.channels).values([channel]).returning();
     return result[0];
   }
@@ -126,7 +101,9 @@ export class PostgreSQLStorage implements IStorage {
   }
 
   async getActivitiesByUser(userId: string): Promise<Activity[]> {
-    const result = await this.db.select().from(schema.activities)
+    const result = await this.db
+      .select()
+      .from(schema.activities)
       .where(sql`${schema.activities.buyerId} = ${userId} OR ${schema.activities.sellerId} = ${userId}`);
     return result;
   }
@@ -137,16 +114,13 @@ export class PostgreSQLStorage implements IStorage {
   }
 
   async createActivity(activityData: InsertActivity): Promise<Activity> {
-    // Get channel to determine seller
     const channel = await this.getChannel(activityData.channelId);
     if (!channel) throw new Error("Channel not found");
-    
     const activityWithSeller = {
       ...activityData,
       sellerId: channel.sellerId,
       completedAt: new Date().toISOString(),
     };
-    
     const result = await this.db.insert(schema.activities).values(activityWithSeller).returning();
     return result[0];
   }
@@ -156,23 +130,27 @@ export class PostgreSQLStorage implements IStorage {
     return result[0];
   }
 
-  async getMarketplaceStats(): Promise<{
-    activeListings: number;
-    totalVolume: string;
-    totalSales: number;
-  }> {
-    const [listings] = await this.db.select({ count: sql<number>`count(*)` }).from(schema.channels).where(eq(schema.channels.isActive, true));
-    const [sales] = await this.db.select({ count: sql<number>`count(*)` }).from(schema.activities).where(eq(schema.activities.status, 'completed'));
-    const [volume] = await this.db.select({ sum: sql<string>`COALESCE(sum(${schema.activities.amount}), '0')` }).from(schema.activities).where(eq(schema.activities.status, 'completed'));
-    
-    return {
-      activeListings: listings.count,
-      totalVolume: volume.sum,
-      totalSales: sales.count
-    };
+  async getMarketplaceStats(): Promise<{ activeListings: number; totalVolume: string; totalSales: number }> {
+    const [listings] = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.channels)
+      .where(eq(schema.channels.isActive, true));
+    const [sales] = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.activities)
+      .where(eq(schema.activities.status, 'completed'));
+    const [volume] = await this.db
+      .select({ sum: sql<string>`COALESCE(sum(${schema.activities.amount}), '0')` })
+      .from(schema.activities)
+      .where(eq(schema.activities.status, 'completed'));
+
+    return { activeListings: listings.count, totalVolume: volume.sum, totalSales: sales.count };
   }
 
-  async close(): Promise<void> {
-    await this.pool.end();
-  }
+  async close(): Promise<void> { await this.pool.end(); }
+}
+
+// helper: فحص unique_violation
+export function isDbUniqueError(err: any): boolean {
+  return !!err && (err.code === "23505" || /unique/i.test(String(err.message)));
 }
