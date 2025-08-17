@@ -2,7 +2,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { insertUserSchema } from "@shared/schema";
-import { isDbUniqueError } from "../utils/db";
+import { isDbUniqueError } from "../db";
 
 export function mountUsers(app: Express) {
   // upsert: يرجّع الموجود أو ينشئ الجديد
