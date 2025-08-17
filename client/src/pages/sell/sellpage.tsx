@@ -1,3 +1,4 @@
+// client/src/pages/sell.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,6 +16,9 @@ import AccountForm from "./parts/AccountForm";
 import ChannelForm from "./parts/ChannelForm";
 import ServiceForm from "./parts/ServiceForm";
 import { usernameSchema, accountSchema, channelSchema, serviceSchema } from "./utils/schemas";
+
+// ستور الماركت المحلي حتى تظهر المعروضات فورًا
+import { upsertListing, type AnyListing } from "@/store/listings";
 
 function getSchema(kind: string) {
   if (kind === "username") return usernameSchema;
@@ -76,18 +80,41 @@ export default function SellPage() {
       return;
     }
 
-    const payload: any = { ...data, telegramId: telegramWebApp.user.id };
+    const sellerId = String(telegramWebApp.user.id);
+    const payload: any = { ...data, telegramId: sellerId };
 
+    // توحيد حقول القناة
     if (data.type === "channel") {
       payload.username = (data.channelUsername || data.link || "").trim();
       delete payload.link;
       delete payload.channelUsername;
     }
 
+    // حفظ على السيرفر
     const url = data.type === "channel" ? "/api/sell" : "/api/listings";
     try {
-      await apiRequest("POST", url, payload);
+      const saved = await apiRequest("POST", url, payload); // يُفضّل أن يرجّع {id,...}
       toast({ title: "OK", description: t("sell.sent") });
+
+      // دفع نسخة محلية للماركت فورًا
+      const local: AnyListing = {
+        id: String(saved?.id || `local_${Date.now()}`),
+        kind: data.type,
+        platform: data.platform || platform || "",
+        channelMode: data.channelMode,
+        serviceType: data.serviceType,
+        price: data.price,
+        subscribers: Number(data.subscribersCount || 0),
+        name: data.name,                // إن وُجدت من أحد الفورمات
+        username: data.username || payload.username,
+        title: data.title,              // إن وُجدت
+        isVerified: !!data.isVerified,
+        sellerId,
+        createdAt: new Date().toISOString(),
+        // أي حقول أخرى يحتاجها ChannelCard تُمرّر هنا
+      };
+      upsertListing(local);
+
       form.reset(); setKind(null); setPlatform("");
     } catch (e: any) {
       toast({ title: t("toast.error") || "Error", description: e?.message || "Error", variant: "destructive" });
@@ -97,9 +124,11 @@ export default function SellPage() {
   // الخطوة 1
   if (!kind) {
     return (
-      <Card className="p-4 space-y-3 min-h-screen">
-        <CardHeader><CardTitle>{t("sell.title")}</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
+      <Card className="min-h-screen bg-card text-foreground">
+        <CardHeader>
+          <CardTitle>{t("sell.title")}</CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 space-y-3">
           <Button className="w-full" onClick={() => setKind("username")}>{t("sell.username")}</Button>
           <Button className="w-full" onClick={() => setKind("account")}>{t("sell.account")}</Button>
           <Button className="w-full" onClick={() => setKind("channel")}>{t("sell.channel")}</Button>
@@ -109,13 +138,15 @@ export default function SellPage() {
     );
   }
 
-  // الخطوة 2: اختيار المنصّة لليوزر/الحساب (ألوان عبر variants)
+  // الخطوة 2: اختيار المنصّة لليوزر/الحساب
   if ((kind === "username" || kind === "account") && !platform) {
     const list = ["telegram","twitter","instagram","discord","snapchat","tiktok"];
     return (
-      <Card className="p-4 space-y-3 min-h-screen">
-        <CardHeader><CardTitle>{t("sell.platform")}</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
+      <Card className="min-h-screen bg-card text-foreground">
+        <CardHeader>
+          <CardTitle>{t("sell.platform")}</CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 space-y-3">
           {list.map(p => (
             <Button
               key={p}
@@ -134,80 +165,85 @@ export default function SellPage() {
 
   return (
     <Form key={`form-${kind || "none"}`} {...form}>
-      <form onSubmit={form.handleSubmit(submit)} className="space-y-4 min-h-screen p-4">
-        <Card className="p-4 space-y-3">
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => { setKind(null); setPlatform(""); form.reset(); }}
-            >
-              {t("sell.back")}
-            </Button>
-            <div className="ml-auto text-sm opacity-70">
-              {kind} {platform && `· ${platform}`}
+      <form onSubmit={form.handleSubmit(submit)} className="min-h-screen p-4 bg-background text-foreground">
+        <Card className="bg-card">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => { setKind(null); setPlatform(""); form.reset(); }}
+              >
+                {t("sell.back")}
+              </Button>
+              <CardTitle className="ml-2">{t("sell.title")}</CardTitle>
+              <div className="ml-auto text-sm text-muted-foreground">
+                {kind} {platform && `· ${platform}`}
+              </div>
             </div>
-          </div>
+          </CardHeader>
 
-          {/* الأجزاء */}
-          {kind === "username" && <UsernameForm form={form} platform={platform} />}
-          {kind === "account"  && <AccountForm  form={form} platform={platform} />}
-          {kind === "channel"  && <ChannelForm  form={form} />}
-          {kind === "service"  && <ServiceForm  form={form} />}
+          <CardContent className="space-y-4">
+            {/* الأجزاء */}
+            {kind === "username" && <UsernameForm form={form} platform={platform} />}
+            {kind === "account"  && <AccountForm  form={form} platform={platform} />}
+            {kind === "channel"  && <ChannelForm  form={form} />}
+            {kind === "service"  && <ServiceForm  form={form} />}
 
-          {/* السعر + العملة + الوصف */}
-          <div className="grid grid-cols-3 gap-3">
-            <FormField name="price" control={form.control} render={({ field }) => (
-              <FormItem className="col-span-2">
-                <FormLabel>{t("sell.price")}</FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    inputMode="decimal"
-                    placeholder="0.0"
-                    className="bg-background"
-                    onKeyDown={numericKeyGuard}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField name="currency" control={form.control} render={({ field }) => (
+            {/* السعر + العملة + الوصف */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <FormField name="price" control={form.control} render={({ field }) => (
+                <FormItem className="sm:col-span-2">
+                  <FormLabel>{t("sell.price")}</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      inputMode="decimal"
+                      placeholder="0.0"
+                      className="bg-background"
+                      onKeyDown={numericKeyGuard}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField name="currency" control={form.control} render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("sell.currency")}</FormLabel>
+                  <FormControl>
+                    <select {...field} className="w-full rounded-md border px-3 py-2 bg-background text-foreground">
+                      <option value="TON">TON</option>
+                      <option value="USDT">USDT</option>
+                    </select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+
+            <FormField name="description" control={form.control} render={({ field }) => (
               <FormItem>
-                <FormLabel>{t("sell.currency")}</FormLabel>
+                <FormLabel>{t("sell.desc")}</FormLabel>
                 <FormControl>
-                  <select {...field} className="w-full rounded-md border px-3 py-2 bg-background text-foreground">
-                    <option value="TON">TON</option>
-                    <option value="USDT">USDT</option>
-                  </select>
+                  <Textarea {...field} className="bg-background" rows={3} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )} />
-          </div>
 
-          <FormField name="description" control={form.control} render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t("sell.desc")}</FormLabel>
-              <FormControl>
-                <Textarea {...field} className="bg-background" rows={3} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-
-          <div className="flex justify-between">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => { setKind(null); setPlatform(""); form.reset(); }}
-            >
-              {t("sell.back")}
-            </Button>
-            <Button type="submit" variant="default" disabled={form.formState.isSubmitting || !schema}>
-              {t("sell.post")}
-            </Button>
-          </div>
+            <div className="flex justify-between">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => { setKind(null); setPlatform(""); form.reset(); }}
+              >
+                {t("sell.back")}
+              </Button>
+              <Button type="submit" variant="default" disabled={form.formState.isSubmitting || !schema}>
+                {t("sell.post")}
+              </Button>
+            </div>
+          </CardContent>
         </Card>
       </form>
     </Form>
