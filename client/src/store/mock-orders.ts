@@ -1,6 +1,5 @@
 // client/src/store/mock-orders.ts
 
-// ---------------- Types ----------------
 export type ChatRole = "buyer" | "seller" | "admin" | "system";
 export type OrderStatus =
   | "held"
@@ -14,7 +13,7 @@ export type ChatMessage = {
   id: string;
   role: ChatRole;
   text: string;
-  at: string; // ISO
+  at: string;
   author?: { id: string; name?: string };
 };
 
@@ -25,11 +24,10 @@ export type Order = {
   amount: number;
   currency: "TON" | "USDT";
   status: OrderStatus;
-  createdAt: string; // ISO
+  createdAt: string;
   thread: ChatMessage[];
 };
 
-// ---------------- Mock Data ----------------
 let ORDERS: Order[] = [
   {
     id: "ord_1001",
@@ -84,12 +82,19 @@ export function listOrdersForUser(userId: string): Order[] {
 }
 
 export function listAllOrders(): Order[] {
-  // نسخة دفاعية
   return ORDERS.map((o) => ({ ...o, thread: [...o.thread] }));
 }
 
 export function getOrder(id: string): Order | undefined {
   return ORDERS.find((o) => o.id === id);
+}
+
+// ---------------- Seeding ----------------
+export function seedOrdersFor(userId: string) {
+  if (listOrdersForUser(userId).length) return;
+  ORDERS = ORDERS.map((o, i) =>
+    i === 0 ? { ...o, buyer: { ...o.buyer, id: userId, name: "You" } } : o
+  );
 }
 
 // ---------------- Internal ----------------
@@ -98,10 +103,7 @@ function pushMsg(o: Order, m: ChatMessage) {
 }
 
 // ---------------- Actions ----------------
-export function postMessage(
-  orderId: string,
-  msg: Omit<ChatMessage, "id" | "at">
-) {
+export function postMessage(orderId: string, msg: Omit<ChatMessage, "id" | "at">) {
   const o = getOrder(orderId);
   if (!o) return;
   pushMsg(o, { id: `m_${Date.now()}`, at: new Date().toISOString(), ...msg });
