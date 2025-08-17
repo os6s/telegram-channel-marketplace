@@ -1,11 +1,26 @@
+// client/src/pages/admin.tsx
 import { useMemo, useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { DisputeThread, type AdminOrder, type DisputeMessage } from "@/components/dispute-thread";
+import { MockChat, type ChatMessage } from "@/components/chat/mock-chat";
 
-// ---- Mock data (بدّلها لاحقاً ببياناتك) ----
+// ---- Mock orders (بدّلها لاحقاً بـ API) ----
+type OrderStatus = "held" | "released" | "refunded" | "disputed";
+type AdminOrder = {
+  id: string;
+  buyer: string;
+  seller: string;
+  amount: number;
+  currency: "TON" | "USDT";
+  status: OrderStatus;
+  createdAt: string; // ISO
+  disputeThread?: ChatMessage[];
+};
+
 const MOCK_ORDERS: AdminOrder[] = [
   {
     id: "ord_1001",
@@ -14,10 +29,10 @@ const MOCK_ORDERS: AdminOrder[] = [
     amount: 120,
     currency: "USDT",
     status: "held",
-    createdAt: new Date(Date.now()-3600_000).toISOString(),
+    createdAt: new Date(Date.now() - 3600_000).toISOString(),
     disputeThread: [
-      { id:"m1", role:"buyer", text:"Seller didn’t respond yet.", at:new Date(Date.now()-3500_000).toISOString() }
-    ]
+      { id: "m1", role: "buyer", text: "Seller didn’t respond yet.", at: new Date(Date.now() - 3500_000).toISOString() },
+    ],
   },
   {
     id: "ord_1002",
@@ -26,11 +41,11 @@ const MOCK_ORDERS: AdminOrder[] = [
     amount: 50,
     currency: "TON",
     status: "disputed",
-    createdAt: new Date(Date.now()-7200_000).toISOString(),
+    createdAt: new Date(Date.now() - 7200_000).toISOString(),
     disputeThread: [
-      { id:"m2", role:"seller", text:"Buyer got access already.", at:new Date(Date.now()-7000_000).toISOString() },
-      { id:"m3", role:"buyer", text:"No, access not granted.", at:new Date(Date.now()-6800_000).toISOString() }
-    ]
+      { id: "m2", role: "seller", text: "Buyer got access already.", at: new Date(Date.now() - 7000_000).toISOString() },
+      { id: "m3", role: "buyer", text: "No, access not granted.", at: new Date(Date.now() - 6800_000).toISOString() },
+    ],
   },
   {
     id: "ord_1003",
@@ -39,66 +54,73 @@ const MOCK_ORDERS: AdminOrder[] = [
     amount: 300,
     currency: "USDT",
     status: "released",
-    createdAt: new Date(Date.now()-86400_000).toISOString(),
+    createdAt: new Date(Date.now() - 86400_000).toISOString(),
   },
 ];
 
 export default function AdminPage() {
   const { toast } = useToast();
   const [orders, setOrders] = useState<AdminOrder[]>(MOCK_ORDERS);
-  const [statusFilter, setStatusFilter] = useState<"all"|"held"|"disputed"|"released"|"refunded">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
   const [q, setQ] = useState("");
-  const [openDispute, setOpenDispute] = useState(false);
+  const [openChat, setOpenChat] = useState(false);
   const [selected, setSelected] = useState<AdminOrder | null>(null);
 
-  const filtered = useMemo(()=>{
-    return orders.filter(o=>{
-      if (statusFilter!=="all" && o.status!==statusFilter) return false;
+  const filtered = useMemo(() => {
+    return orders.filter((o) => {
+      if (statusFilter !== "all" && o.status !== statusFilter) return false;
       if (q) {
         const blob = `${o.id} ${o.buyer} ${o.seller}`.toLowerCase();
         if (!blob.includes(q.toLowerCase())) return false;
       }
       return true;
     });
-  },[orders,statusFilter,q]);
+  }, [orders, statusFilter, q]);
 
-  const setStatus = (id:string, next:AdminOrder["status"])=>{
-    setOrders(prev => prev.map(o => o.id===id ? {...o, status: next} : o));
+  const setStatus = (id: string, next: OrderStatus) => {
+    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: next } : o)));
   };
 
-  const onRelease = (id:string)=>{
-    setStatus(id,"released");
-    toast({ title:"Released", description:`Order ${id} funds released.` });
+  const onRelease = (id: string) => {
+    setStatus(id, "released");
+    toast({ title: "Released", description: `Order ${id} funds released.` });
   };
-  const onRefund = (id:string)=>{
-    setStatus(id,"refunded");
-    toast({ title:"Refunded", description:`Order ${id} refunded.` });
+  const onRefund = (id: string) => {
+    setStatus(id, "refunded");
+    toast({ title: "Refunded", description: `Order ${id} refunded.` });
   };
 
-  const onOpenDispute = (o:AdminOrder)=>{
+  const onOpenChat = (o: AdminOrder) => {
     setSelected(o);
-    setOpenDispute(true);
+    setOpenChat(true);
   };
 
-  const onPostDispute = (orderId: string, msg: Omit<DisputeMessage,"id"|"at">) => {
-    setOrders(prev => prev.map(o=>{
-      if (o.id!==orderId) return o;
-      const thread = o.disputeThread || [];
-      const nextMsg: DisputeMessage = {
-        id: `m_${Date.now()}`,
-        at: new Date().toISOString(),
-        role: msg.role,
-        text: msg.text
-      };
-      return { ...o, status: o.status==="held" ? "disputed" : o.status, disputeThread: [...thread, nextMsg] };
-    }));
-    toast({ title:"Message sent", description:"Your message was added to the dispute." });
+  // يضيف رسالة جديدة للثريد ويحوله إلى disputed إذا كان held
+  const onSendChat = (msg: Omit<ChatMessage, "id" | "at">) => {
+    if (!selected) return;
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id !== selected.id) return o;
+        const nextMsg: ChatMessage = {
+          id: `m_${Date.now()}`,
+          at: new Date().toISOString(),
+          role: msg.role,
+          text: msg.text,
+          author: msg.author,
+        };
+        return {
+          ...o,
+          status: o.status === "held" ? "disputed" : o.status,
+          disputeThread: [...(o.disputeThread || []), nextMsg],
+        };
+      })
+    );
   };
 
-  const statusBadge = (s: AdminOrder["status"]) => {
-    if (s==="held") return <Badge className="bg-amber-500 text-white">Held</Badge>;
-    if (s==="disputed") return <Badge className="bg-red-600 text-white">Disputed</Badge>;
-    if (s==="released") return <Badge className="bg-emerald-600 text-white">Released</Badge>;
+  const statusBadge = (s: OrderStatus) => {
+    if (s === "held") return <Badge className="bg-amber-500 text-white">Held</Badge>;
+    if (s === "disputed") return <Badge className="bg-red-600 text-white">Disputed</Badge>;
+    if (s === "released") return <Badge className="bg-emerald-600 text-white">Released</Badge>;
     return <Badge className="bg-sky-600 text-white">Refunded</Badge>;
   };
 
@@ -112,7 +134,7 @@ export default function AdminPage() {
             <select
               className="w-full rounded-md border px-3 py-2 bg-background text-foreground"
               value={statusFilter}
-              onChange={(e)=>setStatusFilter(e.target.value as any)}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
             >
               <option value="all">All</option>
               <option value="held">Held</option>
@@ -127,7 +149,7 @@ export default function AdminPage() {
               className="w-full rounded-md border px-3 py-2 bg-background text-foreground"
               placeholder="ord_1001, u12345…"
               value={q}
-              onChange={(e)=>setQ(e.target.value)}
+              onChange={(e) => setQ(e.target.value)}
             />
           </div>
         </CardContent>
@@ -135,7 +157,7 @@ export default function AdminPage() {
 
       {/* Orders */}
       <div className="space-y-3">
-        {filtered.map(o=>(
+        {filtered.map((o) => (
           <Card key={o.id}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
@@ -149,27 +171,48 @@ export default function AdminPage() {
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button size="sm" disabled={o.status!=="held"} onClick={()=>onRelease(o.id)}>Release</Button>
-                <Button size="sm" variant="secondary" disabled={o.status!=="held"} onClick={()=>onRefund(o.id)}>Refund</Button>
-                <Button size="sm" variant="outline" onClick={()=>onOpenDispute(o)}>
+                <Button size="sm" disabled={o.status !== "held"} onClick={() => onRelease(o.id)}>
+                  Release
+                </Button>
+                <Button size="sm" variant="secondary" disabled={o.status !== "held"} onClick={() => onRefund(o.id)}>
+                  Refund
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => onOpenChat(o)}>
                   Dispute {o.disputeThread?.length ? `(${o.disputeThread.length})` : ""}
                 </Button>
               </div>
             </CardContent>
           </Card>
         ))}
-        {filtered.length===0 && (
-          <div className="text-sm text-muted-foreground">No results.</div>
-        )}
+        {filtered.length === 0 && <div className="text-sm text-muted-foreground">No results.</div>}
       </div>
 
-      {/* Dispute drawer/dialog */}
-      <DisputeThread
-        open={openDispute}
-        onOpenChange={setOpenDispute}
-        order={selected}
-        onPost={onPostDispute}
-      />
+      {/* Chat Dialog */}
+      <Dialog.Root open={openChat} onOpenChange={setOpenChat}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 w-[96vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-0 shadow-lg">
+            <div className="flex items-center justify-between px-3 py-2 border-b">
+              <div className="text-sm font-semibold">Dispute chat · #{selected?.id}</div>
+              <Button variant="ghost" size="icon" onClick={() => setOpenChat(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+
+            {selected && (
+              <MockChat
+                orderId={selected.id}
+                me="admin"
+                buyer={{ id: selected.buyer, name: `Buyer ${selected.buyer}` }}
+                seller={{ id: selected.seller, name: `Seller ${selected.seller}` }}
+                admin={{ id: "admin", name: "Admin" }}
+                initial={selected.disputeThread}
+                onSend={(m) => onSendChat(m)}
+              />
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }
