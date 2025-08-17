@@ -1,7 +1,7 @@
-// client/src/pages/sell.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,8 +16,6 @@ import AccountForm from "./parts/AccountForm";
 import ChannelForm from "./parts/ChannelForm";
 import ServiceForm from "./parts/ServiceForm";
 import { usernameSchema, accountSchema, channelSchema, serviceSchema } from "./utils/schemas";
-
-// ستور الماركت المحلي حتى تظهر المعروضات فورًا
 import { upsertListing, type AnyListing } from "@/store/listings";
 
 function getSchema(kind: string) {
@@ -31,6 +29,7 @@ function getSchema(kind: string) {
 export default function SellPage() {
   const { toast } = useToast();
   const { t } = useLanguage();
+  const qc = useQueryClient();
 
   const [kind, setKind] = useState<"username" | "account" | "channel" | "service" | null>(null);
   const [platform, setPlatform] = useState<"telegram" | "twitter" | "instagram" | "discord" | "snapchat" | "tiktok" | "">("");
@@ -46,27 +45,17 @@ export default function SellPage() {
     defaultValues: {
       type: kind || undefined,
       platform: platform || "",
-      // common
       price: "", currency: "TON", description: "",
-      // username
       username: "", tgUserType: "",
-      // account
       createdAt: "", followersCount: "",
-      // channel
       channelMode: "subscribers", link: "", channelUsername: "",
       subscribersCount: "", giftsCount: "", giftKind: "regular",
-      // service
       serviceType: "followers", target: "instagram", count: "",
     },
   });
 
-  useEffect(() => {
-    form.setValue("type", kind || undefined, { shouldValidate: true });
-  }, [kind, form]);
-
-  useEffect(() => {
-    form.setValue("platform", platform || "", { shouldValidate: true });
-  }, [platform, form]);
+  useEffect(() => { form.setValue("type", kind || undefined, { shouldValidate: true }); }, [kind]);
+  useEffect(() => { form.setValue("platform", platform || "", { shouldValidate: true }); }, [platform]);
 
   const numericKeyGuard = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const allowed = ["Backspace","Delete","ArrowLeft","ArrowRight","Tab","Home","End","Enter","."];
@@ -80,54 +69,46 @@ export default function SellPage() {
       return;
     }
 
-    const sellerId = String(telegramWebApp.user.id);
-    const payload: any = { ...data, telegramId: sellerId };
+    const telegramId = String(telegramWebApp.user.id);
+    const payload: any = {
+      telegramId,
+      kind: "channel",                         // ندعم القنوات حالياً
+      platform: "telegram",
+      channelMode: data.channelMode,
+      username: (data.channelUsername || data.link || data.username || "").trim(),
+      title: data.title,
+      subscribers: data.subscribersCount ? Number(data.subscribersCount) : undefined,
+      price: Number(data.price),
+      currency: data.currency || "TON",
+      description: data.description,
+      isVerified: !!data.isVerified,
+    };
 
-    // توحيد حقول القناة
-    if (data.type === "channel") {
-      payload.username = (data.channelUsername || data.link || "").trim();
-      delete payload.link;
-      delete payload.channelUsername;
-    }
-
-    // حفظ على السيرفر
-    const url = data.type === "channel" ? "/api/sell" : "/api/listings";
     try {
-      const saved = await apiRequest("POST", url, payload); // يُفضّل أن يرجّع {id,...}
-      toast({ title: "OK", description: t("sell.sent") });
+      const saved = await apiRequest("POST", "/api/listings", payload);
 
-      // دفع نسخة محلية للماركت فورًا
       const local: AnyListing = {
-        id: String(saved?.id || `local_${Date.now()}`),
-        kind: data.type,
-        platform: data.platform || platform || "",
-        channelMode: data.channelMode,
-        serviceType: data.serviceType,
-        price: data.price,
-        subscribers: Number(data.subscribersCount || 0),
-        name: data.name,                // إن وُجدت من أحد الفورمات
-        username: data.username || payload.username,
-        title: data.title,              // إن وُجدت
-        isVerified: !!data.isVerified,
-        sellerId,
+        id: String(saved?.id ?? `local_${Date.now()}`),
+        ...payload,
+        sellerId: String(saved?.sellerId ?? telegramId),
         createdAt: new Date().toISOString(),
-        // أي حقول أخرى يحتاجها ChannelCard تُمرّر هنا
       };
       upsertListing(local);
 
+      qc.invalidateQueries({ queryKey: ["/api/listings"] });
+      qc.invalidateQueries({ queryKey: ["/api/listings", { sellerId: local.sellerId }] });
+
+      toast({ title: "OK", description: t("sell.sent") });
       form.reset(); setKind(null); setPlatform("");
     } catch (e: any) {
       toast({ title: t("toast.error") || "Error", description: e?.message || "Error", variant: "destructive" });
     }
   };
 
-  // الخطوة 1
   if (!kind) {
     return (
       <Card className="min-h-screen bg-card text-foreground">
-        <CardHeader>
-          <CardTitle>{t("sell.title")}</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>{t("sell.title")}</CardTitle></CardHeader>
         <CardContent className="p-4 space-y-3">
           <Button className="w-full" onClick={() => setKind("username")}>{t("sell.username")}</Button>
           <Button className="w-full" onClick={() => setKind("account")}>{t("sell.account")}</Button>
@@ -138,22 +119,14 @@ export default function SellPage() {
     );
   }
 
-  // الخطوة 2: اختيار المنصّة لليوزر/الحساب
   if ((kind === "username" || kind === "account") && !platform) {
     const list = ["telegram","twitter","instagram","discord","snapchat","tiktok"];
     return (
       <Card className="min-h-screen bg-card text-foreground">
-        <CardHeader>
-          <CardTitle>{t("sell.platform")}</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>{t("sell.platform")}</CardTitle></CardHeader>
         <CardContent className="p-4 space-y-3">
           {list.map(p => (
-            <Button
-              key={p}
-              className="w-full"
-              variant={platform === p ? "default" : "outline"}
-              onClick={() => setPlatform(p as any)}
-            >
+            <Button key={p} className="w-full" variant={platform === p ? "default" : "outline"} onClick={() => setPlatform(p as any)}>
               {p}
             </Button>
           ))}
@@ -169,11 +142,7 @@ export default function SellPage() {
         <Card className="bg-card">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => { setKind(null); setPlatform(""); form.reset(); }}
-              >
+              <Button type="button" variant="secondary" onClick={() => { setKind(null); setPlatform(""); form.reset(); }}>
                 {t("sell.back")}
               </Button>
               <CardTitle className="ml-2">{t("sell.title")}</CardTitle>
@@ -184,25 +153,17 @@ export default function SellPage() {
           </CardHeader>
 
           <CardContent className="space-y-4">
-            {/* الأجزاء */}
             {kind === "username" && <UsernameForm form={form} platform={platform} />}
             {kind === "account"  && <AccountForm  form={form} platform={platform} />}
             {kind === "channel"  && <ChannelForm  form={form} />}
             {kind === "service"  && <ServiceForm  form={form} />}
 
-            {/* السعر + العملة + الوصف */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <FormField name="price" control={form.control} render={({ field }) => (
                 <FormItem className="sm:col-span-2">
                   <FormLabel>{t("sell.price")}</FormLabel>
                   <FormControl>
-                    <Input
-                      {...field}
-                      inputMode="decimal"
-                      placeholder="0.0"
-                      className="bg-background"
-                      onKeyDown={numericKeyGuard}
-                    />
+                    <Input {...field} inputMode="decimal" placeholder="0.0" className="bg-background" onKeyDown={numericKeyGuard} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -224,19 +185,13 @@ export default function SellPage() {
             <FormField name="description" control={form.control} render={({ field }) => (
               <FormItem>
                 <FormLabel>{t("sell.desc")}</FormLabel>
-                <FormControl>
-                  <Textarea {...field} className="bg-background" rows={3} />
-                </FormControl>
+                <FormControl><Textarea {...field} className="bg-background" rows={3} /></FormControl>
                 <FormMessage />
               </FormItem>
             )} />
 
             <div className="flex justify-between">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => { setKind(null); setPlatform(""); form.reset(); }}
-              >
+              <Button type="button" variant="secondary" onClick={() => { setKind(null); setPlatform(""); form.reset(); }}>
                 {t("sell.back")}
               </Button>
               <Button type="submit" variant="default" disabled={form.formState.isSubmitting || !schema}>
