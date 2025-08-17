@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react";
+// client/src/pages/profile.tsx
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Edit3, Wallet, Plus, Settings, Users, DollarSign } from "lucide-react";
+import { ArrowLeft, Edit3, Wallet, Plus, Settings, Users, DollarSign, MessageSquare } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { WalletConnect } from "@/components/wallet-connect";
 import { ChannelCard } from "@/components/channel-card";
 import { SettingsModal } from "@/components/settings-modal";
@@ -16,15 +18,31 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
 import { ActivityTimeline, type ActivityEvent } from "@/components/activity-timeline";
+import { MockChat, type ChatMessage } from "@/components/chat/mock-chat";
+
+type OrderStatus = "held" | "released" | "refunded" | "disputed";
+type Order = {
+  id: string;
+  buyer: { id: string; name?: string };
+  seller: { id: string; name?: string };
+  amount: number;
+  currency: "TON" | "USDT";
+  status: OrderStatus;
+  createdAt: string;
+  thread?: ChatMessage[];
+};
 
 export default function Profile() {
   const [connectedWallet, setConnectedWallet] = useState<TonWallet | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [selected, setSelected] = useState<Order | null>(null);
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { t } = useLanguage();
-
   const { wallet, getBalance } = useTon();
+
   const telegramUser = telegramWebApp.user;
   const userId = telegramUser?.id.toString() || "temp-user-id";
 
@@ -99,30 +117,44 @@ export default function Profile() {
     return { activeChannels, totalValue: totalValue.toFixed(2), totalSubscribers };
   })();
 
-  // ✅ بيانات نشاط البائع (وهمية حالياً – Frontend فقط)
+  // نشاط البائع (وهمي الآن)
   const sellerActivity: ActivityEvent[] = [
-    {
-      id: "e1",
-      type: "LISTED",
-      title: "You listed @mychannel",
-      subtitle: "Price: 120 TON",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "e2",
-      type: "UPDATED",
-      title: "Updated @mychannel",
-      subtitle: "Price changed to 150 TON",
-      createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
-    },
-    {
-      id: "e3",
-      type: "SOLD",
-      title: "You sold @oldgroup",
-      subtitle: "for 300 TON",
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
-    },
+    { id: "e1", type: "LISTED", title: "You listed @mychannel", subtitle: "Price: 120 TON", createdAt: new Date().toISOString() },
+    { id: "e2", type: "UPDATED", title: "Updated @mychannel", subtitle: "Price changed to 150 TON", createdAt: new Date(Date.now() - 3600_000).toISOString() },
+    { id: "e3", type: "SOLD", title: "You sold @oldgroup", subtitle: "for 300 TON", createdAt: new Date(Date.now() - 4 * 3600_000).toISOString() },
   ];
+
+  // طلبات المستخدم (موك: يطلع إذا كان buyer أو seller)
+  const myOrders: Order[] = useMemo(() => {
+    const me = userId;
+    return [
+      {
+        id: "ord_2001",
+        buyer: { id: me, name: `You` },
+        seller: { id: "u77777", name: "Seller_77777" },
+        amount: 120,
+        currency: "USDT",
+        status: "held",
+        createdAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
+        thread: [
+          { id: "m1", role: "buyer", text: "Hi, after payment when can I get access?", at: new Date(Date.now() - 7000_000).toISOString() },
+        ],
+      },
+      {
+        id: "ord_2002",
+        buyer: { id: "u99999", name: "Buyer_99999" },
+        seller: { id: me, name: `You` },
+        amount: 300,
+        currency: "TON",
+        status: "disputed",
+        createdAt: new Date(Date.now() - 6 * 3600_000).toISOString(),
+        thread: [
+          { id: "m2", role: "seller", text: "I sent admin rights already.", at: new Date(Date.now() - 5.5 * 3600_000).toISOString() },
+          { id: "m3", role: "buyer", text: "I still don't see it.", at: new Date(Date.now() - 5.3 * 3600_000).toISOString() },
+        ],
+      },
+    ];
+  }, [userId]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -274,6 +306,34 @@ export default function Profile() {
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-4">
+            {/* My Orders (Buyer/Seller) */}
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <div className="text-sm font-semibold flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  My Orders (chat / dispute)
+                </div>
+                {myOrders.map(o => (
+                  <div key={o.id} className="border rounded p-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium">Order #{o.id} · {o.amount} {o.currency}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(o.createdAt).toLocaleString()} · status: {o.status} ·
+                        {" "}buyer:{o.buyer.id === userId ? "You" : o.buyer.id} · seller:{o.seller.id === userId ? "You" : o.seller.id}
+                      </div>
+                    </div>
+                    <Button size="sm" onClick={() => { setSelected(o); setChatOpen(true); }}>
+                      Open chat {o.thread?.length ? `(${o.thread.length})` : ""}
+                    </Button>
+                  </div>
+                ))}
+                {myOrders.length === 0 && (
+                  <div className="text-sm text-muted-foreground">No orders yet.</div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Seller activity timeline */}
             <ActivityTimeline
               events={sellerActivity}
               emptyText={t("activityPage.empty") || "No seller activity yet"}
@@ -281,6 +341,25 @@ export default function Profile() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Chat/Dialog */}
+      <Dialog.Root open={chatOpen} onOpenChange={setChatOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 w-[96vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-0 shadow-lg">
+            {selected && (
+              <MockChat
+                orderId={selected.id}
+                me={selected.buyer.id === userId ? "buyer" : "seller"}
+                buyer={{ id: selected.buyer.id, name: selected.buyer.name }}
+                seller={{ id: selected.seller.id, name: selected.seller.name }}
+                admin={{ id: "admin", name: "Admin" }}
+                initial={selected.thread}
+              />
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
     </div>
