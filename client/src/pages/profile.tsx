@@ -1,5 +1,5 @@
 // client/src/pages/profile.tsx
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,13 +21,18 @@ import { ActivityTimeline, type ActivityEvent } from "@/components/activity-time
 import { MockChat } from "@/components/chat/mock-chat";
 
 // Mock orders store
-import { listOrdersForUser, seedOrdersFor, type Order } from "@/store/mock-orders";
+import { listOrdersForUser, listAllOrders, seedOrdersFor, type Order } from "@/store/mock-orders";
 
 export default function Profile() {
   const [connectedWallet, setConnectedWallet] = useState<TonWallet | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+
+  // حوار الدردشة
   const [chatOpen, setChatOpen] = useState(false);
   const [selected, setSelected] = useState<Order | null>(null);
+
+  // طلباتي
+  const [myOrders, setMyOrders] = useState<Order[]>([]);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -37,6 +42,14 @@ export default function Profile() {
   const telegramUser = telegramWebApp.user;
   const userId = telegramUser?.id.toString() || "temp-user-id";
 
+  // Seed + تحميل الطلبات كلما تغير userId
+  useEffect(() => {
+    seedOrdersFor(userId);
+    const mine = listOrdersForUser(userId);
+    setMyOrders(mine.length ? mine : listAllOrders());
+  }, [userId]);
+
+  // Wallet connect
   useEffect(() => {
     (async () => {
       if (wallet?.address) {
@@ -50,11 +63,6 @@ export default function Profile() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet?.address]);
-
-  // اربط أول طلب بالمستخدم الحالي كمشتري إن ما عنده طلبات
-  useEffect(() => {
-    if (userId) seedOrdersFor(userId);
-  }, [userId]);
 
   const { data: user } = useQuery({
     queryKey: ["/api/users", userId],
@@ -113,15 +121,11 @@ export default function Profile() {
     return { activeChannels, totalValue: totalValue.toFixed(2), totalSubscribers };
   })();
 
-  // نشاط البائع (وهمي الآن)
   const sellerActivity: ActivityEvent[] = [
     { id: "e1", type: "LISTED", title: "You listed @mychannel", subtitle: "Price: 120 TON", createdAt: new Date().toISOString() },
     { id: "e2", type: "UPDATED", title: "Updated @mychannel", subtitle: "Price changed to 150 TON", createdAt: new Date(Date.now() - 3600_000).toISOString() },
     { id: "e3", type: "SOLD", title: "You sold @oldgroup", subtitle: "for 300 TON", createdAt: new Date(Date.now() - 4 * 3600_000).toISOString() },
   ];
-
-  // طلبات المستخدم من الستور
-  const myOrders: Order[] = useMemo(() => listOrdersForUser(userId), [userId]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -314,7 +318,7 @@ export default function Profile() {
       <Dialog.Root open={chatOpen} onOpenChange={setChatOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 w-[96vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-0 shadow-lg">
+        <Dialog.Content className="fixed left-1/2 top-1/2 w-[96vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-0 shadow-lg">
             {selected && (
               <MockChat
                 order={selected}
