@@ -1,13 +1,26 @@
 // shared/schema.ts
-import { pgTable, text, varchar, boolean, integer, timestamp, numeric, pgEnum, uuid } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  varchar,
+  boolean,
+  integer,
+  timestamp,
+  pgEnum,
+  uuid,
+} from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
 
-// enums اختيارية
-export const kindEnum = pgEnum("listing_kind", ["channel","username","account","service"]);
+/* ================= Enums ================= */
+export const kindEnum = pgEnum("listing_kind", ["channel", "username", "account", "service"]);
 export const platformEnum = pgEnum("platform_kind", ["telegram","twitter","instagram","discord","snapchat","tiktok"]);
 export const channelModeEnum = pgEnum("channel_mode", ["subscribers","gifts"]);
 export const serviceTypeEnum = pgEnum("service_type", ["followers","members","boost_channel","boost_group"]);
 
-// users (بدون تغيير إن كان موجود)
+/* ================ Users ================ */
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   telegramId: varchar("telegram_id", { length: 64 }).notNull().unique(),
@@ -18,17 +31,21 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: false }).defaultNow().notNull(),
 });
 
-// ✅ نستخدم جدولك الحالي channels كـ listings موحّدة
+/* ============== Channels (Unified Listings) ============== */
+/* نستخدم جدول channels كجدول listings موحّد لكل الأنواع */
 export const channels = pgTable("channels", {
   id: uuid("id").defaultRandom().primaryKey(),
   sellerId: uuid("seller_id").notNull().references(() => users.id),
-  // موحّد
+
+  // مشترك
   kind: kindEnum("kind").notNull().default("channel"),
   platform: platformEnum("platform"),
-  username: varchar("username", { length: 64 }).notNull().unique(),  // نطبّعها بالراوتر
+  name: varchar("name", { length: 256 }),                 // اسم قابل للعرض إن أردت
+  username: varchar("username", { length: 64 }).notNull().unique(),
   title: varchar("title", { length: 256 }),
   description: text("description"),
-  price: varchar("price", { length: 64 }).notNull(),                 // إبقِها نص لتجنّب مشاكل الفاصلة
+  category: varchar("category", { length: 64 }),           // اختياري للفلترة العامة
+  price: varchar("price", { length: 64 }).notNull(),       // نخزّن نص لتفادي مشاكل الفاصلة
   currency: varchar("currency", { length: 8 }).notNull().default("TON"),
   isVerified: boolean("is_verified").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
@@ -54,13 +71,94 @@ export const channels = pgTable("channels", {
   createdAt: timestamp("created_at", { withTimezone: false }).defaultNow().notNull(),
 });
 
-// activities تبقى كما هي لو عندك بالفعل
+/* ================ Activities ================ */
 export const activities = pgTable("activities", {
   id: uuid("id").defaultRandom().primaryKey(),
-  channelId: uuid("channel_id").notNull().references(() => channels.id), // يبقى الاسم كما هو
+  channelId: uuid("channel_id").notNull().references(() => channels.id),
   buyerId: uuid("buyer_id").notNull().references(() => users.id),
   sellerId: uuid("seller_id").notNull().references(() => users.id),
   amount: varchar("amount", { length: 64 }).notNull(),
+  currency: varchar("act_currency", { length: 8 }).notNull().default("TON"),
   status: varchar("status", { length: 32 }).notNull().default("completed"),
+  transactionHash: varchar("tx_hash", { length: 128 }),
   completedAt: timestamp("completed_at", { withTimezone: false }).defaultNow().notNull(),
 });
+
+/* ================ Relations (اختياري) ================ */
+export const usersRelations = relations(users, ({ many }) => ({
+  listings: many(channels),
+  buys: many(activities),
+  sells: many(activities),
+}));
+
+export const channelsRelations = relations(channels, ({ one, many }) => ({
+  seller: one(users, { fields: [channels.sellerId], references: [users.id] }),
+  acts: many(activities),
+}));
+
+export const activitiesRelations = relations(activities, ({ one }) => ({
+  listing: one(channels, { fields: [activities.channelId], references: [channels.id] }),
+  buyer: one(users, { fields: [activities.buyerId], references: [users.id] }),
+  seller: one(users, { fields: [activities.sellerId], references: [users.id] }),
+}));
+
+/* ================ TS Types ================ */
+export type User = InferSelectModel<typeof users>;
+export type InsertUser = InferInsertModel<typeof users>;
+
+export type Channel = InferSelectModel<typeof channels>;
+export type InsertChannel = InferInsertModel<typeof channels>;
+
+export type Activity = InferSelectModel<typeof activities>;
+export type InsertActivity = InferInsertModel<typeof activities>;
+
+/* ================ Zod Schemas ================ */
+// Users
+export const insertUserSchema = createInsertSchema(users, {
+  telegramId: z.string().min(1),
+  username: z.string().optional().nullable(),
+  firstName: z.string().optional().nullable(),
+  lastName: z.string().optional().nullable(),
+  tonWallet: z.string().optional().nullable(),
+}).strict();
+
+// Channels (listings) — حقل username نطبّعه بالراوتر
+export const insertChannelSchema = createInsertSchema(channels, {
+  sellerId: z.string().uuid(),
+  kind: z.enum(["channel","username","account","service"]),
+  platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional(),
+  username: z.string().min(1),
+  title: z.string().optional().nullable(),
+  name: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+  category: z.string().optional().nullable(),
+  price: z.string().regex(/^\d+(\.\d{1,9})?$/, "invalid price"),
+  currency: z.enum(["TON","USDT"]).default("TON"),
+  isVerified: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+  avatarUrl: z.string().url().optional().nullable(),
+
+  channelMode: z.enum(["subscribers","gifts"]).optional().nullable(),
+  subscribers: z.number().int().min(0).optional().nullable(),
+  engagement: z.string().optional().nullable(),
+
+  tgUserType: z.string().optional().nullable(),
+
+  followersCount: z.number().int().min(0).optional().nullable(),
+  accountCreatedAt: z.string().optional().nullable(),
+
+  serviceType: z.enum(["followers","members","boost_channel","boost_group"]).optional().nullable(),
+  target: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional().nullable(),
+  serviceCount: z.number().int().min(0).optional().nullable(),
+}).strict();
+
+// Activities
+export const insertActivitySchema = createInsertSchema(activities, {
+  channelId: z.string().uuid(),
+  buyerId: z.string().uuid(),
+  sellerId: z.string().uuid(),
+  amount: z.string().regex(/^\d+(\.\d{1,9})?$/, "invalid amount"),
+  currency: z.enum(["TON","USDT"]).default("TON"),
+  status: z.string().default("completed"),
+  transactionHash: z.string().optional().nullable(),
+}).strict();
