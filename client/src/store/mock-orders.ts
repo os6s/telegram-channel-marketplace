@@ -49,9 +49,34 @@ let ORDERS: Order[] = [
       },
     ],
   },
+  {
+    id: "ord_1002",
+    buyer: { id: "u99999", name: "Buyer_999" },
+    seller: { id: "u22222", name: "Seller_222" },
+    amount: 300,
+    currency: "TON",
+    status: "disputed",
+    createdAt: new Date(Date.now() - 6 * 3600_000).toISOString(),
+    thread: [
+      {
+        id: "m2",
+        role: "seller",
+        text: "I sent admin rights already.",
+        at: new Date(Date.now() - 5.5 * 3600_000).toISOString(),
+        author: { id: "u22222" },
+      },
+      {
+        id: "m3",
+        role: "buyer",
+        text: "I still don't see it.",
+        at: new Date(Date.now() - 5.3 * 3600_000).toISOString(),
+        author: { id: "u99999" },
+      },
+    ],
+  },
 ];
 
-// ---------------- Helpers ----------------
+// ---------------- Queries ----------------
 export function listOrdersForUser(userId: string): Order[] {
   return ORDERS.filter(
     (o) => o.buyer.id === userId || o.seller.id === userId
@@ -59,7 +84,7 @@ export function listOrdersForUser(userId: string): Order[] {
 }
 
 export function listAllOrders(): Order[] {
-  // نسخة جديدة حتى ما يصير تعديل خارجي
+  // نسخة دفاعية
   return ORDERS.map((o) => ({ ...o, thread: [...o.thread] }));
 }
 
@@ -67,6 +92,7 @@ export function getOrder(id: string): Order | undefined {
   return ORDERS.find((o) => o.id === id);
 }
 
+// ---------------- Internal ----------------
 function pushMsg(o: Order, m: ChatMessage) {
   o.thread.push(m);
 }
