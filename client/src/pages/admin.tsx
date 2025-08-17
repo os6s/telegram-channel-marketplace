@@ -6,67 +6,19 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { X, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { MockChat, type ChatMessage } from "@/components/chat/mock-chat";
+import { MockChat } from "@/components/chat/mock-chat";
 
-/* ---------------- Types ---------------- */
-type OrderStatus = "held" | "released" | "refunded" | "disputed";
-
-type AdminOrder = {
-  id: string;
-  buyer: string;
-  seller: string;
-  amount: number;
-  currency: "TON" | "USDT";
-  status: OrderStatus;
-  createdAt: string;          // ISO
-  unlockAt?: string;          // ISO - متى يتهيأ التحويل تلقائياً
-  buyerConfirmed?: boolean;   // إذا المشتري أكد الاستلام، يتحول جاهز فوراً
-  disputeThread?: ChatMessage[];
-};
-
-/* -------------- Mock orders -------------- */
-const now = Date.now();
-const MOCK_ORDERS: AdminOrder[] = [
-  {
-    id: "ord_1001",
-    buyer: "u12345",
-    seller: "u77777",
-    amount: 120,
-    currency: "USDT",
-    status: "held",
-    createdAt: new Date(now - 3_600_000).toISOString(),          // قبل ساعة
-    unlockAt: new Date(now + 23 * 3_600_000).toISOString(),      // يكمل بعد 23 ساعة
-    buyerConfirmed: false,
-    disputeThread: [
-      { id: "m1", role: "buyer", text: "Seller didn’t respond yet.", at: new Date(now - 3_500_000).toISOString() },
-    ],
-  },
-  {
-    id: "ord_1002",
-    buyer: "u88888",
-    seller: "u77777",
-    amount: 50,
-    currency: "TON",
-    status: "disputed",
-    createdAt: new Date(now - 7_200_000).toISOString(),
-    unlockAt: new Date(now + 10 * 3_600_000).toISOString(),
-    buyerConfirmed: false,
-    disputeThread: [
-      { id: "m2", role: "seller", text: "Buyer got access already.", at: new Date(now - 7_000_000).toISOString() },
-      { id: "m3", role: "buyer", text: "No, access not granted.", at: new Date(now - 6_800_000).toISOString() },
-    ],
-  },
-  {
-    id: "ord_1003",
-    buyer: "u99999",
-    seller: "u22222",
-    amount: 300,
-    currency: "USDT",
-    status: "released",
-    createdAt: new Date(now - 86_400_000).toISOString(),
-    buyerConfirmed: true,
-  },
-];
+// استيراد من الموك الموحّد
+import {
+  type Order,
+  type OrderStatus,
+  // أضِف هذه الدالة في store إن ما موجودة:
+  // export function listAllOrders(): Order[] { return ORDERS.map(o => ({...o, thread:[...o.thread]})); }
+  listAllOrders,
+  postMessage,
+  refund as storeRefund,
+  release as storeRelease,
+} from "@/store/mock-chat";
 
 /* -------- Helpers -------- */
 function formatRemaining(ms: number) {
@@ -78,16 +30,25 @@ function formatRemaining(ms: number) {
   return `${hh}:${mm}:${ss}`;
 }
 
+// نحسب unlockAt = createdAt + 24 ساعة افتراضياً
+function calcUnlockAt(o: Order) {
+  return new Date(new Date(o.createdAt).getTime() + 24 * 3600_000);
+}
+
 /* ============== Page ============== */
 export default function AdminPage() {
   const { toast } = useToast();
-  const [orders, setOrders] = useState<AdminOrder[]>(MOCK_ORDERS);
+
+  // نعيد القراءة كل تغيّر rev
+  const [rev, setRev] = useState(0);
+  const orders = useMemo(() => listAllOrders(), [rev]);
+
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
   const [q, setQ] = useState("");
   const [openChat, setOpenChat] = useState(false);
-  const [selected, setSelected] = useState<AdminOrder | null>(null);
+  const [selected, setSelected] = useState<Order | null>(null);
 
-  // تيك كل ثانية حتى نحدّث العدادات
+  // تيك كل ثانية لتحديث العدادات
   const [tick, setTick] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setTick(Date.now()), 1000);
@@ -98,83 +59,58 @@ export default function AdminPage() {
     return orders.filter((o) => {
       if (statusFilter !== "all" && o.status !== statusFilter) return false;
       if (q) {
-        const blob = `${o.id} ${o.buyer} ${o.seller}`.toLowerCase();
+        const blob = `${o.id} ${o.buyer.id} ${o.seller.id} ${o.buyer.name ?? ""} ${o.seller.name ?? ""}`.toLowerCase();
         if (!blob.includes(q.toLowerCase())) return false;
       }
       return true;
     });
   }, [orders, statusFilter, q]);
 
-  const setStatus = (id: string, next: OrderStatus) => {
-    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: next } : o)));
-  };
-
   const onRelease = (id: string) => {
-    setStatus(id, "released");
+    storeRelease(id);
+    setRev(x => x + 1);
     toast({ title: "Released", description: `Order ${id} funds released.` });
   };
   const onRefund = (id: string) => {
-    setStatus(id, "refunded");
+    storeRefund(id);
+    setRev(x => x + 1);
     toast({ title: "Refunded", description: `Order ${id} refunded.` });
   };
 
-  const onOpenChat = (o: AdminOrder) => {
+  const onOpenChat = (o: Order) => {
     setSelected(o);
     setOpenChat(true);
   };
 
-  // إضافة رسالة جديدة وتحويل إلى "disputed" إذا كان "held"
-  const onSendChat = (msg: Omit<ChatMessage, "id" | "at">) => {
+  // إرسال رسالة من الأدمن وتحويل held → disputed مثل منطق الستورد
+  const onSendChat = (text: string) => {
     if (!selected) return;
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== selected.id) return o;
-        const nextMsg: ChatMessage = {
-          id: `m_${Date.now()}`,
-          at: new Date().toISOString(),
-          role: msg.role,
-          text: msg.text,
-          author: msg.author,
-        };
-        return {
-          ...o,
-          status: o.status === "held" ? "disputed" : o.status,
-          disputeThread: [...(o.disputeThread || []), nextMsg],
-        };
-      })
-    );
+    postMessage(selected.id, { role: "admin", text, author: { id: "admin", name: "Admin" } });
+    setRev(x => x + 1);
   };
 
-  const statusBadge = (o: AdminOrder) => {
-    const s = o.status;
+  // هل جاهز للإفراج؟ جاهز إذا:
+  // 1) status === "awaiting_buyer_confirm"  أو
+  // 2) عدى 24 ساعة من createdAt وهو "held"
+  const canRelease = (o: Order) => {
+    if (o.status === "awaiting_buyer_confirm") return true;
+    if (o.status !== "held") return false;
+    return tick >= calcUnlockAt(o).getTime();
+  };
+
+  const statusBadge = (s: OrderStatus) => {
     if (s === "held") return <Badge className="bg-amber-500 text-white">Held</Badge>;
     if (s === "disputed") return <Badge className="bg-red-600 text-white">Disputed</Badge>;
+    if (s === "awaiting_buyer_confirm") return <Badge className="bg-blue-600 text-white">Awaiting confirm</Badge>;
     if (s === "released") return <Badge className="bg-emerald-600 text-white">Released</Badge>;
-    return <Badge className="bg-sky-600 text-white">Refunded</Badge>;
+    if (s === "refunded") return <Badge className="bg-sky-600 text-white">Refunded</Badge>;
+    return <Badge className="bg-muted text-foreground">{s}</Badge>;
   };
 
-  // هل الطلب جاهز للتحويل؟
-  const canRelease = (o: AdminOrder) => {
-    if (o.status !== "held") return false;
-    if (o.buyerConfirmed) return true;
-    if (!o.unlockAt) return false;
-    return tick >= new Date(o.unlockAt).getTime();
-    // بدّل الشرط لاحقاً حسب منطقك الحقيقي
-  };
-
-  // شارة العدّاد
-  const timerBadge = (o: AdminOrder) => {
+  const timerBadge = (o: Order) => {
     if (o.status !== "held") return null;
-    if (o.buyerConfirmed) {
-      return <Badge className="bg-emerald-600 text-white">Buyer confirmed</Badge>;
-    }
-    if (!o.unlockAt) {
-      return <Badge className="bg-muted text-foreground">No unlockAt</Badge>;
-    }
-    const ms = new Date(o.unlockAt).getTime() - tick;
-    if (ms <= 0) {
-      return <Badge className="bg-emerald-600 text-white">Ready</Badge>;
-    }
+    const ms = calcUnlockAt(o).getTime() - tick;
+    if (ms <= 0) return <Badge className="bg-emerald-600 text-white">Ready</Badge>;
     return (
       <Badge className="bg-zinc-700 text-white dark:bg-zinc-600 flex items-center gap-1">
         <Clock className="w-3 h-3" />
@@ -198,6 +134,7 @@ export default function AdminPage() {
               <option value="all">All</option>
               <option value="held">Held</option>
               <option value="disputed">Disputed</option>
+              <option value="awaiting_buyer_confirm">Awaiting confirm</option>
               <option value="released">Released</option>
               <option value="refunded">Refunded</option>
             </select>
@@ -218,6 +155,8 @@ export default function AdminPage() {
       <div className="space-y-3">
         {filtered.map((o) => {
           const ready = canRelease(o);
+          const buyer = o.buyer.name || o.buyer.id;
+          const seller = o.seller.name || o.seller.id;
           return (
             <Card key={o.id}>
               <CardContent className="p-4">
@@ -225,12 +164,12 @@ export default function AdminPage() {
                   <div>
                     <div className="text-sm font-medium">Order #{o.id}</div>
                     <div className="text-xs text-muted-foreground">
-                      {new Date(o.createdAt).toLocaleString()} · {o.amount} {o.currency} · buyer:{o.buyer} · seller:{o.seller}
+                      {new Date(o.createdAt).toLocaleString()} · {o.amount} {o.currency} · buyer:{buyer} · seller:{seller}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {timerBadge(o)}
-                    {statusBadge(o)}
+                    {statusBadge(o.status)}
                   </div>
                 </div>
 
@@ -238,11 +177,11 @@ export default function AdminPage() {
                   <Button size="sm" disabled={!ready} onClick={() => onRelease(o.id)}>
                     Release
                   </Button>
-                  <Button size="sm" variant="secondary" disabled={o.status !== "held"} onClick={() => onRefund(o.id)}>
+                  <Button size="sm" variant="secondary" disabled={o.status !== "held" && o.status !== "disputed"} onClick={() => onRefund(o.id)}>
                     Refund
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => onOpenChat(o)}>
-                    Dispute {o.disputeThread?.length ? `(${o.disputeThread.length})` : ""}
+                    Dispute {o.thread?.length ? `(${o.thread.length})` : ""}
                   </Button>
                 </div>
               </CardContent>
@@ -268,11 +207,11 @@ export default function AdminPage() {
               <MockChat
                 orderId={selected.id}
                 me="admin"
-                buyer={{ id: selected.buyer, name: `Buyer ${selected.buyer}` }}
-                seller={{ id: selected.seller, name: `Seller ${selected.seller}` }}
+                buyer={{ id: selected.buyer.id, name: selected.buyer.name }}
+                seller={{ id: selected.seller.id, name: selected.seller.name }}
                 admin={{ id: "admin", name: "Admin" }}
-                initial={selected.disputeThread}
-                onSend={(m) => onSendChat(m)}
+                initial={selected.thread}
+                onSend={(m) => onSendChat(m.text)}
               />
             )}
           </Dialog.Content>
