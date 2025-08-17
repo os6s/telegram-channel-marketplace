@@ -8,17 +8,15 @@ import { X, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { MockChat } from "@/components/chat/mock-chat";
 
-// استيراد من الموك الموحّد
+// استخدم الـ store الصحيح
 import {
   type Order,
   type OrderStatus,
-  // أضِف هذه الدالة في store إن ما موجودة:
-  // export function listAllOrders(): Order[] { return ORDERS.map(o => ({...o, thread:[...o.thread]})); }
   listAllOrders,
   postMessage,
   refund as storeRefund,
   release as storeRelease,
-} from "@/store/mock-chat";
+} from "@/store/mock-orders";
 
 /* -------- Helpers -------- */
 function formatRemaining(ms: number) {
@@ -30,7 +28,7 @@ function formatRemaining(ms: number) {
   return `${hh}:${mm}:${ss}`;
 }
 
-// نحسب unlockAt = createdAt + 24 ساعة افتراضياً
+// نحسب unlockAt = createdAt + 24 ساعة
 function calcUnlockAt(o: Order) {
   return new Date(new Date(o.createdAt).getTime() + 24 * 3600_000);
 }
@@ -82,16 +80,13 @@ export default function AdminPage() {
     setOpenChat(true);
   };
 
-  // إرسال رسالة من الأدمن وتحويل held → disputed مثل منطق الستورد
-  const onSendChat = (text: string) => {
-    if (!selected) return;
-    postMessage(selected.id, { role: "admin", text, author: { id: "admin", name: "Admin" } });
+  // إرسال رسالة من الأدمن (الـ MockChat نفسه يستدعي postMessage داخليًا عند الإرسال)
+  const adminQuickNote = (o: Order) => {
+    postMessage(o.id, { role: "admin", text: "Admin joined the dispute", author: { id: "admin", name: "Admin" } });
     setRev(x => x + 1);
   };
 
-  // هل جاهز للإفراج؟ جاهز إذا:
-  // 1) status === "awaiting_buyer_confirm"  أو
-  // 2) عدى 24 ساعة من createdAt وهو "held"
+  // جاهز للإفراج؟
   const canRelease = (o: Order) => {
     if (o.status === "awaiting_buyer_confirm") return true;
     if (o.status !== "held") return false;
@@ -180,7 +175,7 @@ export default function AdminPage() {
                   <Button size="sm" variant="secondary" disabled={o.status !== "held" && o.status !== "disputed"} onClick={() => onRefund(o.id)}>
                     Refund
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => onOpenChat(o)}>
+                  <Button size="sm" variant="outline" onClick={() => { adminQuickNote(o); onOpenChat(o); }}>
                     Dispute {o.thread?.length ? `(${o.thread.length})` : ""}
                   </Button>
                 </div>
@@ -205,13 +200,8 @@ export default function AdminPage() {
 
             {selected && (
               <MockChat
-                orderId={selected.id}
+                order={selected}
                 me="admin"
-                buyer={{ id: selected.buyer.id, name: selected.buyer.name }}
-                seller={{ id: selected.seller.id, name: selected.seller.name }}
-                admin={{ id: "admin", name: "Admin" }}
-                initial={selected.thread}
-                onSend={(m) => onSendChat(m.text)}
               />
             )}
           </Dialog.Content>
