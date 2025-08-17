@@ -13,14 +13,15 @@ import { TonConnectUIProvider } from "@tonconnect/ui-react";
 
 // Lazy pages
 const Marketplace = lazy(() => import("@/pages/marketplace"));
-const SellPage = lazy(() => import("@/pages/sell/sellpage")); // ← تعديل الاستيراد ليتطابق مع اسم الملف
+const SellPage = lazy(() => import("@/pages/sell/sellpage"));
 const Activity = lazy(() => import("@/pages/activity"));
 const Profile = lazy(() => import("@/pages/profile"));
+const Admin = lazy(() => import("@/pages/admin"));           // ← صفحة الأدمن
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center min-h-screen">
-    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-telegram-500"></div>
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-telegram-500" />
   </div>
 );
 
@@ -33,6 +34,7 @@ function Router() {
         <Route path="/sell-channel" component={SellPage} />
         <Route path="/activity" component={Activity} />
         <Route path="/profile" component={Profile} />
+        <Route path="/admin" component={Admin} />              {/* ← راوت الأدمن */}
         <Route component={NotFound} />
       </Switch>
     </Suspense>
@@ -42,18 +44,23 @@ function Router() {
 function BottomNavigation() {
   const [location] = useLocation();
   const { t } = useLanguage();
-  const { hapticFeedback } = useTelegram();
+  const { hapticFeedback, webAppData } = useTelegram();
+
+  // اليوزر الحالي من تيليجرام
+  const currentUser = webAppData?.user;
+  const isAdmin = currentUser?.username === "Os6s7";
 
   const navItems = [
     { path: "/", label: t("marketplace"), icon: "🏠" },
     { path: "/sell", label: t("sellChannel"), icon: "➕" },
     { path: "/activity", label: t("activity"), icon: "📊" },
     { path: "/profile", label: t("profile"), icon: "👤" },
+    ...(isAdmin ? [{ path: "/admin", label: "Admin", icon: "🛡️" }] : []),
   ] as const;
 
   return (
     <div className="bg-background border-t border-border px-4 py-2 sticky bottom-0 z-50 safe-area-inset">
-      <div className="grid grid-cols-4 gap-1">
+      <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${navItems.length}, 1fr)` }}>
         {navItems.map((item) => (
           <Link
             key={item.path}
