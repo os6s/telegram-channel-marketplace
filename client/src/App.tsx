@@ -16,12 +16,12 @@ const Marketplace = lazy(() => import("@/pages/marketplace"));
 const SellPage = lazy(() => import("@/pages/sell/sellpage"));
 const Activity = lazy(() => import("@/pages/activity"));
 const Profile = lazy(() => import("@/pages/profile"));
-const Admin = lazy(() => import("@/pages/admin"));           // ← صفحة الأدمن
+const AdminPage = lazy(() => import("@/pages/admin"));   // ⬅️ صفحة الأدمن
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center min-h-screen">
-    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-telegram-500" />
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-telegram-500"></div>
   </div>
 );
 
@@ -34,7 +34,7 @@ function Router() {
         <Route path="/sell-channel" component={SellPage} />
         <Route path="/activity" component={Activity} />
         <Route path="/profile" component={Profile} />
-        <Route path="/admin" component={Admin} />              {/* ← راوت الأدمن */}
+        <Route path="/admin" component={AdminPage} />   {/* ⬅️ روت الأدمن */}
         <Route component={NotFound} />
       </Switch>
     </Suspense>
@@ -46,21 +46,19 @@ function BottomNavigation() {
   const { t } = useLanguage();
   const { hapticFeedback, webAppData } = useTelegram();
 
-  // اليوزر الحالي من تيليجرام
-  const currentUser = webAppData?.user;
-  const isAdmin = currentUser?.username === "Os6s7";
+  const isAdmin = webAppData.user?.username === "Os6s7"; // ⬅️ شرط الأدمن (موك)
 
   const navItems = [
     { path: "/", label: t("marketplace"), icon: "🏠" },
     { path: "/sell", label: t("sellChannel"), icon: "➕" },
     { path: "/activity", label: t("activity"), icon: "📊" },
     { path: "/profile", label: t("profile"), icon: "👤" },
-    ...(isAdmin ? [{ path: "/admin", label: "Admin", icon: "🛡️" }] : []),
+    ...(isAdmin ? [{ path: "/admin", label: "Admin", icon: "🛡️" }] : []), // ⬅️ يظهر فقط للأدمن
   ] as const;
 
   return (
     <div className="bg-background border-t border-border px-4 py-2 sticky bottom-0 z-50 safe-area-inset">
-      <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${navItems.length}, 1fr)` }}>
+      <div className={`grid gap-1`} style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
         {navItems.map((item) => (
           <Link
             key={item.path}
@@ -68,7 +66,7 @@ function BottomNavigation() {
             className={`flex flex-col items-center py-2 transition-colors ${
               location === item.path ? "text-primary" : "text-muted-foreground hover:text-foreground"
             }`}
-            onClick={() => hapticFeedback?.selection()}
+            onClick={() => hapticFeedback?.selection?.()}
           >
             <span className="text-lg">{item.icon}</span>
             <span className="text-xs">{item.label}</span>
