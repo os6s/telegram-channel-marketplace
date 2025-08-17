@@ -17,7 +17,7 @@ if (process.env.NODE_ENV === "production") {
 const app = express();
 app.set("trust proxy", 1);
 
-// CORS
+// CORS مضبوط
 const allowed = process.env.WEBAPP_URL || "";
 app.use(cors({
   origin(origin, cb) {
@@ -54,7 +54,6 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  // error handler
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
