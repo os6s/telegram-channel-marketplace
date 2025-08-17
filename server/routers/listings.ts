@@ -1,4 +1,3 @@
-// server/routers/listings.ts
 import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
@@ -33,7 +32,7 @@ export function mountListings(app: Express) {
       const filtered = channels.filter(c => {
         if (type && type !== "channel") return false;
         if (platform && platform !== "telegram") return false;
-        if (channelMode) { /* اربط بحقل إن وُجد */ }
+        if (channelMode) { /* اربط عند الحاجة */ }
         return true;
       });
 
@@ -55,6 +54,7 @@ export function mountListings(app: Express) {
 
       res.json(out);
     } catch (e) {
+      console.error("GET /api/listings error:", e);
       res.status(500).json({ error: "Failed to load listings" });
     }
   });
@@ -113,6 +113,7 @@ export function mountListings(app: Express) {
         createdAt: (channel as any).createdAt || new Date().toISOString(),
       });
     } catch (error: any) {
+      console.error("Invalid payload for /api/listings:", req.body, error?.issues || error);
       return res.status(400).json({ error: "Invalid payload", issues: error?.issues || null });
     }
   });
