@@ -5,17 +5,34 @@ import { storage } from "../storage";
 
 const createListingSchema = z.object({
   sellerId: z.string().uuid().optional(),
-  telegramId: z.string().optional(),        // fallback فقط إذا ما جا sellerId
-  kind: z.enum(["channel", "username", "account", "service"]).default("channel"),
-  platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).default("telegram"),
-  channelMode: z.enum(["subscribers","gifts"]).optional(),
-  username: z.string().min(1),
-  title: z.string().optional(),
-  subscribers: z.number().int().min(0).optional(),
+  telegramId: z.string().optional(),
+
+  kind: z.enum(["channel","username","account","service"]),
+  platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional(),
   price: z.string().min(1),
   currency: z.enum(["TON","USDT"]).default("TON"),
   description: z.string().optional(),
   isVerified: z.boolean().optional(),
+
+  // channel
+  channelMode: z.enum(["subscribers","gifts"]).optional(),
+  link: z.string().optional(),
+  channelUsername: z.string().optional(),
+  subscribersCount: z.string().optional(), // يأتي نص
+  engagement: z.string().optional(),
+
+  // username
+  username: z.string().optional(),
+  tgUserType: z.string().optional(),
+
+  // account
+  followersCount: z.string().optional(),
+  createdAt: z.string().optional(),
+
+  // service
+  serviceType: z.enum(["followers","members","boost_channel","boost_group"]).optional(),
+  target: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional(),
+  count: z.string().optional(),
 });
 
 function normUsername(v: string) {
@@ -28,57 +45,78 @@ function normUsername(v: string) {
 }
 
 export function mountListings(app: Express) {
-  // إنشاء Listing موحّد
   app.post("/api/listings", async (req, res) => {
     try {
-      const raw = { ...req.body, username: normUsername(req.body?.username || "") };
-      const data = createListingSchema.parse(raw);
+      const raw = req.body || {};
+      const unifiedUsername =
+        raw.kind === "channel"
+          ? normUsername(raw.channelUsername || raw.link || raw.username || "")
+          : normUsername(raw.username || "");
+      const parsed = createListingSchema.parse({ ...raw, username: unifiedUsername });
 
-      // حدد المالك
-      let sellerId = data.sellerId;
-      if (!sellerId && data.telegramId) {
-        const u = await storage.getUserByTelegramId(String(data.telegramId));
+      // resolve seller
+      let sellerId = parsed.sellerId;
+      if (!sellerId && parsed.telegramId) {
+        const u = await storage.getUserByTelegramId(String(parsed.telegramId));
         if (!u) return res.status(400).json({ error: "User not found. Open app from Telegram first." });
         sellerId = u.id;
       }
       if (!sellerId) return res.status(400).json({ error: "Missing sellerId" });
 
-      // تحقق من عدم تكرار username للقنوات
-      if (data.kind === "channel") {
-        const dupe = await storage.getChannelByUsername(data.username);
-        if (dupe) return res.status(400).json({ error: "Channel username already exists" });
+      // منع تكرار اسم المعروض لما يكون username أساسي
+      if (parsed.username) {
+        const dupe = await storage.getChannelByUsername(parsed.username);
+        if (dupe) return res.status(400).json({ error: "Username already exists" });
       }
 
-      // بناء سجل القناة فقط (الأنواع الأخرى لاحقاً)
-      if (data.kind !== "channel") {
-        return res.status(501).json({ error: "Only 'channel' listings are supported for now" });
-      }
+      // حوّل أرقام نصية
+      const subscribers = parsed.subscribersCount ? Number(parsed.subscribersCount) : undefined;
+      const followers = parsed.followersCount ? Number(parsed.followersCount) : undefined;
+      const serviceCount = parsed.count ? Number(parsed.count) : undefined;
 
+      // حمولة موحّدة إلى جدول channels
       const payload = {
         sellerId,
-        name: data.username,
-        username: data.username,
-        description: data.description || "",
-        category: "general",
-        subscribers: data.subscribers ?? 0,
-        engagement: "0.00",
-        price: data.price,
-        isVerified: !!data.isVerified,
+        kind: parsed.kind,
+        platform: parsed.platform ?? "telegram",
+        username: parsed.username || "listing_" + Date.now(),
+        title: raw.title ?? null,
+        description: parsed.description || "",
+        price: parsed.price,
+        currency: parsed.currency,
+        isVerified: !!parsed.isVerified,
         isActive: true,
-        avatarUrl: null as string | null,
+        avatarUrl: null,
+
+        channelMode: parsed.channelMode,
+        subscribers: subscribers,
+        engagement: parsed.engagement ?? "0.00",
+
+        tgUserType: parsed.tgUserType,
+        followersCount: followers,
+        accountCreatedAt: parsed.createdAt,
+
+        serviceType: parsed.serviceType,
+        target: parsed.target,
+        serviceCount: serviceCount,
       };
 
       const channel = await storage.createChannel(payload as any);
-      return res.json({ ok: true, channel });
+      return res.json({ ok: true, listing: channel });
     } catch (e: any) {
       return res.status(400).json({ error: "Invalid payload", issues: e?.issues || null });
     }
   });
 
-  // قراءة
-  app.get("/api/listings", async (_req, res) => {
+  // قراءة السوق
+  app.get("/api/listings", async (req, res) => {
     try {
-      const list = await storage.getChannels({}); // فلترة بالفرونت حاليًا
+      const filters = {
+        search: (req.query.search as string) || undefined,
+        sellerId: (req.query.sellerId as string) || undefined,
+        // بإمكانك توسيع الفلاتر لاحقًا حسب kind/platform...
+      };
+      const list = await storage.getChannels(filters);
       res.json(list);
     } catch (e: any) {
       res.status(500).json({ error: e?.message || "Unknown error" });
