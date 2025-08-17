@@ -20,8 +20,8 @@ import { useLanguage } from "@/contexts/language-context";
 import { ActivityTimeline, type ActivityEvent } from "@/components/activity-timeline";
 import { MockChat } from "@/components/chat/mock-chat";
 
-// استيراد الطلبات من الستور الموحّد
-import { listOrdersForUser, type Order } from "@/store/mock-orders";
+// Mock orders store
+import { listOrdersForUser, seedOrdersFor, type Order } from "@/store/mock-orders";
 
 export default function Profile() {
   const [connectedWallet, setConnectedWallet] = useState<TonWallet | null>(null);
@@ -50,6 +50,11 @@ export default function Profile() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet?.address]);
+
+  // اربط أول طلب بالمستخدم الحالي كمشتري إن ما عنده طلبات
+  useEffect(() => {
+    if (userId) seedOrdersFor(userId);
+  }, [userId]);
 
   const { data: user } = useQuery({
     queryKey: ["/api/users", userId],
@@ -280,7 +285,9 @@ export default function Profile() {
                     <div>
                       <div className="text-sm font-medium">Order #{o.id} · {o.amount} {o.currency}</div>
                       <div className="text-xs text-muted-foreground">
-                        {new Date(o.createdAt).toLocaleString()} · status: {o.status} · buyer:{o.buyer.id === userId ? "You" : (o.buyer.name || o.buyer.id)} · seller:{o.seller.id === userId ? "You" : (o.seller.name || o.seller.id)}
+                        {new Date(o.createdAt).toLocaleString()} · status: {o.status} ·
+                        {" "}buyer:{o.buyer.id === userId ? "You" : (o.buyer.name || o.buyer.id)}
+                        {" "}· seller:{o.seller.id === userId ? "You" : (o.seller.name || o.seller.id)}
                       </div>
                     </div>
                     <Button size="sm" onClick={() => { setSelected(o); setChatOpen(true); }}>
