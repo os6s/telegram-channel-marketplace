@@ -18,19 +18,10 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
 import { ActivityTimeline, type ActivityEvent } from "@/components/activity-timeline";
-import { MockChat, type ChatMessage } from "@/components/chat/mock-chat";
+import { MockChat } from "@/components/chat/mock-chat";
 
-type OrderStatus = "held" | "released" | "refunded" | "disputed";
-type Order = {
-  id: string;
-  buyer: { id: string; name?: string };
-  seller: { id: string; name?: string };
-  amount: number;
-  currency: "TON" | "USDT";
-  status: OrderStatus;
-  createdAt: string;
-  thread?: ChatMessage[];
-};
+// استيراد الطلبات من الستور الموحّد
+import { listOrdersForUser, type Order } from "@/store/mock-orders";
 
 export default function Profile() {
   const [connectedWallet, setConnectedWallet] = useState<TonWallet | null>(null);
@@ -124,37 +115,8 @@ export default function Profile() {
     { id: "e3", type: "SOLD", title: "You sold @oldgroup", subtitle: "for 300 TON", createdAt: new Date(Date.now() - 4 * 3600_000).toISOString() },
   ];
 
-  // طلبات المستخدم (موك: يطلع إذا كان buyer أو seller)
-  const myOrders: Order[] = useMemo(() => {
-    const me = userId;
-    return [
-      {
-        id: "ord_2001",
-        buyer: { id: me, name: `You` },
-        seller: { id: "u77777", name: "Seller_77777" },
-        amount: 120,
-        currency: "USDT",
-        status: "held",
-        createdAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
-        thread: [
-          { id: "m1", role: "buyer", text: "Hi, after payment when can I get access?", at: new Date(Date.now() - 7000_000).toISOString() },
-        ],
-      },
-      {
-        id: "ord_2002",
-        buyer: { id: "u99999", name: "Buyer_99999" },
-        seller: { id: me, name: `You` },
-        amount: 300,
-        currency: "TON",
-        status: "disputed",
-        createdAt: new Date(Date.now() - 6 * 3600_000).toISOString(),
-        thread: [
-          { id: "m2", role: "seller", text: "I sent admin rights already.", at: new Date(Date.now() - 5.5 * 3600_000).toISOString() },
-          { id: "m3", role: "buyer", text: "I still don't see it.", at: new Date(Date.now() - 5.3 * 3600_000).toISOString() },
-        ],
-      },
-    ];
-  }, [userId]);
+  // طلبات المستخدم من الستور
+  const myOrders: Order[] = useMemo(() => listOrdersForUser(userId), [userId]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -318,8 +280,7 @@ export default function Profile() {
                     <div>
                       <div className="text-sm font-medium">Order #{o.id} · {o.amount} {o.currency}</div>
                       <div className="text-xs text-muted-foreground">
-                        {new Date(o.createdAt).toLocaleString()} · status: {o.status} ·
-                        {" "}buyer:{o.buyer.id === userId ? "You" : o.buyer.id} · seller:{o.seller.id === userId ? "You" : o.seller.id}
+                        {new Date(o.createdAt).toLocaleString()} · status: {o.status} · buyer:{o.buyer.id === userId ? "You" : (o.buyer.name || o.buyer.id)} · seller:{o.seller.id === userId ? "You" : (o.seller.name || o.seller.id)}
                       </div>
                     </div>
                     <Button size="sm" onClick={() => { setSelected(o); setChatOpen(true); }}>
@@ -349,12 +310,8 @@ export default function Profile() {
           <Dialog.Content className="fixed left-1/2 top-1/2 w-[96vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-0 shadow-lg">
             {selected && (
               <MockChat
-                orderId={selected.id}
+                order={selected}
                 me={selected.buyer.id === userId ? "buyer" : "seller"}
-                buyer={{ id: selected.buyer.id, name: selected.buyer.name }}
-                seller={{ id: selected.seller.id, name: selected.seller.name }}
-                admin={{ id: "admin", name: "Admin" }}
-                initial={selected.thread}
               />
             )}
           </Dialog.Content>
