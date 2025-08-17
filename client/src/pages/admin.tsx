@@ -8,7 +8,6 @@ import { X, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { MockChat } from "@/components/chat/mock-chat";
 
-// استخدم الـ store الصحيح
 import {
   type Order,
   type OrderStatus,
@@ -28,7 +27,6 @@ function formatRemaining(ms: number) {
   return `${hh}:${mm}:${ss}`;
 }
 
-// نحسب unlockAt = createdAt + 24 ساعة
 function calcUnlockAt(o: Order) {
   return new Date(new Date(o.createdAt).getTime() + 24 * 3600_000);
 }
@@ -37,7 +35,6 @@ function calcUnlockAt(o: Order) {
 export default function AdminPage() {
   const { toast } = useToast();
 
-  // نعيد القراءة كل تغيّر rev
   const [rev, setRev] = useState(0);
   const orders = useMemo(() => listAllOrders(), [rev]);
 
@@ -46,7 +43,6 @@ export default function AdminPage() {
   const [openChat, setOpenChat] = useState(false);
   const [selected, setSelected] = useState<Order | null>(null);
 
-  // تيك كل ثانية لتحديث العدادات
   const [tick, setTick] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setTick(Date.now()), 1000);
@@ -66,27 +62,23 @@ export default function AdminPage() {
 
   const onRelease = (id: string) => {
     storeRelease(id);
-    setRev(x => x + 1);
+    setRev((x) => x + 1);
     toast({ title: "Released", description: `Order ${id} funds released.` });
   };
   const onRefund = (id: string) => {
     storeRefund(id);
-    setRev(x => x + 1);
+    setRev((x) => x + 1);
     toast({ title: "Refunded", description: `Order ${id} refunded.` });
   };
 
   const onOpenChat = (o: Order) => {
+    // ملاحظة: نضيف رسالة دخول الأدمن اختيارية
+    postMessage(o.id, { role: "admin", text: "Admin joined the dispute", author: { id: "admin", name: "Admin" } });
+    setRev((x) => x + 1);
     setSelected(o);
     setOpenChat(true);
   };
 
-  // إرسال رسالة من الأدمن (الـ MockChat نفسه يستدعي postMessage داخليًا عند الإرسال)
-  const adminQuickNote = (o: Order) => {
-    postMessage(o.id, { role: "admin", text: "Admin joined the dispute", author: { id: "admin", name: "Admin" } });
-    setRev(x => x + 1);
-  };
-
-  // جاهز للإفراج؟
   const canRelease = (o: Order) => {
     if (o.status === "awaiting_buyer_confirm") return true;
     if (o.status !== "held") return false;
@@ -175,7 +167,7 @@ export default function AdminPage() {
                   <Button size="sm" variant="secondary" disabled={o.status !== "held" && o.status !== "disputed"} onClick={() => onRefund(o.id)}>
                     Refund
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => { adminQuickNote(o); onOpenChat(o); }}>
+                  <Button size="sm" variant="outline" onClick={() => onOpenChat(o)}>
                     Dispute {o.thread?.length ? `(${o.thread.length})` : ""}
                   </Button>
                 </div>
@@ -198,12 +190,7 @@ export default function AdminPage() {
               </Button>
             </div>
 
-            {selected && (
-              <MockChat
-                order={selected}
-                me="admin"
-              />
-            )}
+            {selected && <MockChat order={selected} me="admin" />}
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
