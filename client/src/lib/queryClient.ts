@@ -16,20 +16,20 @@ function joinBase(base: string, path: string) {
 async function getApiBase(): Promise<string> {
   if (API_BASE_CACHE !== null) return API_BASE_CACHE;
 
-  // 1) Vite env (لو معيّن)
+  // 1) Vite env
   const viteBase = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined;
   if (viteBase !== undefined) {
     API_BASE_CACHE = viteBase || "";
     return API_BASE_CACHE;
   }
 
-  // 2) نافذة المتصفح (لو تم حقنها مستقبلاً)
+  // 2) window-injected
   if (typeof window !== "undefined" && (window as any).__API_BASE__) {
     API_BASE_CACHE = String((window as any).__API_BASE__ || "");
     return API_BASE_CACHE;
   }
 
-  // 3) /api/config مرّة واحدة فقط
+  // 3) /api/config مرة واحدة
   if (!API_BASE_LOADING) {
     API_BASE_LOADING = (async () => {
       try {
@@ -52,24 +52,40 @@ async function getApiBase(): Promise<string> {
 async function fetchJson(method: string, url: string, data?: unknown) {
   const base = await getApiBase();
   const fullUrl = joinBase(base, url);
+
   const res = await fetch(fullUrl, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
-  if (!res.ok) {
-    // حاول تقرأ JSON للخطأ وإلا نص
-    let msg = res.statusText;
-    try {
-      const j = await res.json();
-      msg = j?.error || j?.message || msg;
-    } catch {
-      try { msg = (await res.text()) || msg; } catch {}
-    }
-    throw new Error(`${res.status}: ${msg}`);
+
+  // حاول قراءة JSON دائمًا
+  let payload: any = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // ليس JSON
   }
-  return res.json();
+
+  if (!res.ok) {
+    // ابنِ رسالة خطأ تشمل issues إن وجدت
+    let msg =
+      (payload && (payload.error || payload.message)) ||
+      res.statusText ||
+      `HTTP ${res.status}`;
+    if (payload?.issues) {
+      try {
+        msg += ` :: ${JSON.stringify(payload.issues)}`;
+      } catch {}
+    }
+    const err: any = new Error(`${res.status}: ${msg}`);
+    if (payload?.issues) err.issues = payload.issues;
+    throw err;
+  }
+
+  // نجاح
+  return payload ?? {};
 }
 
 /* ------------ public API ------------ */
@@ -78,7 +94,7 @@ export async function apiRequest(
   url: string,
   data?: unknown
 ): Promise<any> {
-  return fetchJson(method, url, data); // يرجّع JSON مباشرة
+  return fetchJson(method, url, data);
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
@@ -89,21 +105,31 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
     const url = joinBase(base, queryKey.join("/") as string);
     const res = await fetch(url, { credentials: "include" });
 
+    let payload: any = null;
+    try {
+      payload = await res.json();
+    } catch {
+      // ignore
+    }
+
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null as T;
     }
 
     if (!res.ok) {
-      let msg = res.statusText;
-      try {
-        const j = await res.json();
-        msg = j?.error || j?.message || msg;
-      } catch {
-        try { msg = (await res.text()) || msg; } catch {}
+      let msg =
+        (payload && (payload.error || payload.message)) ||
+        res.statusText ||
+        `HTTP ${res.status}`;
+      if (payload?.issues) {
+        try {
+          msg += ` :: ${JSON.stringify(payload.issues)}`;
+        } catch {}
       }
       throw new Error(`${res.status}: ${msg}`);
     }
-    return res.json() as Promise<T>;
+
+    return (payload ?? {}) as T;
   };
 
 export const queryClient = new QueryClient({
