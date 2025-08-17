@@ -1,188 +1,175 @@
-// client/src/pages/admin.tsx
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useMemo, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AdminControls, type EscrowPayment } from "@/components/admin-controls";
-import { useTelegram } from "@/hooks/use-telegram";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { DisputeThread, type AdminOrder, type DisputeMessage } from "@/components/dispute-thread";
 
-type Channel = {
-  id: string;
-  name: string;
-  username: string;
-  price: string;
-  sellerId: string;
-};
-
-function useAdminGate() {
-  const { webAppData } = useTelegram();
-  const isAdmin = webAppData?.user?.username === "Os6s7";
-  return { isAdmin, user: webAppData?.user };
-}
-
-// TODO: استبدل هذه الفetches الحقيقية لاحقاً
-async function fetchPending(): Promise<
-  { payment: EscrowPayment; channel: Channel }[]
-> {
-  // Mock
-  await new Promise(r => setTimeout(r, 250));
-  return [
-    {
-      payment: {
-        id: "pay_123",
-        amount: 120,
-        currency: "USDT",
-        status: "held",
-        buyerId: "1001",
-        sellerId: "2001",
-        listingId: "ch_1",
-      },
-      channel: { id: "ch_1", name: "Crypto Alpha", username: "crypto_alpha", price: "120", sellerId: "2001" },
-    },
-    {
-      payment: {
-        id: "pay_124",
-        amount: 85,
-        currency: "TON",
-        status: "disputed",
-        buyerId: "1002",
-        sellerId: "2002",
-        listingId: "ch_2",
-      },
-      channel: { id: "ch_2", name: "Tech Daily", username: "tech_daily", price: "85", sellerId: "2002" },
-    },
-  ];
-}
-
-async function fetchRecent(): Promise<
-  { payment: EscrowPayment; channel: Channel }[]
-> {
-  await new Promise(r => setTimeout(r, 200));
-  return [
-    {
-      payment: {
-        id: "pay_099",
-        amount: 230,
-        currency: "USDT",
-        status: "released",
-        buyerId: "1999",
-        sellerId: "2999",
-        listingId: "ch_9",
-      },
-      channel: { id: "ch_9", name: "News Hub", username: "news_hub", price: "230", sellerId: "2999" },
-    },
-    {
-      payment: {
-        id: "pay_098",
-        amount: 60,
-        currency: "TON",
-        status: "refunded",
-        buyerId: "1888",
-        sellerId: "2888",
-        listingId: "ch_8",
-      },
-      channel: { id: "ch_8", name: "Gaming Pro", username: "gaming_pro", price: "60", sellerId: "2888" },
-    },
-  ];
-}
+// ---- Mock data (بدّلها لاحقاً ببياناتك) ----
+const MOCK_ORDERS: AdminOrder[] = [
+  {
+    id: "ord_1001",
+    buyer: "u12345",
+    seller: "u77777",
+    amount: 120,
+    currency: "USDT",
+    status: "held",
+    createdAt: new Date(Date.now()-3600_000).toISOString(),
+    disputeThread: [
+      { id:"m1", role:"buyer", text:"Seller didn’t respond yet.", at:new Date(Date.now()-3500_000).toISOString() }
+    ]
+  },
+  {
+    id: "ord_1002",
+    buyer: "u88888",
+    seller: "u77777",
+    amount: 50,
+    currency: "TON",
+    status: "disputed",
+    createdAt: new Date(Date.now()-7200_000).toISOString(),
+    disputeThread: [
+      { id:"m2", role:"seller", text:"Buyer got access already.", at:new Date(Date.now()-7000_000).toISOString() },
+      { id:"m3", role:"buyer", text:"No, access not granted.", at:new Date(Date.now()-6800_000).toISOString() }
+    ]
+  },
+  {
+    id: "ord_1003",
+    buyer: "u99999",
+    seller: "u22222",
+    amount: 300,
+    currency: "USDT",
+    status: "released",
+    createdAt: new Date(Date.now()-86400_000).toISOString(),
+  },
+];
 
 export default function AdminPage() {
-  const { isAdmin, user } = useAdminGate();
+  const { toast } = useToast();
+  const [orders, setOrders] = useState<AdminOrder[]>(MOCK_ORDERS);
+  const [statusFilter, setStatusFilter] = useState<"all"|"held"|"disputed"|"released"|"refunded">("all");
+  const [q, setQ] = useState("");
+  const [openDispute, setOpenDispute] = useState(false);
+  const [selected, setSelected] = useState<AdminOrder | null>(null);
 
-  const { data: pending = [], isLoading: loadingPending } = useQuery({
-    queryKey: ["/api/admin/pending"],
-    queryFn: fetchPending,
-  });
+  const filtered = useMemo(()=>{
+    return orders.filter(o=>{
+      if (statusFilter!=="all" && o.status!==statusFilter) return false;
+      if (q) {
+        const blob = `${o.id} ${o.buyer} ${o.seller}`.toLowerCase();
+        if (!blob.includes(q.toLowerCase())) return false;
+      }
+      return true;
+    });
+  },[orders,statusFilter,q]);
 
-  const { data: recent = [], isLoading: loadingRecent } = useQuery({
-    queryKey: ["/api/admin/recent"],
-    queryFn: fetchRecent,
-  });
+  const setStatus = (id:string, next:AdminOrder["status"])=>{
+    setOrders(prev => prev.map(o => o.id===id ? {...o, status: next} : o));
+  };
 
-  const counts = useMemo(() => {
-    const held = pending.filter(x => x.payment.status === "held").length;
-    const disputed = [...pending, ...recent].filter(x => x.payment.status === "disputed").length;
-    return { held, disputed, total: pending.length + recent.length };
-  }, [pending, recent]);
+  const onRelease = (id:string)=>{
+    setStatus(id,"released");
+    toast({ title:"Released", description:`Order ${id} funds released.` });
+  };
+  const onRefund = (id:string)=>{
+    setStatus(id,"refunded");
+    toast({ title:"Refunded", description:`Order ${id} refunded.` });
+  };
 
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <Card className="max-w-sm w-full">
-          <CardHeader>
-            <CardTitle>Access denied</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              This section is restricted to admins.
-            </p>
-            <div className="text-xs text-muted-foreground">
-              Signed in as: <strong>@{user?.username || "unknown"}</strong>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const onOpenDispute = (o:AdminOrder)=>{
+    setSelected(o);
+    setOpenDispute(true);
+  };
+
+  const onPostDispute = (orderId: string, msg: Omit<DisputeMessage,"id"|"at">) => {
+    setOrders(prev => prev.map(o=>{
+      if (o.id!==orderId) return o;
+      const thread = o.disputeThread || [];
+      const nextMsg: DisputeMessage = {
+        id: `m_${Date.now()}`,
+        at: new Date().toISOString(),
+        role: msg.role,
+        text: msg.text
+      };
+      return { ...o, status: o.status==="held" ? "disputed" : o.status, disputeThread: [...thread, nextMsg] };
+    }));
+    toast({ title:"Message sent", description:"Your message was added to the dispute." });
+  };
+
+  const statusBadge = (s: AdminOrder["status"]) => {
+    if (s==="held") return <Badge className="bg-amber-500 text-white">Held</Badge>;
+    if (s==="disputed") return <Badge className="bg-red-600 text-white">Disputed</Badge>;
+    if (s==="released") return <Badge className="bg-emerald-600 text-white">Released</Badge>;
+    return <Badge className="bg-sky-600 text-white">Refunded</Badge>;
+  };
 
   return (
-    <div className="min-h-screen p-4 space-y-6">
-      <header className="bg-card border rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Admin</h1>
-            <p className="text-xs text-muted-foreground">
-              Escrow & listings moderation
-            </p>
+    <div className="min-h-screen p-4 space-y-4">
+      {/* Filters */}
+      <Card>
+        <CardContent className="p-4 grid gap-3 md:grid-cols-3">
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">Status</div>
+            <select
+              className="w-full rounded-md border px-3 py-2 bg-background text-foreground"
+              value={statusFilter}
+              onChange={(e)=>setStatusFilter(e.target.value as any)}
+            >
+              <option value="all">All</option>
+              <option value="held">Held</option>
+              <option value="disputed">Disputed</option>
+              <option value="released">Released</option>
+              <option value="refunded">Refunded</option>
+            </select>
           </div>
-          <div className="flex gap-2">
-            <Badge className="bg-amber-500">Held: {counts.held}</Badge>
-            <Badge className="bg-red-600">Disputed: {counts.disputed}</Badge>
-            <Badge variant="secondary">Total: {counts.total}</Badge>
+          <div className="space-y-1 md:col-span-2">
+            <div className="text-xs text-muted-foreground">Search (order / buyer / seller)</div>
+            <input
+              className="w-full rounded-md border px-3 py-2 bg-background text-foreground"
+              placeholder="ord_1001, u12345…"
+              value={q}
+              onChange={(e)=>setQ(e.target.value)}
+            />
           </div>
-        </div>
-      </header>
+        </CardContent>
+      </Card>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium">Pending actions</h2>
+      {/* Orders */}
+      <div className="space-y-3">
+        {filtered.map(o=>(
+          <Card key={o.id}>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium">Order #{o.id}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {new Date(o.createdAt).toLocaleString()} · {o.amount} {o.currency} · buyer:{o.buyer} · seller:{o.seller}
+                  </div>
+                </div>
+                {statusBadge(o.status)}
+              </div>
 
-        {loadingPending ? (
-          <Card><CardContent className="p-4 text-sm text-muted-foreground">Loading…</CardContent></Card>
-        ) : pending.length === 0 ? (
-          <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">No pending items</CardContent></Card>
-        ) : (
-          pending.map(({ payment, channel }) => (
-            <AdminControls
-              key={payment.id}
-              channel={channel as any}
-              currentUser={{ username: "Os6s7" }}
-              payment={payment}
-            />
-          ))
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" disabled={o.status!=="held"} onClick={()=>onRelease(o.id)}>Release</Button>
+                <Button size="sm" variant="secondary" disabled={o.status!=="held"} onClick={()=>onRefund(o.id)}>Refund</Button>
+                <Button size="sm" variant="outline" onClick={()=>onOpenDispute(o)}>
+                  Dispute {o.disputeThread?.length ? `(${o.disputeThread.length})` : ""}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+        {filtered.length===0 && (
+          <div className="text-sm text-muted-foreground">No results.</div>
         )}
-      </section>
+      </div>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium">Recent</h2>
-
-        {loadingRecent ? (
-          <Card><CardContent className="p-4 text-sm text-muted-foreground">Loading…</CardContent></Card>
-        ) : recent.length === 0 ? (
-          <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">No recent records</CardContent></Card>
-        ) : (
-          recent.map(({ payment, channel }) => (
-            <AdminControls
-              key={payment.id}
-              channel={channel as any}
-              currentUser={{ username: "Os6s7" }}
-              payment={payment}
-            />
-          ))
-        )}
-      </section>
-
-      <div className="h-16" />
+      {/* Dispute drawer/dialog */}
+      <DisputeThread
+        open={openDispute}
+        onOpenChange={setOpenDispute}
+        order={selected}
+        onPost={onPostDispute}
+      />
     </div>
   );
 }
