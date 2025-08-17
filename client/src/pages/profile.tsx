@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Edit3, Wallet, Plus, Settings, Users, DollarSign, MessageSquare } from "lucide-react";
+import { ArrowLeft, Edit3, Wallet, Plus, Settings, Users, DollarSign, MessageSquare, X } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { WalletConnect } from "@/components/wallet-connect";
 import { ChannelCard } from "@/components/channel-card";
@@ -21,17 +21,23 @@ import { ActivityTimeline, type ActivityEvent } from "@/components/activity-time
 import { MockChat } from "@/components/chat/mock-chat";
 
 // Mock orders store
-import { listOrdersForUser, listAllOrders, seedOrdersFor, type Order } from "@/store/mock-orders";
+import {
+  listOrdersForUser,
+  listAllOrders,
+  seedOrdersFor,
+  buyerConfirmReceived,
+  type Order,
+} from "@/store/mock-orders";
 
 export default function Profile() {
   const [connectedWallet, setConnectedWallet] = useState<TonWallet | null>(null);
   const [showSettings, setShowSettings] = useState(false);
 
-  // حوار الدردشة
+  // Chat dialog
   const [chatOpen, setChatOpen] = useState(false);
   const [selected, setSelected] = useState<Order | null>(null);
 
-  // طلباتي
+  // Orders state
   const [myOrders, setMyOrders] = useState<Order[]>([]);
 
   const { toast } = useToast();
@@ -41,13 +47,6 @@ export default function Profile() {
 
   const telegramUser = telegramWebApp.user;
   const userId = telegramUser?.id.toString() || "temp-user-id";
-
-  // Seed + تحميل الطلبات كلما تغير userId
-  useEffect(() => {
-    seedOrdersFor(userId);
-    const mine = listOrdersForUser(userId);
-    setMyOrders(mine.length ? mine : listAllOrders());
-  }, [userId]);
 
   // Wallet connect
   useEffect(() => {
@@ -63,6 +62,13 @@ export default function Profile() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet?.address]);
+
+  // Seed + load orders
+  useEffect(() => {
+    seedOrdersFor(userId);
+    const mine = listOrdersForUser(userId);
+    setMyOrders(mine.length ? mine : listAllOrders());
+  }, [userId]);
 
   const { data: user } = useQuery({
     queryKey: ["/api/users", userId],
@@ -126,6 +132,8 @@ export default function Profile() {
     { id: "e2", type: "UPDATED", title: "Updated @mychannel", subtitle: "Price changed to 150 TON", createdAt: new Date(Date.now() - 3600_000).toISOString() },
     { id: "e3", type: "SOLD", title: "You sold @oldgroup", subtitle: "for 300 TON", createdAt: new Date(Date.now() - 4 * 3600_000).toISOString() },
   ];
+
+  const isAdmin = user?.role === "admin";
 
   return (
     <div className="min-h-screen bg-background">
@@ -194,14 +202,14 @@ export default function Profile() {
             <CardContent className="p-4 text-center">
               <div className="flex items-center justify-center mb-2"><Plus className="w-5 h-5 text-telegram-500" /></div>
               <div className="text-2xl font-bold text-foreground">{stats.activeChannels}</div>
-              <div className="text-sm text-muted-foreground">{t("profilePage.stats.activeListings")}</div>
+              <div className="text-sm text-muted-foreground">Active listings</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
               <div className="flex items-center justify-center mb-2"><DollarSign className="w-5 h-5 text-green-500" /></div>
               <div className="text-2xl font-bold text-foreground">{stats.totalValue}</div>
-              <div className="text-sm text-muted-foreground">{t("profilePage.stats.totalValueTon")}</div>
+              <div className="text-sm text-muted-foreground">Total value (TON)</div>
             </CardContent>
           </Card>
           <Card>
@@ -210,23 +218,24 @@ export default function Profile() {
               <div className="text-2xl font-bold text-foreground">
                 {stats.totalSubscribers > 1000 ? `${(stats.totalSubscribers / 1000).toFixed(1)}K` : stats.totalSubscribers}
               </div>
-              <div className="text-sm text-muted-foreground">{t("profilePage.stats.totalReach")}</div>
+              <div className="text-sm text-muted-foreground">Total reach</div>
             </CardContent>
           </Card>
         </div>
 
-        <Tabs defaultValue="channels" className="w-full">
+        <Tabs defaultValue="listings" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="channels">{t("profilePage.tabs.channels")}</TabsTrigger>
+            <TabsTrigger value="listings">My Listings</TabsTrigger>
             <TabsTrigger value="activity">{t("profilePage.tabs.activity")}</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="channels" className="space-y-4">
+          {/* My Listings بدل My Channels */}
+          <TabsContent value="listings" className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-foreground">{t("profilePage.listingsHeader")}</h3>
+              <h3 className="text-lg font-semibold text-foreground">My Listings</h3>
               <Button size="sm" className="bg-telegram-500 hover:bg-telegram-600" onClick={() => (window.location.href = "/sell")}>
                 <Plus className="w-4 h-4 mr-1" />
-                {t("profilePage.listChannel")}
+                List a channel
               </Button>
             </div>
 
@@ -252,11 +261,11 @@ export default function Profile() {
               <Card>
                 <CardContent className="p-8 text-center">
                   <div className="text-muted-foreground text-6xl mb-4">📺</div>
-                  <h3 className="font-medium text-foreground mb-2">{t("profilePage.emptyTitle")}</h3>
-                  <p className="text-sm text-muted-foreground mb-4">{t("profilePage.emptyDesc")}</p>
+                  <h3 className="font-medium text-foreground mb-2">No listings yet</h3>
+                  <p className="text-sm text-muted-foreground mb-4">List your first channel to start selling.</p>
                   <Button className="bg-telegram-500 hover:bg-telegram-600" onClick={() => (window.location.href = "/sell")}>
                     <Plus className="w-4 h-4 mr-2" />
-                    {t("profilePage.listFirst")}
+                    List your first
                   </Button>
                 </CardContent>
               </Card>
@@ -277,39 +286,49 @@ export default function Profile() {
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-4">
-            {/* My Orders (Buyer/Seller) */}
-            <Card>
-              <CardContent className="p-4 space-y-3">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4" />
-                  My Orders (chat / dispute)
-                </div>
-                {myOrders.map(o => (
-                  <div key={o.id} className="border rounded p-3 flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-medium">Order #{o.id} · {o.amount} {o.currency}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {new Date(o.createdAt).toLocaleString()} · status: {o.status} ·
-                        {" "}buyer:{o.buyer.id === userId ? "You" : (o.buyer.name || o.buyer.id)}
-                        {" "}· seller:{o.seller.id === userId ? "You" : (o.seller.name || o.seller.id)}
-                      </div>
+            {!isAdmin ? (
+              <>
+                {/* My Orders (Buyer/Seller) */}
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="text-sm font-semibold flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4" />
+                      My Orders (chat / dispute)
                     </div>
-                    <Button size="sm" onClick={() => { setSelected(o); setChatOpen(true); }}>
-                      Open chat {o.thread?.length ? `(${o.thread.length})` : ""}
-                    </Button>
-                  </div>
-                ))}
-                {myOrders.length === 0 && (
-                  <div className="text-sm text-muted-foreground">No orders yet.</div>
-                )}
-              </CardContent>
-            </Card>
+                    {myOrders.map(o => (
+                      <div key={o.id} className="border rounded p-3 flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-medium">Order #{o.id} · {o.amount} {o.currency}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(o.createdAt).toLocaleString()} · status: {o.status} ·
+                            {" "}buyer:{o.buyer.id === userId ? "You" : (o.buyer.name || o.buyer.id)}
+                            {" "}· seller:{o.seller.id === userId ? "You" : (o.seller.name || o.seller.id)}
+                          </div>
+                        </div>
+                        <Button size="sm" onClick={() => { setSelected(o); setChatOpen(true); }}>
+                          Open chat {o.thread?.length ? `(${o.thread.length})` : ""}
+                        </Button>
+                      </div>
+                    ))}
+                    {myOrders.length === 0 && (
+                      <div className="text-sm text-muted-foreground">No orders yet.</div>
+                    )}
+                  </CardContent>
+                </Card>
 
-            {/* Seller activity timeline */}
-            <ActivityTimeline
-              events={sellerActivity}
-              emptyText={t("activityPage.empty") || "No seller activity yet"}
-            />
+                {/* Seller activity timeline */}
+                <ActivityTimeline
+                  events={sellerActivity}
+                  emptyText={t("activityPage.empty") || "No seller activity yet"}
+                />
+              </>
+            ) : (
+              <Card>
+                <CardContent className="p-6 text-sm">
+                  أنت أدمن. استخدم صفحة <a href="/admin" className="underline">Admin</a> لإدارة النزاعات والدفع.
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
       </div>
@@ -318,12 +337,37 @@ export default function Profile() {
       <Dialog.Root open={chatOpen} onOpenChange={setChatOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/40" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 w-[96vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-0 shadow-lg">
+          <Dialog.Content className="fixed left-1/2 top-1/2 w-[96vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-0 shadow-lg">
             {selected && (
-              <MockChat
-                order={selected}
-                me={selected.buyer.id === userId ? "buyer" : "seller"}
-              />
+              <>
+                {/* Header مع زر إغلاق وزر تأكيد استلام عند المشتري */}
+                <div className="flex items-center justify-between px-3 py-2 border-b">
+                  <div className="text-sm font-semibold">Chat · #{selected.id}</div>
+                  <div className="flex items-center gap-2">
+                    {(selected.buyer.id === userId) && selected.status === "awaiting_buyer_confirm" && (
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                        onClick={() => {
+                          buyerConfirmReceived(selected.id, selected.buyer.id);
+                          toast({ title: "Confirmed", description: "Receipt confirmed. Funds will be released." });
+                          setChatOpen(false);
+                        }}
+                      >
+                        تأكيد استلام الطلب
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" onClick={() => setChatOpen(false)}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <MockChat
+                  order={selected}
+                  me={isAdmin ? "admin" : (selected.buyer.id === userId ? "buyer" : "seller")}
+                />
+              </>
             )}
           </Dialog.Content>
         </Dialog.Portal>
