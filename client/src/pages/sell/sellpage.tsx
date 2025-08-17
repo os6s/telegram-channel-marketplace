@@ -1,3 +1,4 @@
+// client/src/pages/sell/sellpage.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -5,14 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { telegramWebApp } from "@/lib/telegram";
 import { apiRequest } from "@/lib/queryClient";
@@ -21,12 +15,7 @@ import UsernameForm from "./parts/UsernameForm";
 import AccountForm from "./parts/AccountForm";
 import ChannelForm from "./parts/ChannelForm";
 import ServiceForm from "./parts/ServiceForm";
-import {
-  usernameSchema,
-  accountSchema,
-  channelSchema,
-  serviceSchema,
-} from "./utils/schemas";
+import { usernameSchema, accountSchema, channelSchema, serviceSchema } from "./utils/schemas";
 
 function getSchema(kind: string) {
   if (kind === "username") return usernameSchema;
@@ -36,8 +25,8 @@ function getSchema(kind: string) {
   return undefined as any;
 }
 
-function normalizeUsername(input: string) {
-  return String(input || "")
+function normUsername(v: string) {
+  return String(v || "")
     .trim()
     .replace(/^@/, "")
     .replace(/^https?:\/\/t\.me\//i, "")
@@ -63,27 +52,27 @@ export default function SellPage() {
     defaultValues: {
       type: kind || undefined,
       platform: platform || "",
-      price: "",
-      currency: "TON",
-      description: "",
-      username: "",
-      tgUserType: "",
-      createdAt: "",
-      followersCount: "",
-      channelMode: "subscribers",
-      link: "",
-      channelUsername: "",
-      subscribersCount: "",
-      giftsCount: "",
-      giftKind: "regular",
-      serviceType: "followers",
-      target: "instagram",
-      count: "",
+      // common
+      price: "", currency: "TON", description: "",
+      // username
+      username: "", tgUserType: "",
+      // account
+      createdAt: "", followersCount: "",
+      // channel
+      channelMode: "subscribers", link: "", channelUsername: "",
+      subscribersCount: "", giftsCount: "", giftKind: "regular",
+      // service
+      serviceType: "followers", target: "instagram", count: "",
     },
   });
 
-  useEffect(() => { form.setValue("type", kind || undefined, { shouldValidate: true }); }, [kind, form]);
-  useEffect(() => { form.setValue("platform", platform || "", { shouldValidate: true }); }, [platform, form]);
+  useEffect(() => {
+    form.setValue("type", kind || undefined, { shouldValidate: true });
+  }, [kind, form]);
+
+  useEffect(() => {
+    form.setValue("platform", platform || "", { shouldValidate: true });
+  }, [platform, form]);
 
   const numericKeyGuard = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const allowed = ["Backspace","Delete","ArrowLeft","ArrowRight","Tab","Home","End","Enter","."];
@@ -92,55 +81,50 @@ export default function SellPage() {
   };
 
   const submit = async (data: any) => {
-    if (!telegramWebApp?.user) {
-      toast({ title: t("toast.error") || "Error", description: t("sell.openFromTelegram"), variant: "destructive" });
+    const sellerId = localStorage.getItem("sellerId");
+    if (!sellerId) {
+      toast({ title: t("toast.error") || "Error", description: "افتح الميني-أب من تيليجرام أولًا لتسجيل المستخدم", variant: "destructive" });
+      return;
+    }
+    const priceStr = String(data.price ?? "").replace(",", ".").trim();
+    if (!priceStr) {
+      toast({ title: t("toast.error") || "Error", description: t("sell.price") || "Price required", variant: "destructive" });
       return;
     }
 
-    const rawUsername = (data.channelUsername || data.link || data.username || "").trim();
-    const username = normalizeUsername(rawUsername);
-
-    // iOS قد يُدخل فاصلة عربية
-    const priceStr = String(data.price ?? "").trim().replace(",", ".");
-
+    // توحيد اسم القناة
+    let username = data.username;
     if (data.type === "channel") {
-      if (!/^[a-z0-9_]{5,32}$/.test(username)) {
-        toast({ title: "Error", description: "Username must be 5–32 [a-z0-9_]", variant: "destructive" });
-        return;
-      }
-      if (!/^\d+(\.\d{1,9})?$/.test(priceStr)) {
-        toast({ title: "Error", description: "Invalid TON amount", variant: "destructive" });
-        return;
-      }
+      username = normUsername(data.channelUsername || data.link || data.username || "");
+    } else {
+      username = normUsername(username || "");
     }
 
-    const payload = {
-      telegramId: String(telegramWebApp.user.id),
-      kind: "channel",
-      platform: "telegram",
+    const payload: any = {
+      sellerId,                              // ← الأهم
+      kind: data.type || kind || "channel",
+      platform: data.platform || platform || "telegram",
       channelMode: data.channelMode || "subscribers",
       username,
       title: data.title,
       subscribers: data.subscribersCount ? Number(data.subscribersCount) : undefined,
       price: priceStr,
       currency: data.currency || "TON",
-      description: data.description,
+      description: data.description || "",
       isVerified: false,
     };
 
-    console.log("POST /api/listings payload", payload);
-
+    const url = "/api/listings"; // موحّد
     try {
-      await apiRequest("POST", "/api/listings", payload);
+      await apiRequest("POST", url, payload);
       toast({ title: "OK", description: t("sell.sent") });
       form.reset(); setKind(null); setPlatform("");
     } catch (e: any) {
-      console.error("POST /api/listings error", e);
-      const msg = e?.issues ? JSON.stringify(e.issues) : (e?.message || "Error");
-      toast({ title: "Error", description: msg, variant: "destructive" });
+      toast({ title: t("toast.error") || "Error", description: e?.message || "Error", variant: "destructive" });
     }
   };
 
+  // الخطوة 1
   if (!kind) {
     return (
       <Card className="p-4 space-y-3 min-h-screen">
@@ -155,6 +139,7 @@ export default function SellPage() {
     );
   }
 
+  // الخطوة 2: اختيار المنصّة لليوزر/الحساب
   if ((kind === "username" || kind === "account") && !platform) {
     const list = ["telegram","twitter","instagram","discord","snapchat","tiktok"];
     return (
@@ -247,7 +232,7 @@ export default function SellPage() {
             >
               {t("sell.back")}
             </Button>
-            <Button type="submit" variant="default" disabled={!form.formState.isValid || form.formState.isSubmitting}>
+            <Button type="submit" variant="default" disabled={form.formState.isSubmitting || !schema}>
               {t("sell.post")}
             </Button>
           </div>
