@@ -13,7 +13,7 @@ export const ListingCreateSchema = z.object({
   platform: Platform.optional(),
   channelMode: ChannelMode.optional(),
   serviceType: ServiceType.optional(),
-  username: z.string().optional(),      // لقناة/يوزر
+  username: z.string().optional(),
   title: z.string().optional(),
   subscribers: z.coerce.number().int().nonnegative().optional(),
   price: z.coerce.number().positive(),
@@ -27,10 +27,4 @@ export const ListingSchema = ListingCreateSchema.extend({
   createdAt: z.string(), // ISO
 });
 
-export type Kind = z.infer<typeof Kind>;
-export type Platform = z.infer<typeof Platform>;
-export type ChannelMode = z.infer<typeof ChannelMode>;
-export type ServiceType = z.infer<typeof ServiceType>;
-export type Currency = z.infer<typeof Currency>;
-export type ListingCreateInput = z.infer<typeof ListingCreateSchema>;
 export type ListingDTO = z.infer<typeof ListingSchema>;
