@@ -1,3 +1,4 @@
+// server/routes.ts
 import type { Express } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
@@ -31,6 +32,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       WEBAPP_URL,
     });
   });
+
   // Webhook endpoint (POST فقط)
   app.post("/webhook/telegram", express.json(), async (req, res) => {
     console.log("POST /webhook/telegram - Telegram update received");
@@ -216,6 +218,133 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     next();
+  });
+
+  // ============== Unified Listings API (channel-only) ==============
+  const listingCreateSchema = z.object({
+    telegramId: z.string().optional(),
+    sellerId: z.string().optional(),
+    kind: z.literal("channel"),
+    platform: z.literal("telegram").optional(),
+    channelMode: z.enum(["subscribers", "gifts"]).optional(),
+    username: z.string().min(5).max(32),
+    title: z.string().optional(),
+    subscribers: z.coerce.number().int().nonnegative().optional(),
+    price: z.union([z.coerce.number().positive(), z.string().regex(/^\d+(\.\d{1,9})?$/)]),
+    currency: z.enum(["TON", "USDT"]).default("TON"),
+    description: z.string().max(2000).optional(),
+    isVerified: z.boolean().optional(),
+  });
+
+  // GET /api/listings → يرجّع القنوات كشكل Listings موحّد
+  app.get("/api/listings", async (req, res) => {
+    try {
+      const { search = "", type = "", platform = "", channelMode = "", sellerId = "" } =
+        req.query as Record<string, string>;
+
+      const channels = await storage.getChannels({
+        search: search || undefined,
+        sellerId: sellerId || undefined,
+      });
+
+      const filtered = channels.filter((c) => {
+        if (type && type !== "channel") return false;
+        if (platform && platform !== "telegram") return false;
+        if (channelMode) {
+          // أضف مطابقة channelMode إن كنت تخزنه
+        }
+        return true;
+      });
+
+      const out = filtered.map((c) => ({
+        id: c.id,
+        sellerId: c.sellerId,
+        kind: "channel" as const,
+        platform: "telegram" as const,
+        channelMode: "subscribers" as const, // عدّل لو تخزّن نمط مختلف
+        username: c.username,
+        title: c.name || c.username,
+        subscribers: c.subscribers,
+        price: Number(c.price),
+        currency: "TON" as const, // عدّل إذا عندك عملة بالحقل
+        description: c.description || "",
+        isVerified: !!c.isVerified,
+        createdAt: (c as any).createdAt || new Date().toISOString(),
+      }));
+
+      res.json(out);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to load listings" });
+    }
+  });
+
+  // POST /api/listings → ينشئ Listing كقناة في storage
+  app.post("/api/listings", async (req, res) => {
+    try {
+      const body = listingCreateSchema.parse(req.body);
+
+      // تحديد البائع
+      let sellerId: string | undefined = body.sellerId;
+      if (!sellerId && body.telegramId) {
+        const u = await storage.getUserByTelegramId(String(body.telegramId));
+        if (!u) return res.status(400).json({ error: "User not found. Open app from Telegram first." });
+        sellerId = u.id;
+      }
+      if (!sellerId) return res.status(400).json({ error: "sellerId or telegramId is required" });
+
+      // تطبيع يوزر القناة
+      const uname = normalizeUsername(body.username);
+      const usernameRegex = /^[a-z0-9_]{5,32}$/;
+      if (!usernameRegex.test(uname)) return res.status(400).json({ error: "Invalid channel username" });
+
+      // تكرار؟
+      const dupe = await storage.getChannelByUsername(uname);
+      if (dupe) return res.status(400).json({ error: "Channel username already exists" });
+
+      // السعر
+      const priceStr = typeof body.price === "number" ? String(body.price) : body.price;
+      if (!/^\d+(\.\d{1,9})?$/.test(priceStr)) {
+        return res.status(400).json({ error: "Invalid TON amount" });
+      }
+
+      // إنشاء قناة كسجل Listing
+      const payload = {
+        sellerId,
+        name: body.title || uname,
+        username: uname,
+        description: body.description || "",
+        category: "general",
+        subscribers: body.subscribers ?? 0,
+        engagement: "0.00",
+        price: priceStr,
+        isVerified: !!body.isVerified,
+        isActive: true,
+        avatarUrl: null,
+      };
+
+      const channel = await storage.createChannel(payload as any);
+
+      res.status(201).json({
+        id: channel.id,
+        sellerId: channel.sellerId,
+        kind: "channel",
+        platform: "telegram",
+        channelMode: "subscribers",
+        username: channel.username,
+        title: channel.name || channel.username,
+        subscribers: channel.subscribers,
+        price: Number(channel.price),
+        currency: "TON",
+        description: channel.description || "",
+        isVerified: !!channel.isVerified,
+        createdAt: (channel as any).createdAt || new Date().toISOString(),
+      });
+    } catch (error: any) {
+      if (error?.issues) return res.status(400).json({ error: "Invalid payload", issues: error.issues });
+      console.error(error);
+      res.status(500).json({ error: "Failed to create listing" });
+    }
   });
 
   // Users
