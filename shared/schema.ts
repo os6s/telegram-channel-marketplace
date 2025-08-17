@@ -1,88 +1,66 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, boolean } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
+// shared/schema.ts
+import { pgTable, text, varchar, boolean, integer, timestamp, numeric, pgEnum, uuid } from "drizzle-orm/pg-core";
 
+// enums اختيارية
+export const kindEnum = pgEnum("listing_kind", ["channel","username","account","service"]);
+export const platformEnum = pgEnum("platform_kind", ["telegram","twitter","instagram","discord","snapchat","tiktok"]);
+export const channelModeEnum = pgEnum("channel_mode", ["subscribers","gifts"]);
+export const serviceTypeEnum = pgEnum("service_type", ["followers","members","boost_channel","boost_group"]);
+
+// users (بدون تغيير إن كان موجود)
 export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  telegramId: text("telegram_id").notNull().unique(),
-  username: text("username"),
-  firstName: text("first_name"),
-  lastName: text("last_name"),
-  tonWallet: text("ton_wallet"),
+  id: uuid("id").defaultRandom().primaryKey(),
+  telegramId: varchar("telegram_id", { length: 64 }).notNull().unique(),
+  username: varchar("username", { length: 64 }),
+  firstName: varchar("first_name", { length: 128 }),
+  lastName: varchar("last_name", { length: 128 }),
+  tonWallet: varchar("ton_wallet", { length: 128 }),
+  createdAt: timestamp("created_at", { withTimezone: false }).defaultNow().notNull(),
 });
 
+// ✅ نستخدم جدولك الحالي channels كـ listings موحّدة
 export const channels = pgTable("channels", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sellerId: varchar("seller_id").notNull(),
-  name: text("name").notNull(),
-  username: text("username").notNull().unique(),
-  description: text("description").notNull(),
-  category: text("category").notNull(),
-  subscribers: integer("subscribers").notNull(),
-  engagement: decimal("engagement", { precision: 5, scale: 2 }).notNull(),
-  price: decimal("price", { precision: 18, scale: 9 }).notNull(),
-  isVerified: boolean("is_verified").default(false),
-  isActive: boolean("is_active").default(true),
+  id: uuid("id").defaultRandom().primaryKey(),
+  sellerId: uuid("seller_id").notNull().references(() => users.id),
+  // موحّد
+  kind: kindEnum("kind").notNull().default("channel"),
+  platform: platformEnum("platform"),
+  username: varchar("username", { length: 64 }).notNull().unique(),  // نطبّعها بالراوتر
+  title: varchar("title", { length: 256 }),
+  description: text("description"),
+  price: varchar("price", { length: 64 }).notNull(),                 // إبقِها نص لتجنّب مشاكل الفاصلة
+  currency: varchar("currency", { length: 8 }).notNull().default("TON"),
+  isVerified: boolean("is_verified").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
   avatarUrl: text("avatar_url"),
+
+  // channel فقط
+  channelMode: channelModeEnum("channel_mode"),
+  subscribers: integer("subscribers").default(0),
+  engagement: varchar("engagement", { length: 32 }).default("0.00"),
+
+  // username فقط
+  tgUserType: varchar("tg_user_type", { length: 32 }),
+
+  // account فقط
+  followersCount: integer("followers_count"),
+  accountCreatedAt: varchar("account_created_at", { length: 64 }),
+
+  // service فقط
+  serviceType: serviceTypeEnum("service_type"),
+  target: platformEnum("target"),
+  serviceCount: integer("service_count"),
+
+  createdAt: timestamp("created_at", { withTimezone: false }).defaultNow().notNull(),
 });
 
+// activities تبقى كما هي لو عندك بالفعل
 export const activities = pgTable("activities", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  channelId: varchar("channel_id").notNull(),
-  buyerId: varchar("buyer_id").notNull(),
-  sellerId: varchar("seller_id").notNull(),
-  amount: decimal("amount", { precision: 18, scale: 9 }).notNull(),
-  status: text("status").notNull().default("completed"),
-  transactionHash: text("transaction_hash"),
-  completedAt: text("completed_at").notNull(),
-  giftType: text("gift_type"),
+  id: uuid("id").defaultRandom().primaryKey(),
+  channelId: uuid("channel_id").notNull().references(() => channels.id), // يبقى الاسم كما هو
+  buyerId: uuid("buyer_id").notNull().references(() => users.id),
+  sellerId: uuid("seller_id").notNull().references(() => users.id),
+  amount: varchar("amount", { length: 64 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("completed"),
+  completedAt: timestamp("completed_at", { withTimezone: false }).defaultNow().notNull(),
 });
-
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-});
-
-export const insertChannelSchema = createInsertSchema(channels).omit({
-  id: true,
-  sellerId: true,
-  isVerified: true,
-  isActive: true,
-}).extend({
-  // أخفّ: نقبل أي سترنغ بطول منطقي. السيرفر يطبّع ويطبّق regex النهائي.
-  username: z.string().trim().min(5, "Username must be at least 5 characters").max(64, "Username cannot exceed 64 characters"),
-
-  // تقبّل رقم أو نص وتحوله لصيغة نص رقمية بدقة TON (حتى 9 منازل)
-  price: z.preprocess(
-    (v) => typeof v === "number" ? v.toString() : v,
-    z.string().regex(/^\d+(\.\d{1,9})?$/, "Invalid TON amount")
-  ),
-
-  // تقبّل "123" أو 123 وتحوّله لعدد صحيح ≥ 1
-  subscribers: z.preprocess(
-    (v) => typeof v === "string" ? parseInt(v, 10) : v,
-    z.number().int().min(1, "Must have at least 1 subscriber")
-  ),
-
-  // تقبّل رقم أو نص وتثبّت دقتـه كسلسلة حتى منزلتين (0–99.99 يُفحَص لاحقاً إذا تريد)
-  engagement: z.preprocess(
-    (v) => typeof v === "number" ? v.toFixed(2) : v,
-    z.string().regex(/^\d+(\.\d{1,2})?$/, "Invalid engagement rate")
-  ),
-});
-
-export const insertActivitySchema = createInsertSchema(activities).omit({
-  id: true,
-  sellerId: true,
-  status: true,
-  completedAt: true,
-});
-
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
-export type InsertChannel = z.infer<typeof insertChannelSchema>;
-export type Channel = typeof channels.$inferSelect;
-export type InsertActivity = z.infer<typeof insertActivitySchema>;
-export type Activity = typeof activities.$inferSelect;
-
-export type GiftType = "statue-of-liberty" | "flame-of-liberty";
