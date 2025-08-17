@@ -1,130 +1,87 @@
+// server/routers/listings.ts
 import type { Express } from "express";
-import { storage } from "../storage";
 import { z } from "zod";
-import { normalizeUsername } from "../utils/normalize";
+import { storage } from "../storage";
 
-// تعريف شكل الإدخال
-const Create = z.object({
-  telegramId: z.string().optional(),
-  sellerId: z.string().optional(),
-  kind: z.literal("channel"),
-  platform: z.literal("telegram").optional(),
-  channelMode: z.enum(["subscribers", "gifts"]).optional(),
-
-  username: z.preprocess(
-    (v) => normalizeUsername(String(v ?? "")),
-    z.string().regex(/^[a-z0-9_]{5,32}$/, "Invalid channel username")
-  ),
-
+const createListingSchema = z.object({
+  sellerId: z.string().uuid().optional(),
+  telegramId: z.string().optional(),        // fallback فقط إذا ما جا sellerId
+  kind: z.enum(["channel", "username", "account", "service"]).default("channel"),
+  platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).default("telegram"),
+  channelMode: z.enum(["subscribers","gifts"]).optional(),
+  username: z.string().min(1),
   title: z.string().optional(),
-  subscribers: z.coerce.number().int().nonnegative().optional(),
-
-  price: z.preprocess(
-    (v) => String(v ?? "").trim().replace(",", "."),
-    z.string().regex(/^\d+(\.\d{1,9})?$/, "Invalid TON amount")
-  ),
-
-  currency: z.enum(["TON", "USDT"]).default("TON"),
-  description: z.string().max(2000).optional(),
+  subscribers: z.number().int().min(0).optional(),
+  price: z.string().min(1),
+  currency: z.enum(["TON","USDT"]).default("TON"),
+  description: z.string().optional(),
   isVerified: z.boolean().optional(),
 });
 
+function normUsername(v: string) {
+  return String(v || "")
+    .trim()
+    .replace(/^@/, "")
+    .replace(/^https?:\/\/t\.me\//i, "")
+    .replace(/^t\.me\//i, "")
+    .toLowerCase();
+}
+
 export function mountListings(app: Express) {
-  // POST /api/listings
+  // إنشاء Listing موحّد
   app.post("/api/listings", async (req, res) => {
     try {
-      const body = Create.parse(req.body);
+      const raw = { ...req.body, username: normUsername(req.body?.username || "") };
+      const data = createListingSchema.parse(raw);
 
-      let sellerId = body.sellerId;
-      if (!sellerId && body.telegramId) {
-        const u = await storage.getUserByTelegramId(String(body.telegramId));
-        if (!u) {
-          return res
-            .status(400)
-            .json({ error: "User not found. Open app from Telegram first." });
-        }
+      // حدد المالك
+      let sellerId = data.sellerId;
+      if (!sellerId && data.telegramId) {
+        const u = await storage.getUserByTelegramId(String(data.telegramId));
+        if (!u) return res.status(400).json({ error: "User not found. Open app from Telegram first." });
         sellerId = u.id;
       }
-      if (!sellerId)
-        return res
-          .status(400)
-          .json({ error: "sellerId or telegramId is required" });
+      if (!sellerId) return res.status(400).json({ error: "Missing sellerId" });
 
-      const uname = body.username;
-      const dupe = await storage.getChannelByUsername(uname);
-      if (dupe)
-        return res.status(400).json({ error: "Channel username already exists" });
+      // تحقق من عدم تكرار username للقنوات
+      if (data.kind === "channel") {
+        const dupe = await storage.getChannelByUsername(data.username);
+        if (dupe) return res.status(400).json({ error: "Channel username already exists" });
+      }
 
-      const priceStr = body.price as unknown as string;
+      // بناء سجل القناة فقط (الأنواع الأخرى لاحقاً)
+      if (data.kind !== "channel") {
+        return res.status(501).json({ error: "Only 'channel' listings are supported for now" });
+      }
 
-      const channel = await storage.createChannel({
+      const payload = {
         sellerId,
-        name: body.title || uname,
-        username: uname,
-        description: body.description || "",
+        name: data.username,
+        username: data.username,
+        description: data.description || "",
         category: "general",
-        subscribers: body.subscribers ?? 0,
+        subscribers: data.subscribers ?? 0,
         engagement: "0.00",
-        price: priceStr,
-        isVerified: !!body.isVerified,
+        price: data.price,
+        isVerified: !!data.isVerified,
         isActive: true,
-        avatarUrl: null,
-      } as any);
+        avatarUrl: null as string | null,
+      };
 
-      return res.status(201).json({
-        id: channel.id,
-        sellerId: channel.sellerId,
-        kind: "channel",
-        platform: "telegram",
-        channelMode: "subscribers",
-        username: channel.username,
-        title: channel.name || channel.username,
-        subscribers: channel.subscribers,
-        price: Number(channel.price),
-        currency: "TON",
-        description: channel.description || "",
-        isVerified: !!channel.isVerified,
-        createdAt: (channel as any).createdAt || new Date().toISOString(),
-      });
-    } catch (error: any) {
-      console.error(
-        "Invalid payload /api/listings:",
-        req.body,
-        error?.issues || error
-      );
-      return res
-        .status(400)
-        .json({ error: "Invalid payload", issues: error?.issues || null });
+      const channel = await storage.createChannel(payload as any);
+      return res.json({ ok: true, channel });
+    } catch (e: any) {
+      return res.status(400).json({ error: "Invalid payload", issues: e?.issues || null });
     }
   });
 
-  // GET /api/listings
-  app.get("/api/listings", async (req, res) => {
+  // قراءة
+  app.get("/api/listings", async (_req, res) => {
     try {
-      const { search = "", sellerId = "" } = req.query as Record<string, string>;
-      const channels = await storage.getChannels({
-        search: search || undefined,
-        sellerId: sellerId || undefined,
-      });
-      const out = channels.map((c) => ({
-        id: c.id,
-        sellerId: c.sellerId,
-        kind: "channel" as const,
-        platform: "telegram" as const,
-        channelMode: "subscribers" as const,
-        username: c.username,
-        title: c.name || c.username,
-        subscribers: c.subscribers,
-        price: Number(c.price),
-        currency: "TON" as const,
-        description: c.description || "",
-        isVerified: !!c.isVerified,
-        createdAt: (c as any).createdAt || new Date().toISOString(),
-      }));
-      res.json(out);
-    } catch (e) {
-      console.error("GET /api/listings error:", e);
-      res.status(500).json({ error: "Failed to load listings" });
+      const list = await storage.getChannels({}); // فلترة بالفرونت حاليًا
+      res.json(list);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || "Unknown error" });
     }
   });
 }
