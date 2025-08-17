@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { ErrorBoundary } from "./ErrorBoundary";
+import "./bootstrap";
 
 // اطبع أي أخطاء عامة بدل ما تبقى الشاشة فاضية
 window.addEventListener("error", (e) => console.log("GlobalError:", e.error || e.message));
