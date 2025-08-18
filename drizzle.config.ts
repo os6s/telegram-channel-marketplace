@@ -1,14 +1,13 @@
+// drizzle.config.ts
 import { defineConfig } from "drizzle-kit";
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL, ensure the database is provisioned");
-}
-
 export default defineConfig({
-  out: "./migrations",           // مجلد تخزين المايجريشنات
-  schema: "./shared/schema.ts",  // مكان سكيمات الجداول
+  schema: "./shared/schema.ts",
+  out: "./drizzle",                 // ← استخدم drizzle فقط
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL,
+    url: process.env.DATABASE_URL ?? "postgres://user:pass@localhost:5432/dummy",
   },
+  strict: true,
+  verbose: true,
 });
