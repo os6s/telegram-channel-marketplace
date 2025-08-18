@@ -65,6 +65,15 @@ export default function Marketplace() {
   const [channelMode, setChannelMode] = useState<ChannelMode>("");
   const [serviceType, setServiceType] = useState<ServiceType>("");
 
+  // تصغير وإخفاء بطاقات الإحصائيات عند التمرير
+  const [showStats, setShowStats] = useState(true);
+  useEffect(() => {
+    const onScroll = () => setShowStats(window.scrollY < 80);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   const { data: stats, isLoading: statsLoading } = useQuery({ queryKey: ["/api/stats"] });
 
   const qk = ["/api/listings", { search, kind, platform, channelMode, serviceType }];
@@ -122,35 +131,49 @@ export default function Marketplace() {
   return (
     <div className={containerCls}>
       <header className="bg-card border-b border-border sticky top-0 z-50">
-        <div className="px-4 py-3">
+        <div className="px-4 py-2">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-lg font-semibold text-foreground">{L.title}</h1>
-              <p className="text-xs text-muted-foreground">{L.subtitle}</p>
+              <h1 className="text-base font-semibold text-foreground">{L.title}</h1>
+              <p className="text-[11px] text-muted-foreground">{L.subtitle}</p>
             </div>
           </div>
 
+          {/* بطاقات الإحصائيات — حجم صغير وتختفي عند التمرير */}
           {!statsLoading && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-              <Card><CardContent className="p-4 text-center">
-                <div className="text-2xl font-bold text-foreground">{(stats as any)?.sold ?? 0}</div>
-                <div className="text-sm text-muted-foreground mt-1">{L.salesCountLabel}</div>
-              </CardContent></Card>
-              <Card><CardContent className="p-4 text-center">
-                <div className="text-2xl font-bold text-foreground">{(stats as any)?.totalVolume ?? 0} USDT</div>
-                <div className="text-sm text-muted-foreground mt-1">{L.salesVolumeLabel}</div>
-              </CardContent></Card>
-              <Card><CardContent className="p-4 text-center">
-                <div className="text-2xl font-bold text-foreground">{(stats as any)?.activeListings ?? 0}</div>
-                <div className="text-sm text-muted-foreground mt-1">{L.activeListingsLabel}</div>
-              </CardContent></Card>
+            <div
+              className={[
+                "transition-all duration-300 overflow-hidden",
+                showStats ? "max-h-24 opacity-100 mt-2" : "max-h-0 opacity-0 mt-0 pointer-events-none"
+              ].join(" ")}
+            >
+              <div className="grid grid-cols-3 gap-2">
+                <Card>
+                  <CardContent className="px-3 py-2 text-center">
+                    <div className="text-base font-bold text-foreground">{(stats as any)?.sold ?? 0}</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesCountLabel}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="px-3 py-2 text-center">
+                    <div className="text-base font-bold text-foreground">{(stats as any)?.totalVolume ?? 0} USDT</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesVolumeLabel}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="px-3 py-2 text-center">
+                    <div className="text-base font-bold text-foreground">{(stats as any)?.activeListings ?? 0}</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">{L.activeListingsLabel}</div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           )}
         </div>
       </header>
 
-      <div className="bg-card px-4 py-4 border-b border-border">
-        <div className="space-y-4">
+      <div className="bg-card px-4 py-3 border-b border-border">
+        <div className="space-y-3">
           <div className="relative">
             <Input placeholder={L.searchPlaceholder} value={search} onChange={(e)=>setSearch(e.target.value)} className="pl-10 pr-4"/>
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
