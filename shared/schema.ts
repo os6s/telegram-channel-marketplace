@@ -1,4 +1,3 @@
-// shared/schema.ts
 import {
   pgTable,
   text,
@@ -40,12 +39,12 @@ export const channels = pgTable("channels", {
   // مشترك
   kind: kindEnum("kind").notNull().default("channel"),
   platform: platformEnum("platform"),
-  name: varchar("name", { length: 256 }),                 // اسم قابل للعرض إن أردت
+  name: varchar("name", { length: 256 }),
   username: varchar("username", { length: 64 }).notNull().unique(),
   title: varchar("title", { length: 256 }),
   description: text("description"),
-  category: varchar("category", { length: 64 }),           // اختياري للفلترة العامة
-  price: varchar("price", { length: 64 }).notNull(),       // نخزّن نص لتفادي مشاكل الفاصلة
+  category: varchar("category", { length: 64 }),
+  price: varchar("price", { length: 64 }).notNull(), // كنص
   currency: varchar("currency", { length: 8 }).notNull().default("TON"),
   isVerified: boolean("is_verified").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
@@ -122,7 +121,18 @@ export const insertUserSchema = createInsertSchema(users, {
   tonWallet: z.string().optional().nullable(),
 }).strict();
 
-// Channels (listings) — حقل username نطبّعه بالراوتر
+/* Utilities */
+const priceRe = /^\d+(\.\d{1,9})?$/;
+const yyyyMmRe = /^\d{4}-(0[1-9]|1[0-2])$/;
+const normalizeUsername = (v: unknown) =>
+  String(v ?? "")
+    .trim()
+    .replace(/^@/, "")
+    .replace(/^https?:\/\/t\.me\//i, "")
+    .replace(/^t\.me\//i, "")
+    .toLowerCase();
+
+// Channels (listings) — متوافق مع صفحة البيع
 export const insertChannelSchema = createInsertSchema(channels, {
   sellerId: z.string().uuid(),
   kind: z.enum(["channel","username","account","service"]),
@@ -132,32 +142,63 @@ export const insertChannelSchema = createInsertSchema(channels, {
   name: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   category: z.string().optional().nullable(),
-  price: z.string().regex(/^\d+(\.\d{1,9})?$/, "invalid price"),
+  price: z.string().regex(priceRe, "invalid price"),
   currency: z.enum(["TON","USDT"]).default("TON"),
   isVerified: z.boolean().optional(),
   isActive: z.boolean().optional(),
   avatarUrl: z.string().url().optional().nullable(),
 
   channelMode: z.enum(["subscribers","gifts"]).optional().nullable(),
-  subscribers: z.number().int().min(0).optional().nullable(),
+  subscribers: z.coerce.number().int().min(0).optional().nullable(),
   engagement: z.string().optional().nullable(),
 
   tgUserType: z.string().optional().nullable(),
 
-  followersCount: z.number().int().min(0).optional().nullable(),
-  accountCreatedAt: z.string().optional().nullable(),
+  // حساب
+  followersCount: z.coerce.number().int().min(0).optional().nullable(),
+  accountCreatedAt: z.string().regex(yyyyMmRe).optional().nullable(),
 
+  // خدمة
   serviceType: z.enum(["followers","members","boost_channel","boost_group"]).optional().nullable(),
   target: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional().nullable(),
-  serviceCount: z.number().int().min(0).optional().nullable(),
-}).strict();
+  serviceCount: z.coerce.number().int().min(0).optional().nullable(),
+})
+/* 🧩 دعم مفاتيح الواجهة (aliases): createdAt, count */
+.extend({
+  createdAt: z.string().regex(yyyyMmRe, { message: "Expected format YYYY-MM" }).optional(),
+  count: z.coerce.number().int().min(0).optional(),
+})
+/* 🛠️ تحويلات قبل الإدخال */
+.transform((input) => {
+  const out: any = { ...input };
+
+  // تطبيع اليوزرنيم
+  if (out.username) out.username = normalizeUsername(out.username);
+
+  // alias createdAt -> accountCreatedAt
+  if (!out.accountCreatedAt && out.createdAt) {
+    out.accountCreatedAt = out.createdAt;
+  }
+
+  // alias count -> serviceCount
+  if (typeof out.serviceCount === "undefined" && typeof out.count !== "undefined") {
+    out.serviceCount = out.count;
+  }
+
+  // تنظيف الحقول المؤقتة
+  delete out.createdAt;
+  delete out.count;
+
+  return out;
+})
+.strip(); // يشيل أي مفاتيح زايدة بعد التحويل
 
 // Activities
 export const insertActivitySchema = createInsertSchema(activities, {
   channelId: z.string().uuid(),
   buyerId: z.string().uuid(),
   sellerId: z.string().uuid(),
-  amount: z.string().regex(/^\d+(\.\d{1,9})?$/, "invalid amount"),
+  amount: z.string().regex(priceRe, "invalid amount"),
   currency: z.enum(["TON","USDT"]).default("TON"),
   status: z.string().default("completed"),
   transactionHash: z.string().optional().nullable(),
