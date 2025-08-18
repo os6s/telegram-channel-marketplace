@@ -63,6 +63,7 @@ export default function SellPage() {
       subscribersCount: "", giftsCount: "", giftKind: "regular",
       // service
       serviceType: "followers", target: "instagram", count: "",
+      title: "",
     },
   });
 
@@ -81,18 +82,25 @@ export default function SellPage() {
   };
 
   const submit = async (data: any) => {
-    const sellerId = localStorage.getItem("sellerId");
-    if (!sellerId) {
-      toast({ title: t("toast.error") || "Error", description: "افتح الميني-أب من تيليجرام أولًا لتسجيل المستخدم", variant: "destructive" });
+    const sellerId = localStorage.getItem("sellerId") || undefined;
+    const tgId = telegramWebApp?.user?.id ? String(telegramWebApp.user.id) : undefined;
+
+    if (!sellerId && !tgId) {
+      toast({
+        title: t("toast.error") || "Error",
+        description: "افتح الميني-أب من داخل تيليجرام حتى نحدد حسابك تلقائيًا",
+        variant: "destructive",
+      });
       return;
     }
+
     const priceStr = String(data.price ?? "").replace(",", ".").trim();
     if (!priceStr) {
       toast({ title: t("toast.error") || "Error", description: t("sell.price") || "Price required", variant: "destructive" });
       return;
     }
 
-    // توحيد اسم القناة
+    // توحيد اليوزرنيم
     let username = data.username;
     if (data.type === "channel") {
       username = normUsername(data.channelUsername || data.link || data.username || "");
@@ -100,27 +108,51 @@ export default function SellPage() {
       username = normUsername(username || "");
     }
 
-    const payload: any = {
-      sellerId,                              // ← الأهم
+    const basePayload: any = {
+      // يفضل السيرفر sellerId، وإذا مفقود يستعمل telegramId لحل البائع
+      sellerId,
+      telegramId: tgId,
       kind: data.type || kind || "channel",
       platform: data.platform || platform || "telegram",
       channelMode: data.channelMode || "subscribers",
       username,
       title: data.title,
-      subscribers: data.subscribersCount ? Number(data.subscribersCount) : undefined,
       price: priceStr,
       currency: data.currency || "TON",
       description: data.description || "",
       isVerified: false,
     };
 
-    const url = "/api/listings"; // موحّد
+    // إضافات حسب النوع
+    if (basePayload.kind === "channel") {
+      basePayload.subscribers = data.subscribersCount ? Number(data.subscribersCount) : undefined;
+      basePayload.giftsCount  = data.giftsCount ? Number(data.giftsCount) : undefined;
+      basePayload.giftKind    = data.giftKind || "regular";
+    }
+    if (basePayload.kind === "account") {
+      basePayload.followersCount = data.followersCount ? Number(data.followersCount) : undefined;
+      basePayload.createdAt = data.createdAt || undefined;
+      basePayload.tgUserType = data.tgUserType || undefined;
+    }
+    if (basePayload.kind === "service") {
+      basePayload.serviceType = data.serviceType || "followers";
+      basePayload.target = data.target || "instagram";
+      basePayload.count = data.count ? Number(data.count) : undefined;
+    }
+    if (basePayload.kind === "username") {
+      basePayload.tgUserType = data.tgUserType || undefined;
+    }
+
+    const url = "/api/listings";
     try {
-      await apiRequest("POST", url, payload);
-      toast({ title: "OK", description: t("sell.sent") });
-      form.reset(); setKind(null); setPlatform("");
+      await apiRequest("POST", url, basePayload);
+      toast({ title: "OK", description: t("sell.sent") || "Sent" });
+      form.reset();
+      setKind(null);
+      setPlatform("");
     } catch (e: any) {
-      toast({ title: t("toast.error") || "Error", description: e?.message || "Error", variant: "destructive" });
+      const msg = e?.message || e?.response?.data?.message || "Error";
+      toast({ title: t("toast.error") || "Error", description: msg, variant: "destructive" });
     }
   };
 
