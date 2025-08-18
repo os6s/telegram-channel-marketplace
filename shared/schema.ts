@@ -31,7 +31,6 @@ export const users = pgTable("users", {
 });
 
 /* ============== Channels (Unified Listings) ============== */
-/* نستخدم جدول channels كجدول listings موحّد لكل الأنواع */
 export const channels = pgTable("channels", {
   id: uuid("id").defaultRandom().primaryKey(),
   sellerId: uuid("seller_id").notNull().references(() => users.id),
@@ -40,11 +39,12 @@ export const channels = pgTable("channels", {
   kind: kindEnum("kind").notNull().default("channel"),
   platform: platformEnum("platform"),
   name: varchar("name", { length: 256 }),
-  username: varchar("username", { length: 64 }).notNull().unique(),
+  // ✅ username صار اختياري حتى نسمح بـ service بدون username
+  username: varchar("username", { length: 64 }).unique(),
   title: varchar("title", { length: 256 }),
   description: text("description"),
   category: varchar("category", { length: 64 }),
-  price: varchar("price", { length: 64 }).notNull(), // كنص
+  price: varchar("price", { length: 64 }).notNull(), // نخزّن نص لتفادي مشاكل الفواصل
   currency: varchar("currency", { length: 8 }).notNull().default("TON"),
   isVerified: boolean("is_verified").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
@@ -54,6 +54,9 @@ export const channels = pgTable("channels", {
   channelMode: channelModeEnum("channel_mode"),
   subscribers: integer("subscribers").default(0),
   engagement: varchar("engagement", { length: 32 }).default("0.00"),
+  // ✅ دعم هدايا القناة
+  giftsCount: integer("gifts_count"),
+  giftKind: varchar("gift_kind", { length: 32 }),
 
   // username فقط
   tgUserType: varchar("tg_user_type", { length: 32 }),
@@ -83,7 +86,7 @@ export const activities = pgTable("activities", {
   completedAt: timestamp("completed_at", { withTimezone: false }).defaultNow().notNull(),
 });
 
-/* ================ Relations (اختياري) ================ */
+/* ================ Relations ================ */
 export const usersRelations = relations(users, ({ many }) => ({
   listings: many(channels),
   buys: many(activities),
@@ -132,12 +135,14 @@ const normalizeUsername = (v: unknown) =>
     .replace(/^t\.me\//i, "")
     .toLowerCase();
 
-// Channels (listings) — متوافق مع صفحة البيع
+/* === Listings schema متوافق مع sellpage === */
 export const insertChannelSchema = createInsertSchema(channels, {
   sellerId: z.string().uuid(),
   kind: z.enum(["channel","username","account","service"]),
   platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional(),
-  username: z.string().min(1),
+
+  // username مطلوب لكل الأنواع ما عدا service
+  username: z.string().min(1).optional(),
   title: z.string().optional().nullable(),
   name: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
@@ -148,27 +153,40 @@ export const insertChannelSchema = createInsertSchema(channels, {
   isActive: z.boolean().optional(),
   avatarUrl: z.string().url().optional().nullable(),
 
+  // channel
   channelMode: z.enum(["subscribers","gifts"]).optional().nullable(),
   subscribers: z.coerce.number().int().min(0).optional().nullable(),
   engagement: z.string().optional().nullable(),
+  giftsCount: z.coerce.number().int().min(0).optional().nullable(),
+  giftKind: z.string().optional().nullable(),
 
+  // username
   tgUserType: z.string().optional().nullable(),
 
-  // حساب
+  // account
   followersCount: z.coerce.number().int().min(0).optional().nullable(),
   accountCreatedAt: z.string().regex(yyyyMmRe).optional().nullable(),
 
-  // خدمة
+  // service
   serviceType: z.enum(["followers","members","boost_channel","boost_group"]).optional().nullable(),
-  target: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional().nullable(),
+  target: z.union([
+    z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]),
+    z.literal("telegram_channel"),
+    z.literal("telegram_group"),
+  ]).optional().nullable(),
   serviceCount: z.coerce.number().int().min(0).optional().nullable(),
 })
-/* 🧩 دعم مفاتيح الواجهة (aliases): createdAt, count */
+// مفاتيح واجهة إضافية من sellpage
 .extend({
   createdAt: z.string().regex(yyyyMmRe, { message: "Expected format YYYY-MM" }).optional(),
   count: z.coerce.number().int().min(0).optional(),
 })
-/* 🛠️ تحويلات قبل الإدخال */
+.strip()
+.superRefine((val, ctx) => {
+  if (val.kind !== "service" && (!val.username || val.username.trim() === "")) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["username"], message: "username is required" });
+  }
+})
 .transform((input) => {
   const out: any = { ...input };
 
@@ -176,22 +194,23 @@ export const insertChannelSchema = createInsertSchema(channels, {
   if (out.username) out.username = normalizeUsername(out.username);
 
   // alias createdAt -> accountCreatedAt
-  if (!out.accountCreatedAt && out.createdAt) {
-    out.accountCreatedAt = out.createdAt;
-  }
+  if (!out.accountCreatedAt && out.createdAt) out.accountCreatedAt = out.createdAt;
 
   // alias count -> serviceCount
   if (typeof out.serviceCount === "undefined" && typeof out.count !== "undefined") {
     out.serviceCount = out.count;
   }
 
-  // تنظيف الحقول المؤقتة
+  // تطبيع target aliases
+  if (out.target === "telegram_channel" || out.target === "telegram_group") {
+    out.target = "telegram";
+  }
+
   delete out.createdAt;
   delete out.count;
 
   return out;
-})
-.strip(); // يشيل أي مفاتيح زايدة بعد التحويل
+});
 
 // Activities
 export const insertActivitySchema = createInsertSchema(activities, {
