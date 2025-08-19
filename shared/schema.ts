@@ -1,18 +1,12 @@
+// shared/schema.ts
 import {
-  pgTable, text, varchar, boolean, integer, timestamp, pgEnum, uuid,
+  pgTable, text, varchar, boolean, integer, timestamp, uuid, numeric,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
 
-/* Enums */
-export const kindEnum = pgEnum("listing_kind", ["channel","username","account","service"]);
-export const platformEnum = pgEnum("platform_kind", ["telegram","twitter","instagram","discord","snapchat","tiktok"]);
-export const channelModeEnum = pgEnum("channel_mode", ["subscribers","gifts"]);
-export const serviceTypeEnum = pgEnum("service_type", ["followers","members","boost_channel","boost_group"]);
-
-/* Users */
+/* users */
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   telegramId: varchar("telegram_id", { length: 64 }).unique(),
@@ -20,125 +14,204 @@ export const users = pgTable("users", {
   firstName: varchar("first_name", { length: 128 }),
   lastName: varchar("last_name", { length: 128 }),
   tonWallet: varchar("ton_wallet", { length: 128 }),
-  role: varchar("role", { length: 32 }).default("user"),
-  createdAt: timestamp("created_at", { withTimezone: false }).defaultNow().notNull(),
+  role: varchar("role", { length: 32 }).notNull().default("user"),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
 });
 
-/* Channels/Listings */
-export const channels = pgTable("channels", {
+/* listings */
+export const listings = pgTable("listings", {
   id: uuid("id").defaultRandom().primaryKey(),
-  sellerId: uuid("seller_id").notNull().references(() => users.id),
+  sellerId: uuid("seller_id").notNull().references(() => users.id, { onDelete: "cascade" }),
 
-  kind: kindEnum("kind").notNull().default("channel"),
-  platform: platformEnum("platform"),
-  name: varchar("name", { length: 256 }).notNull(),
-  username: varchar("username", { length: 64 }).unique(),
+  kind: varchar("kind", { length: 16 }).notNull(),         // username | account | channel | service
+  platform: varchar("platform", { length: 16 }),           // telegram | twitter | ...
+  username: varchar("username", { length: 64 }),
   title: varchar("title", { length: 256 }),
   description: text("description"),
-  category: varchar("category", { length: 64 }),
-  price: varchar("price", { length: 64 }).notNull(),
+  price: numeric("price", { precision: 30, scale: 9 }).notNull(),
   currency: varchar("currency", { length: 8 }).notNull().default("TON"),
   isVerified: boolean("is_verified").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   avatarUrl: text("avatar_url"),
 
-  channelMode: channelModeEnum("channel_mode"),
-  subscribers: integer("subscribers"),
-  engagement: varchar("engagement", { length: 64 }),
+  channelMode: varchar("channel_mode", { length: 16 }),
+  subscribersCount: integer("subscribers_count"),
   giftsCount: integer("gifts_count"),
   giftKind: varchar("gift_kind", { length: 64 }),
 
   tgUserType: varchar("tg_user_type", { length: 64 }),
 
   followersCount: integer("followers_count"),
-  accountCreatedAt: varchar("account_created_at", { length: 64 }),
+  accountCreatedAt: varchar("account_created_at", { length: 7 }), // YYYY-MM
 
-  serviceType: serviceTypeEnum("service_type"),
-  target: platformEnum("target"),
+  serviceType: varchar("service_type", { length: 32 }),
+  target: varchar("target", { length: 16 }),
   serviceCount: integer("service_count"),
 
-  createdAt: timestamp("created_at", { withTimezone: false }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
 });
 
-/* Activities */
+/* payments */
+export const payments = pgTable("payments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  listingId: uuid("listing_id").notNull().references(() => listings.id),
+  buyerId: uuid("buyer_id").notNull().references(() => users.id),
+  amount: numeric("amount", { precision: 30, scale: 9 }).notNull(),
+  currency: varchar("currency", { length: 8 }).notNull().default("TON"),
+  feePercent: numeric("fee_percent", { precision: 5, scale: 2 }).notNull().default("5.00"),
+  feeAmount: numeric("fee_amount", { precision: 30, scale: 9 }).notNull(),
+  sellerAmount: numeric("seller_amount", { precision: 30, scale: 9 }).notNull(),
+  escrowAddress: varchar("escrow_address", { length: 128 }).notNull(),
+  txHash: varchar("tx_hash", { length: 128 }),
+  status: varchar("status", { length: 16 }).notNull().default("pending"),
+  comment: text("comment"),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: false }),
+});
+
+/* payouts */
+export const payouts = pgTable("payouts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  paymentId: uuid("payment_id").notNull().references(() => payments.id),
+  sellerId: uuid("seller_id").notNull().references(() => users.id),
+  toAddress: varchar("to_address", { length: 128 }).notNull(),
+  amount: numeric("amount", { precision: 30, scale: 9 }).notNull(),
+  status: varchar("status", { length: 16 }).notNull().default("queued"),
+  txHash: varchar("tx_hash", { length: 128 }),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
+  sentAt: timestamp("sent_at", { withTimezone: false }),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: false }),
+});
+
+/* activities */
 export const activities = pgTable("activities", {
   id: uuid("id").defaultRandom().primaryKey(),
-  channelId: uuid("channel_id").notNull().references(() => channels.id),
+  listingId: uuid("listing_id").notNull().references(() => listings.id, { onDelete: "cascade" }),
   buyerId: uuid("buyer_id").notNull().references(() => users.id),
   sellerId: uuid("seller_id").notNull().references(() => users.id),
-  amount: varchar("amount", { length: 64 }).notNull(),
-  currency: varchar("act_currency", { length: 8 }).notNull().default("TON"),
-  status: varchar("status", { length: 32 }).notNull().default("completed"),
-  transactionHash: varchar("tx_hash", { length: 128 }),
-  completedAt: timestamp("completed_at", { withTimezone: false }).defaultNow().notNull(),
+  paymentId: uuid("payment_id").references(() => payments.id),
+  type: varchar("type", { length: 24 }).notNull(), // buy | confirm | cancel | dispute_open | dispute_resolve
+  status: varchar("status", { length: 16 }).notNull().default("completed"),
+  amount: numeric("amount", { precision: 30, scale: 9 }),
+  currency: varchar("currency", { length: 8 }),
+  txHash: varchar("tx_hash", { length: 128 }),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
 });
 
-/* Relations */
+/* disputes */
+export const disputes = pgTable("disputes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  paymentId: uuid("payment_id").notNull().references(() => payments.id, { onDelete: "cascade" }),
+  buyerId: uuid("buyer_id").notNull().references(() => users.id),
+  sellerId: uuid("seller_id").notNull().references(() => users.id),
+  reason: text("reason"),
+  status: varchar("status", { length: 16 }).notNull().default("open"),
+  evidence: text("evidence"),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: false }),
+});
+
+/* relations (اختياري) */
 export const usersRelations = relations(users, ({ many }) => ({
-  listings: many(channels),
+  listings: many(listings),
   buys: many(activities),
   sells: many(activities),
+  payouts: many(payouts),
 }));
-export const channelsRelations = relations(channels, ({ one, many }) => ({
-  seller: one(users, { fields: [channels.sellerId], references: [users.id] }),
+export const listingsRelations = relations(listings, ({ one, many }) => ({
+  seller: one(users, { fields: [listings.sellerId], references: [users.id] }),
   acts: many(activities),
 }));
-export const activitiesRelations = relations(activities, ({ one }) => ({
-  listing: one(channels, { fields: [activities.channelId], references: [channels.id] }),
-  buyer: one(users, { fields: [activities.buyerId], references: [users.id] }),
-  seller: one(users, { fields: [activities.sellerId], references: [users.id] }),
-}));
 
-/* Types */
+/* types */
 export type User = InferSelectModel<typeof users>;
 export type InsertUser = InferInsertModel<typeof users>;
-export type Channel = InferSelectModel<typeof channels>;
-export type InsertChannel = InferInsertModel<typeof channels>;
+export type Listing = InferSelectModel<typeof listings>;
+export type InsertListing = InferInsertModel<typeof listings>;
+export type Payment = InferSelectModel<typeof payments>;
+export type InsertPayment = InferInsertModel<typeof payments>;
+export type Payout = InferSelectModel<typeof payouts>;
+export type InsertPayout = InferInsertModel<typeof payouts>;
 export type Activity = InferSelectModel<typeof activities>;
 export type InsertActivity = InferInsertModel<typeof activities>;
+export type Dispute = InferSelectModel<typeof disputes>;
+export type InsertDispute = InferInsertModel<typeof disputes>;
 
-/* Zod (insert) */
+/* Zod — متوافق مع SellPage payload */
 const priceRe = /^\d+(\.\d{1,9})?$/;
 const yyyyMmRe = /^\d{4}-(0[1-9]|1[0-2])$/;
 
-export const insertUserSchema = createInsertSchema(users, {
+export const insertUserSchema = z.object({
   telegramId: z.string().optional().nullable(),
   username: z.string().optional().nullable(),
   firstName: z.string().optional().nullable(),
   lastName: z.string().optional().nullable(),
   tonWallet: z.string().optional().nullable(),
   role: z.string().optional(),
-}).strict();
+});
 
-export const insertChannelSchema = createInsertSchema(channels, {
-  name: z.string().min(1),
-  price: z.string().regex(priceRe, "invalid price"),
+export const insertListingSchema = z.object({
+  sellerId: z.string().uuid().optional(),     // يفضَّل، لكن يمكن استنتاجه من telegramId
+  telegramId: z.string().optional().nullable(), // يأتي من SellPage عند الحاجة
+
+  kind: z.enum(["username","account","channel","service"]),
+  platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional().nullable(),
+
+  username: z.string().optional().nullable(),
+  title: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+  price: z.string().regex(priceRe),
   currency: z.enum(["TON","USDT"]).default("TON"),
   isVerified: z.boolean().optional(),
   isActive: z.boolean().optional(),
-  avatarUrl: z.string().url().optional().nullable(),
 
+  /* channel */
   channelMode: z.enum(["subscribers","gifts"]).optional().nullable(),
-  subscribers: z.coerce.number().int().min(0).optional().nullable(),
-  engagement: z.string().optional().nullable(),
+  subscribers: z.coerce.number().int().min(0).optional().nullable(), // من SellPage: subscribersCount
   giftsCount: z.coerce.number().int().min(0).optional().nullable(),
   giftKind: z.string().optional().nullable(),
 
+  /* username/account */
   tgUserType: z.string().optional().nullable(),
 
+  /* account */
   followersCount: z.coerce.number().int().min(0).optional().nullable(),
-  accountCreatedAt: z.string().regex(yyyyMmRe).optional().nullable(),
+  createdAt: z.string().regex(yyyyMmRe).optional().nullable(), // SellPage يرسل createdAt
 
+  /* service */
   serviceType: z.enum(["followers","members","boost_channel","boost_group"]).optional().nullable(),
   target: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional().nullable(),
-  serviceCount: z.coerce.number().int().min(0).optional().nullable(),
-}).strict();
+  count: z.coerce.number().int().min(0).optional().nullable(),
+});
 
-/* Zod (insert) - Activity */
-export const insertActivitySchema = z.object({
-  channelId: z.string().uuid(),
+export const insertPaymentSchema = z.object({
+  listingId: z.string().uuid(),
   buyerId: z.string().uuid(),
-  amount: z.string().regex(/^\d+(\.\d{1,9})?$/),
+  amount: z.string().regex(priceRe),
   currency: z.enum(["TON","USDT"]).default("TON"),
-  transactionHash: z.string().optional().nullable(),
+  feePercent: z.string().regex(/^\d+(\.\d{1,2})?$/).default("5.00"),
+  escrowAddress: z.string().min(3),
+  comment: z.string().optional().nullable(),
+  txHash: z.string().optional().nullable(),
+});
+
+export const insertPayoutSchema = z.object({
+  paymentId: z.string().uuid(),
+  sellerId: z.string().uuid(),
+  toAddress: z.string().min(3),
+  amount: z.string().regex(priceRe),
+});
+
+export const insertActivitySchema = z.object({
+  listingId: z.string().uuid(),
+  buyerId: z.string().uuid(),
+  sellerId: z.string().uuid(),
+  paymentId: z.string().uuid().optional().nullable(),
+  type: z.enum(["buy","confirm","cancel","dispute_open","dispute_resolve"]),
+  status: z.enum(["pending","completed","cancelled"]).optional().default("completed"),
+  amount: z.string().regex(priceRe).optional().nullable(),
+  currency: z.enum(["TON","USDT"]).optional().nullable(),
+  txHash: z.string().optional().nullable(),
+  note: z.string().optional().nullable(),
 });
