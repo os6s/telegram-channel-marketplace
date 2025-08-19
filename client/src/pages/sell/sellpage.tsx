@@ -109,7 +109,6 @@ export default function SellPage() {
     }
 
     const basePayload: any = {
-      // يفضل السيرفر sellerId، وإذا مفقود يستعمل telegramId لحل البائع
       sellerId,
       telegramId: tgId,
       kind: data.type || kind || "channel",
@@ -125,7 +124,7 @@ export default function SellPage() {
 
     // إضافات حسب النوع
     if (basePayload.kind === "channel") {
-      basePayload.subscribers = data.subscribersCount ? Number(data.subscribersCount) : undefined;
+      basePayload.subscribersCount = data.subscribersCount ? Number(data.subscribersCount) : undefined; // ✅ الاسم الصحيح
       basePayload.giftsCount  = data.giftsCount ? Number(data.giftsCount) : undefined;
       basePayload.giftKind    = data.giftKind || "regular";
     }
