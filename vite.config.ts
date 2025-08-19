@@ -1,4 +1,4 @@
-// vite.config.ts (في جذر المشروع)
+// vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
@@ -17,7 +17,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "dist",          // ← يخرّج إلى client/dist
+    outDir: "dist",
     emptyOutDir: true,
     sourcemap: true,
     commonjsOptions: { include: [/node_modules/] },
