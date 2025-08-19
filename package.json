@@ -4,15 +4,20 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "NODE_ENV=development vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "start": "NODE_ENV=production node dist/index.js",
-    "build:render": "npm run build && npm run db:migrate",
-    "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push",
-    "db:migrate": "npm run db:generate && npm run db:push",
-    "check": "tsc"
-  },
+  "dev": "NODE_ENV=development tsx server/index.ts",
+
+  "build": "npm run build:client && npm run build:server",
+  "build:client": "cd client && npm ci && vite build",
+  "build:server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist/server --sourcemap",
+
+  "start": "NODE_ENV=production node dist/server/index.js",
+
+  "build:render": "npm run build && npm run db:migrate",
+  "db:generate": "drizzle-kit generate",
+  "db:push": "drizzle-kit push",
+  "db:migrate": "npm run db:generate && npm run db:push",
+  "check": "tsc"
+},
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
