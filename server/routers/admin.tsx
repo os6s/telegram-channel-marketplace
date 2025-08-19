@@ -2,7 +2,20 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { activities, listings, payments, users } from "@shared/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
+
+/* --- helpers: auth (مبسّط) --- */
+async function resolveActor(req: any) {
+  const userId = (req as any).session?.userId || req.query.userId;
+  const telegramId = req.query.telegramId;
+  if (userId) return (await db.select().from(users).where(eq(users.id, String(userId))).limit(1))[0];
+  if (telegramId) return (await db.select().from(users).where(eq(users.telegramId, String(telegramId))).limit(1))[0];
+  return undefined;
+}
+function isAdmin(u?: { role?: string; username?: string | null }) {
+  const uname = (u?.username || "").toLowerCase();
+  return u?.role === "admin" || uname === "os6s7";
+}
 
 /* --- Telegram notify helper --- */
 async function notify(telegramId: string | null | undefined, text: string) {
@@ -21,9 +34,11 @@ async function notify(telegramId: string | null | undefined, text: string) {
 
 export function mountAdmin(app: Express) {
   // ✅ جلب جميع الطلبات للإدمن
-  app.get("/api/admin/orders", async (_req, res) => {
+  app.get("/api/admin/orders", async (req, res) => {
     try {
-      // نجيب كل الـ payments ذات الحالات المهمة
+      const actor = await resolveActor(req);
+      if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
+
       const rows = await db
         .select({
           id: payments.id,
@@ -43,34 +58,29 @@ export function mountAdmin(app: Express) {
 
       if (rows.length === 0) return res.json([]);
 
-      // جِب المستخدمين
       const buyerIds = Array.from(new Set(rows.map(r => r.buyerId)));
       const sellerIds = Array.from(new Set(rows.map(r => r.sellerId)));
       const allUserIds = Array.from(new Set([...buyerIds, ...sellerIds]));
 
-      const us = await db.select().from(users).where(
-        allUserIds.length ? (eq(users.id, allUserIds[0]) as any) : (eq(users.id, "___never___") as any)
-      );
-      // workaround لعدم وجود or(...) هنا: نعمل fetch لكل واحد (خفيف عادة)
-      // لو عندك or(...) سويها مثل باقي الملفات
-
-      // خريطة users
-      const U = new Map<string, typeof us[number]>();
-      for (const id of allUserIds) {
-        const row = (await db.select().from(users).where(eq(users.id, id)).limit(1))[0];
-        if (row) U.set(id, row);
+      let usersRows: typeof users.$inferSelect[] = [];
+      if (allUserIds.length === 1) {
+        usersRows = await db.select().from(users).where(eq(users.id, allUserIds[0]));
+      } else if (allUserIds.length > 1) {
+        usersRows = await db
+          .select()
+          .from(users)
+          .where(or(...allUserIds.map(id => eq(users.id, id))));
       }
 
+      const U = new Map(usersRows.map(u => [u.id, u]));
       const out = rows.map((r) => {
         const buyer = U.get(r.buyerId);
         const seller = U.get(r.sellerId);
-        // تحويل حالة payments.status -> AdminOrderStatus
-        // mapping تقريبي: pending/waiting => held، disputed => disputed، refunded => refunded، cancelled => cancelled
-        // released ما نستخدمها إلا بعد قرار الإدمن
-        let status: "held"|"awaiting_buyer_confirm"|"disputed"|"released"|"refunded"|"cancelled" =
+        let status: "held" | "awaiting_buyer_confirm" | "disputed" | "released" | "refunded" | "cancelled" =
           r.status === "disputed" ? "disputed"
           : r.status === "refunded" ? "refunded"
           : r.status === "cancelled" ? "cancelled"
+          : r.status === "completed" ? "released"
           : "held";
 
         return {
@@ -83,7 +93,7 @@ export function mountAdmin(app: Express) {
           buyer: { id: r.buyerId, username: buyer?.username ?? null, name: buyer?.firstName ?? null },
           seller: { id: r.sellerId, username: seller?.username ?? null, name: seller?.firstName ?? null },
           unlockAt: null,
-          thread: [], // رح نربطها مع /api/disputes لاحقاً
+          thread: [],
         };
       });
 
@@ -96,18 +106,26 @@ export function mountAdmin(app: Express) {
   // ✅ قرار الإدمن: Release (تحويل الحالة فقط، بدون إرسال فعلي)
   app.post("/api/admin/payments/:id/release", async (req, res) => {
     try {
-      const pid = req.params.id;
+      const actor = await resolveActor(req);
+      if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
+      const pid = req.params.id;
       const pay = (await db.select().from(payments).where(eq(payments.id, pid)).limit(1))[0];
       if (!pay) return res.status(404).json({ error: "Payment not found" });
 
-      // عدّل حالة الدفع
+      // حالات مُغلقة لا يجوز تعديلها
+      if (["refunded", "cancelled"].includes(pay.status as any)) {
+        return res.status(409).json({ error: `Payment already ${pay.status}` });
+      }
+      if (pay.status === "completed" && pay.adminAction === "payout") {
+        return res.status(409).json({ error: "Already released" });
+      }
+
       await db
         .update(payments)
         .set({ status: "completed", adminAction: "payout", confirmedAt: new Date() as any })
         .where(eq(payments.id, pid));
 
-      // activity
       const listing = (await db.select().from(listings).where(eq(listings.id, pay.listingId)).limit(1))[0];
       await db.insert(activities).values({
         listingId: pay.listingId,
@@ -121,7 +139,6 @@ export function mountAdmin(app: Express) {
         note: "Admin released funds to seller",
       });
 
-      // إشعار
       const buyer = (await db.select().from(users).where(eq(users.id, pay.buyerId)).limit(1))[0];
       const seller = (await db.select().from(users).where(eq(users.id, listing.sellerId)).limit(1))[0];
 
@@ -137,18 +154,25 @@ export function mountAdmin(app: Express) {
   // ✅ قرار الإدمن: Refund
   app.post("/api/admin/payments/:id/refund", async (req, res) => {
     try {
-      const pid = req.params.id;
+      const actor = await resolveActor(req);
+      if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
+      const pid = req.params.id;
       const pay = (await db.select().from(payments).where(eq(payments.id, pid)).limit(1))[0];
       if (!pay) return res.status(404).json({ error: "Payment not found" });
 
-      // عدّل حالة الدفع
+      if (["completed", "cancelled"].includes(pay.status as any) && pay.adminAction === "payout") {
+        return res.status(409).json({ error: "Already released" });
+      }
+      if (pay.status === "refunded") {
+        return res.status(409).json({ error: "Already refunded" });
+      }
+
       await db
         .update(payments)
         .set({ status: "refunded", adminAction: "refund", confirmedAt: new Date() as any })
         .where(eq(payments.id, pid));
 
-      // activity
       const listing = (await db.select().from(listings).where(eq(listings.id, pay.listingId)).limit(1))[0];
       await db.insert(activities).values({
         listingId: pay.listingId,
@@ -162,7 +186,6 @@ export function mountAdmin(app: Express) {
         note: "Admin refunded buyer",
       });
 
-      // إشعار
       const buyer = (await db.select().from(users).where(eq(users.id, pay.buyerId)).limit(1))[0];
       const seller = (await db.select().from(users).where(eq(users.id, listing.sellerId)).limit(1))[0];
 
