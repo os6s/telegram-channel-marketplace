@@ -1,3 +1,4 @@
+// client/src/pages/marketplace.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -7,7 +8,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Filter, AtSign, Hash, Sparkles, User2, Users, Gift, Megaphone, Rocket } from "lucide-react";
 import { ListingCard } from "@/components/ListingCard";
 import { useLanguage } from "@/contexts/language-context";
-import type { Channel } from "@shared/schema";
 import { onListingsChange, listLocalListings, type AnyListing } from "@/store/listings";
 
 type Kind = "username" | "account" | "channel" | "service" | "";
@@ -65,7 +65,6 @@ export default function Marketplace() {
   const [channelMode, setChannelMode] = useState<ChannelMode>("");
   const [serviceType, setServiceType] = useState<ServiceType>("");
 
-  // تصغير وإخفاء بطاقات الإحصائيات عند التمرير
   const [showStats, setShowStats] = useState(true);
   useEffect(() => {
     const onScroll = () => setShowStats(window.scrollY < 80);
@@ -139,7 +138,6 @@ export default function Marketplace() {
             </div>
           </div>
 
-          {/* بطاقات الإحصائيات — حجم صغير وتختفي عند التمرير */}
           {!statsLoading && (
             <div
               className={[
@@ -150,7 +148,7 @@ export default function Marketplace() {
               <div className="grid grid-cols-3 gap-2">
                 <Card>
                   <CardContent className="px-3 py-2 text-center">
-                    <div className="text-base font-bold text-foreground">{(stats as any)?.sold ?? 0}</div>
+                    <div className="text-base font-bold text-foreground">{(stats as any)?.totalSales ?? 0}</div>
                     <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesCountLabel}</div>
                   </CardContent>
                 </Card>
@@ -265,9 +263,9 @@ export default function Marketplace() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((listing) => (
-              <ChannelCard
+              <ListingCard
                 key={listing.id}
-                channel={listing as Channel}
+                listing={listing}
                 onViewDetails={() => console.log("View", listing.id)}
                 onBuyNow={() => console.log("Buy", listing.id)}
               />
