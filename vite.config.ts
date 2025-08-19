@@ -16,7 +16,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: path.resolve(__dirname, "dist/public"), // ← مهم
+    outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
     sourcemap: true,
     commonjsOptions: { include: [/node_modules/] },
