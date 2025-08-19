@@ -41,10 +41,12 @@ async function sendTelegramMessage(
 
 /**
  * Endpoints:
- * GET  /api/activities?userId=... | listingId=...
- * GET  /api/activities/:id
- * POST /api/activities           { type, listingId, buyerId, [sellerId], [amount], [currency], ... }
- * PATCH /api/activities/:id       partial updates
+ * GET   /api/activities?userId=... | listingId=...
+ * GET   /api/activities/:id
+ * POST  /api/activities                      { type, listingId, buyerId, [sellerId], [amount], [currency], ... }
+ * POST  /api/activities/confirm/buyer        { listingId, buyerId, sellerId, [paymentId] }
+ * POST  /api/activities/confirm/seller       { listingId, buyerId, sellerId, [paymentId] }
+ * PATCH /api/activities/:id                  partial updates
  */
 export function mountActivities(app: Express) {
   // List activities by user or listing
@@ -186,7 +188,142 @@ export function mountActivities(app: Express) {
     }
   });
 
-  // Update activity
+  /* ========= Buyer confirms receipt =========
+     Body: { listingId, buyerId, sellerId, [paymentId] }
+     Creates an activity(type='confirm', note='buyer_confirm') and NOTIFIES both sides.
+     لا يوجد أي إطلاق أموال تلقائي — قرار الأدمن لاحقاً.
+  ========================================== */
+  app.post("/api/activities/confirm/buyer", async (req, res) => {
+    try {
+      const { listingId, buyerId, sellerId, paymentId } = req.body || {};
+      if (!listingId || !buyerId || !sellerId) {
+        return res.status(400).json({ error: "listingId, buyerId, sellerId are required" });
+      }
+      const listing = await storage.getChannel(String(listingId));
+      if (!listing) return res.status(404).json({ error: "Listing not found" });
+
+      const act = await storage.createActivity({
+        listingId: String(listingId),
+        buyerId: String(buyerId),
+        sellerId: String(sellerId),
+        paymentId: paymentId ? String(paymentId) : null,
+        type: "confirm",
+        status: "completed",
+        amount: String(listing.price),
+        currency: (listing as any).currency ?? "TON",
+        note: "buyer_confirm",
+        txHash: null,
+      });
+
+      const buyer = await storage.getUser(String(buyerId));
+      const seller = await storage.getUser(String(sellerId));
+      const title =
+        listing.title ||
+        (listing.username ? `@${listing.username}` : `${listing.platform || ""} ${listing.kind || ""}`.trim());
+      const priceStr = String(listing.price);
+      const ccy = String((listing as any).currency ?? "TON");
+
+      // إشعار
+      if (seller?.telegramId) {
+        await sendTelegramMessage(
+          seller.telegramId,
+          [
+            `✅ <b>Buyer Confirmed Receipt</b>`,
+            ``,
+            `<b>Item:</b> ${title}`,
+            `<b>Price:</b> ${priceStr} ${ccy}`,
+            buyer?.username ? `<b>Buyer:</b> @${buyer.username}` : "",
+            ``,
+            `Admin will review and finalize the transaction.`,
+          ].filter(Boolean).join("\n")
+        );
+      }
+      if (buyer?.telegramId) {
+        await sendTelegramMessage(
+          buyer.telegramId,
+          [
+            `📝 <b>Your confirmation was recorded</b>`,
+            ``,
+            `<b>Item:</b> ${title}`,
+            `<b>Status:</b> Waiting for admin finalization`,
+          ].join("\n")
+        );
+      }
+
+      res.status(201).json({ activity: act });
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message || "Failed to confirm (buyer)" });
+    }
+  });
+
+  /* ========= Seller confirms delivery =========
+     Body: { listingId, buyerId, sellerId, [paymentId] }
+     Creates an activity(type='confirm', note='seller_confirm') and NOTIFIES both sides.
+  ============================================ */
+  app.post("/api/activities/confirm/seller", async (req, res) => {
+    try {
+      const { listingId, buyerId, sellerId, paymentId } = req.body || {};
+      if (!listingId || !buyerId || !sellerId) {
+        return res.status(400).json({ error: "listingId, buyerId, sellerId are required" });
+      }
+      const listing = await storage.getChannel(String(listingId));
+      if (!listing) return res.status(404).json({ error: "Listing not found" });
+
+      const act = await storage.createActivity({
+        listingId: String(listingId),
+        buyerId: String(buyerId),
+        sellerId: String(sellerId),
+        paymentId: paymentId ? String(paymentId) : null,
+        type: "confirm",
+        status: "completed",
+        amount: String(listing.price),
+        currency: (listing as any).currency ?? "TON",
+        note: "seller_confirm",
+        txHash: null,
+      });
+
+      const buyer = await storage.getUser(String(buyerId));
+      const seller = await storage.getUser(String(sellerId));
+      const title =
+        listing.title ||
+        (listing.username ? `@${listing.username}` : `${listing.platform || ""} ${listing.kind || ""}`.trim());
+      const priceStr = String(listing.price);
+      const ccy = String((listing as any).currency ?? "TON");
+
+      // إشعار
+      if (buyer?.telegramId) {
+        await sendTelegramMessage(
+          buyer.telegramId,
+          [
+            `📦 <b>Seller Confirmed Delivery</b>`,
+            ``,
+            `<b>Item:</b> ${title}`,
+            `<b>Price:</b> ${priceStr} ${ccy}`,
+            seller?.username ? `<b>Seller:</b> @${seller.username}` : "",
+            ``,
+            `Please confirm receipt from your side if all is OK.`,
+          ].filter(Boolean).join("\n")
+        );
+      }
+      if (seller?.telegramId) {
+        await sendTelegramMessage(
+          seller.telegramId,
+          [
+            `📝 <b>Your delivery confirmation was recorded</b>`,
+            ``,
+            `<b>Item:</b> ${title}`,
+            `<b>Status:</b> Waiting for buyer / admin`,
+          ].join("\n")
+        );
+      }
+
+      res.status(201).json({ activity: act });
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message || "Failed to confirm (seller)" });
+    }
+  });
+
+  // Update activity (generic)
   app.patch("/api/activities/:id", async (req, res) => {
     try {
       const updates = req.body || {};
