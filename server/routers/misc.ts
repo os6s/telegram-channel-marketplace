@@ -1,7 +1,5 @@
 // server/routers/misc.ts
 import type { Express } from "express";
-import path from "path";
-import express from "express";
 
 function baseUrl(req: any) {
   return process.env.WEBAPP_URL?.replace(/\/+$/, "") || `${req.protocol}://${req.get("host")}`;
@@ -37,14 +35,5 @@ export function mountMisc(app: Express) {
     } catch (e: any) {
       res.status(500).json({ error: e?.message || "Failed to setup webhook" });
     }
-  });
-
-  // ✅ المسار الصحيح لملفات الواجهة
-  const clientDist = path.join(process.cwd(), "client", "dist");
-  app.use(express.static(clientDist));
-
-  app.get("*", (req, res) => {
-    if (req.path.startsWith("/api/") || req.path.startsWith("/webhook/")) return res.status(404).end();
-    res.sendFile(path.join(clientDist, "index.html"));
   });
 }
