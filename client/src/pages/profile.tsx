@@ -17,9 +17,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
 import { ActivityTimeline, type ActivityEvent } from "@/components/activity-timeline";
-import { ListingCard } from "@/components/ListingCard"; // ← استخدم الكارد الجديدة المتوافقة مع listings
+import { ListingCard } from "@/components/ListingCard";
 
-/* helpers آمنة */
 const S = (v: unknown) => (typeof v === "string" ? v : "");
 const initialFrom = (v: unknown) => {
   const s = S(v);
@@ -41,16 +40,13 @@ export default function Profile() {
   const telegramUser = telegramWebApp.user;
   const telegramId = telegramUser?.id ? String(telegramUser.id) : undefined;
 
-  /* تحميل/إنشاء المستخدم الحقيقي */
+  // user (create if missing)
   const { data: user } = useQuery({
     enabled: !!telegramId,
     queryKey: ["user/by-telegram", telegramId],
     queryFn: async () => {
-      // جرّب مسار REST موجود عندك. عدّله إذا مسارك مختلف.
       const r = await fetch(`/api/users/by-telegram/${telegramId}`);
       if (r.ok) return (await r.json()) as User;
-
-      // إنشاء سريع إذا غير موجود
       const created = await apiRequest("POST", "/api/users", {
         telegramId,
         username: telegramUser?.username,
@@ -61,7 +57,7 @@ export default function Profile() {
     },
   });
 
-  /* Listings الخاصة بالمستخدم */
+  // my listings
   const { data: myListings = [], isLoading: listingsLoading } = useQuery({
     enabled: !!user?.id,
     queryKey: ["listings/by-seller", user?.id],
@@ -72,7 +68,7 @@ export default function Profile() {
     },
   });
 
-  /* Activities الحقيقية */
+  // my activities
   const { data: myActivities = [] } = useQuery({
     enabled: !!user?.id,
     queryKey: ["activities/by-user", user?.id],
@@ -83,7 +79,7 @@ export default function Profile() {
     },
   });
 
-  /* Wallet connect وتحديثه على المستخدم */
+  // connect wallet -> PATCH /api/users/:id
   const updateWalletMutation = useMutation({
     mutationFn: async (walletAddress: string) => {
       const res = await apiRequest("PATCH", `/api/users/${user!.id}`, { tonWallet: walletAddress });
@@ -116,40 +112,39 @@ export default function Profile() {
 
   const handleBack = () => window.history.back();
 
-  /* إحصاءات */
+  // stats
   const stats = useMemo(() => {
     const active = myListings.filter((l) => l.isActive);
     const activeCount = active.length;
     const totalValue = active.reduce((s, l) => s + Number(String(l.price).replace(",", ".")), 0);
-    // reach للقنوات فقط
     const totalSubs = active
       .filter((l) => l.kind === "channel")
       .reduce((s, l) => s + N((l as any).subscribersCount), 0);
     return { activeCount, totalValue: totalValue.toFixed(2), totalSubs };
   }, [myListings]);
 
-  /* Activity timeline عرض بسيط */
+  // activity timeline (map to UI events)
   const sellerActivity: ActivityEvent[] = useMemo(() => {
-    return myActivities
-      .slice(0, 20)
-      .map((a) => ({
+    return myActivities.slice(0, 20).map((a) => {
+      const amt = `${S(a.currency) || "TON"} ${S(a.amount) || ""}`.trim();
+      let type: ActivityEvent["type"] = "UPDATED";
+      let title = "Activity";
+      if (a.type === "buy") { type = "SOLD"; title = "Order paid to escrow"; }
+      else if (a.type === "buyer_confirm" || a.type === "seller_confirm" || a.type === "admin_release") {
+        type = "RELEASED"; title = "Funds release approved";
+      } else if (a.type === "admin_refund" || a.type === "cancel") {
+        type = "CANCELLED"; title = "Order refunded/cancelled";
+      }
+      return {
         id: a.id,
-        type:
-          a.type === "buy" ? "SOLD"
-          : a.type === "confirm" ? "RELEASED"
-          : a.type === "cancel" ? "CANCELLED"
-          : "UPDATED",
-        title:
-          a.type === "buy" ? "Order paid to escrow"
-          : a.type === "confirm" ? "Buyer confirmed. Payout queued"
-          : a.type === "cancel" ? "Order cancelled"
-          : "Activity",
-        subtitle: `${S(a.currency) || "TON"} ${S(a.amount) || ""}`.trim(),
+        type,
+        title,
+        subtitle: amt,
         createdAt: (a.createdAt as any) ?? new Date().toISOString(),
-      }));
+      };
+    });
   }, [myActivities]);
 
-  /* رندرة */
   return (
     <div className="min-h-screen bg-background">
       <header className="bg-card border-b border-border sticky top-0 z-50">
@@ -292,7 +287,7 @@ export default function Profile() {
                       currentUser={{ username: telegramUser?.username }}
                     />
                     <div className="absolute top-4 right-4">
-                      <Button variant="ghost" size="sm" onClick={() => { /* TODO: edit flow */ }}>
+                      <Button variant="ghost" size="sm" onClick={() => { /* edit flow */ }}>
                         <Edit3 className="w-4 h-4" />
                       </Button>
                     </div>
@@ -324,7 +319,6 @@ export default function Profile() {
         </Tabs>
       </div>
 
-      {/* Dialog مبسّط لعرض activity لاحقًا */}
       <Dialog.Root open={chatOpen} onOpenChange={setChatOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/40" />
@@ -340,7 +334,7 @@ export default function Profile() {
                   </div>
                 </div>
                 <div className="p-4 text-sm">
-                  {/* تفاصيل إضافية للنشاط */}
+                  {/* extra details */}
                 </div>
               </>
             )}
