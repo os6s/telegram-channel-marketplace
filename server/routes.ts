@@ -7,6 +7,7 @@ import { mountUsers } from "./routers/users";
 import { mountListings } from "./routers/listings";
 import { mountChannels } from "./routers/channels";
 import { mountActivities } from "./routers/activities";
+import { mountPayments } from "./routers/payments"; // ← NEW
 import { mountStats } from "./routers/stats";
 import { mountMisc } from "./routers/misc";
 
@@ -20,12 +21,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerBotRoutes(app);
 
   // 3) APIs
-  mountUsers(app);      // users أولًا
-  mountListings(app);   // ثم listings
+  mountUsers(app);       // users أولًا
+  mountListings(app);    // ثم listings
   mountChannels(app);
   mountActivities(app);
+  mountPayments(app);    // ← NEW: payments
   mountStats(app);
-  mountMisc(app);       // يجب أن يحتوي /api/config
+  mountMisc(app);        // يجب أن يحتوي /api/config
 
   const httpServer = createServer(app);
   return httpServer;
