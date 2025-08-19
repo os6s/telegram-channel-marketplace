@@ -228,7 +228,7 @@ export const insertListingSchema = z.object({
   isActive: z.boolean().optional(),
 
   channelMode: z.enum(["subscribers","gifts"]).optional().nullable(),
-  subscribers: z.coerce.number().int().min(0).optional().nullable(),
+  subscribersCount: z.coerce.number().int().min(0).optional().nullable(),
   giftsCount: z.coerce.number().int().min(0).optional().nullable(),
   giftKind: z.string().optional().nullable(),
 
