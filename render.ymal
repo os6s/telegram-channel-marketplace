@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: miniapp-web
+    env: node
+    plan: starter
+    region: frankfurt
+    buildCommand: |
+      npm ci
+      npm run db:migrate
+      npm run build:render
+    startCommand: node dist/server/index.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+
+databases:
+  - name: miniapp-db
+    plan: starter
+    region: frankfurt
