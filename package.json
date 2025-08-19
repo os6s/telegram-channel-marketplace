@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "clean": "rimraf dist",
+    "clean": "rm -rf dist",
     "build:client": "vite build",
     "build:server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist/server --sourcemap",
     "build": "npm run build:client && npm run build:server && mkdir -p dist/server/public && cp -r client/dist/* dist/server/public/",
@@ -92,9 +92,6 @@
     "zod": "^3.24.2",
     "zod-validation-error": "^3.4.0",
     "@tailwindcss/typography": "^0.5.16"
-  },
-  "devDependencies": {
-    "rimraf": "^5.0.0"
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
