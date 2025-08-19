@@ -5,11 +5,12 @@
   "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "npm run build:client && npm run build:server",
+    "clean": "rimraf dist",
     "build:client": "vite build",
     "build:server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist/server --sourcemap",
+    "build": "npm run build:client && npm run build:server && mkdir -p dist/server/public && cp -r client/dist/* dist/server/public/",
     "start": "NODE_ENV=production node dist/server/index.js",
-    "build:render": "npm run build && npm run db:migrate",
+    "build:render": "npm run clean && npm run build && npm run db:migrate",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:migrate": "npm run db:generate && npm run db:push",
@@ -91,6 +92,9 @@
     "zod": "^3.24.2",
     "zod-validation-error": "^3.4.0",
     "@tailwindcss/typography": "^0.5.16"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.0"
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
