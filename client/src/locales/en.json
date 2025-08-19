@@ -136,14 +136,14 @@
       "totalReach": "Total Reach"
     },
     "tabs": {
-      "channels": "My Channels",
+      "listings": "My Listings",
       "activity": "Activity"
     },
-    "listingsHeader": "My Channel Listings",
+    "listingsHeader": "My Listings",
     "listChannel": "List Channel",
-    "emptyTitle": "No channels listed yet",
-    "emptyDesc": "Start selling your Telegram channels on the marketplace",
-    "listFirst": "List Your First Channel",
+    "emptyTitle": "No listings yet",
+    "emptyDesc": "Start selling on the marketplace",
+    "listFirst": "List Your First Item",
     "openActivity": "Open Activity Page"
   },
 
@@ -175,5 +175,58 @@
     "GIFT_KIND": "Select a gift kind.",
     "COUNT_MIN": "Count must be at least 1.",
     "TARGET_MISMATCH": "Service type does not match the selected target."
+  },
+
+  "adminPage": {
+    "title": "Admin Panel",
+    "status": "Status",
+    "searchPlaceholder": "Search (order / buyer / seller)",
+    "filters": {
+      "all": "All",
+      "held": "Held",
+      "disputed": "Disputed",
+      "awaitingBuyerConfirm": "Awaiting confirm",
+      "released": "Released",
+      "refunded": "Refunded",
+      "cancelled": "Cancelled"
+    },
+    "orders": {
+      "loading": "Loading…",
+      "noResults": "No results.",
+      "order": "Order #{id}",
+      "orderInfo": "{date} · {amount} {currency} · buyer:{buyer} · seller:{seller}"
+    },
+    "actions": {
+      "release": "Release",
+      "refund": "Refund",
+      "dispute": "Dispute",
+      "approvePayout": "Approve Payout",
+      "markSent": "Mark as Sent"
+    },
+    "chat": {
+      "title": "Dispute chat · #{id}",
+      "noMessages": "No messages.",
+      "loading": "Loading…",
+      "placeholder": "Write a message…",
+      "send": "Send"
+    },
+    "badges": {
+      "held": "Held",
+      "disputed": "Disputed",
+      "awaitingBuyerConfirm": "Awaiting confirm",
+      "released": "Released",
+      "refunded": "Refunded",
+      "cancelled": "Cancelled",
+      "ready": "Ready"
+    },
+    "toast": {
+      "released": "Funds released",
+      "refunded": "Order refunded",
+      "releaseFailed": "Release failed",
+      "refundFailed": "Refund failed",
+      "sendFailed": "Send failed",
+      "loadFailed": "Failed to load orders",
+      "disputeLoadFailed": "Failed to load dispute"
+    }
   }
 }
