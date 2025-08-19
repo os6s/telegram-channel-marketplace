@@ -1,4 +1,3 @@
-// client/src/pages/sell/parts/AccountForm.tsx
 import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/contexts/language-context";
@@ -11,11 +10,11 @@ export default function AccountForm({ form, platform }: { form: any; platform: s
       <FormField
         name="platform"
         control={form.control}
-        render={({ field }) => (
+        render={() => (
           <FormItem>
             <FormLabel>{t("sell.platform")}</FormLabel>
             <FormControl>
-              <Input {...field} readOnly value={platform} className="bg-card text-foreground" />
+              <Input readOnly value={platform} className="bg-card text-foreground" />
             </FormControl>
           </FormItem>
         )}
