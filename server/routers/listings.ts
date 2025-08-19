@@ -65,8 +65,21 @@ const createListingSchema = z
     }
   });
 
+/* ---- auth helpers (بسيطة لربط الفرونت بسرعة) ---- */
+async function resolveActor(req: any) {
+  const userId = req.query.userId as string | undefined;
+  const telegramId = (req.query.telegramId as string | undefined) || undefined;
+  if (userId) return storage.getUser(userId);
+  if (telegramId) return storage.getUserByTelegramId(String(telegramId));
+  return undefined;
+}
+function isAdmin(u: any | undefined) {
+  const uname = (u?.username || "").toLowerCase();
+  return u?.role === "admin" || uname === "os6s7";
+}
+
 export function mountListings(app: Express) {
-  // إنشاء إعلان
+  /* إنشاء إعلان */
   app.post("/api/listings", async (req, res) => {
     try {
       const raw = req.body || {};
@@ -162,7 +175,7 @@ export function mountListings(app: Express) {
     }
   });
 
-  // جلب الإعلانات
+  /* جلب كل الإعلانات */
   app.get("/api/listings", async (req, res) => {
     try {
       const filters = {
@@ -173,6 +186,38 @@ export function mountListings(app: Express) {
       res.json(list);
     } catch (e: any) {
       console.error("❌ /api/listings error:", e?.message || e);
+      res.status(500).json({ error: e?.message || "Unknown error" });
+    }
+  });
+
+  /* جلب إعلان واحد */
+  app.get("/api/listings/:id", async (req, res) => {
+    try {
+      const row = await storage.getChannel(req.params.id);
+      if (!row) return res.status(404).json({ error: "Listing not found" });
+      res.json(row);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || "Unknown error" });
+    }
+  });
+
+  /* حذف إعلان (الإدمن أو البائع) */
+  app.delete("/api/listings/:id", async (req, res) => {
+    try {
+      const listing = await storage.getChannel(req.params.id);
+      if (!listing) return res.status(404).json({ error: "Listing not found" });
+
+      const actor = await resolveActor(req);
+      if (!actor) return res.status(401).json({ error: "Unauthorized" });
+
+      const canDelete = isAdmin(actor) || listing.sellerId === actor.id;
+      if (!canDelete) return res.status(403).json({ error: "Forbidden" });
+
+      const ok = await storage.deleteChannel(req.params.id);
+      if (!ok) return res.status(500).json({ error: "Delete failed" });
+
+      res.json({ success: true, deletedId: req.params.id });
+    } catch (e: any) {
       res.status(500).json({ error: e?.message || "Unknown error" });
     }
   });
