@@ -1,3 +1,4 @@
+// server/routers/listings.ts
 import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
@@ -31,7 +32,8 @@ const createListingSchema = z
     link: z.string().optional(),
     channelUsername: z.string().optional(),
     subscribersCount: zStrOrNum,
-    engagement: z.string().optional(),
+    giftsCount: zStrOrNum,
+    giftKind: z.string().optional(),
 
     // username
     username: z.string().optional(),
@@ -49,7 +51,9 @@ const createListingSchema = z
       z.literal("telegram_group"),
     ]).optional(),
     count: zStrOrNum,
-    title: z.string().optional(), // عنوان اختياري من الفرونت
+
+    // عنوان اختياري من الفرونت
+    title: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     const unifiedUsername =
@@ -62,11 +66,10 @@ const createListingSchema = z
   });
 
 export function mountListings(app: Express) {
+  // إنشاء إعلان
   app.post("/api/listings", async (req, res) => {
     try {
       const raw = req.body || {};
-      console.log("➡️  /api/listings incoming:", raw);
-
       const unifiedUsername =
         raw.kind === "channel"
           ? normUsername(raw.channelUsername || raw.link || raw.username || "")
@@ -74,7 +77,7 @@ export function mountListings(app: Express) {
 
       const parsed = createListingSchema.parse({ ...raw, username: unifiedUsername });
 
-      // resolve seller
+      // حل البائع
       let sellerId = parsed.sellerId;
       if (!sellerId && parsed.telegramId) {
         const u = await storage.getUserByTelegramId(String(parsed.telegramId));
@@ -83,18 +86,18 @@ export function mountListings(app: Express) {
       }
       if (!sellerId) return res.status(400).json({ error: "Missing sellerId" });
 
-      // prevent duplicate username if present
+      // منع التكرار على username إن وجد
       if (unifiedUsername) {
         const dupe = await storage.getChannelByUsername(unifiedUsername);
         if (dupe) return res.status(400).json({ error: "Username already exists" });
       }
 
-      // numeric coercions
-      const subscribers =
+      // تحويلات رقمية
+      const subscribersCount =
         parsed.subscribersCount != null && String(parsed.subscribersCount).trim() !== ""
           ? Number(parsed.subscribersCount) : undefined;
 
-      const followers =
+      const followersCount =
         parsed.followersCount != null && String(parsed.followersCount).trim() !== ""
           ? Number(parsed.followersCount) : undefined;
 
@@ -102,29 +105,25 @@ export function mountListings(app: Express) {
         parsed.count != null && String(parsed.count).trim() !== ""
           ? Number(parsed.count) : undefined;
 
-      // normalize target
-      let target = parsed.target;
+      // تطبيع target
+      let target = parsed.target as any;
       if (target === "telegram_channel" || target === "telegram_group") target = "telegram";
 
-      // اسم الإعلان الموحّد
-      const autoName = (() => {
-        if (parsed.title && parsed.title.trim()) return parsed.title.trim();
-        switch (parsed.kind) {
-          case "channel":  return unifiedUsername ? `قناة: @${unifiedUsername}` : `قناة`;
-          case "username": return unifiedUsername ? `يوزر: ${unifiedUsername}` : `يوزر`;
-          case "account":  return `حساب ${parsed.platform || ""}: ${unifiedUsername ? "@" + unifiedUsername : ""}`.trim();
-          case "service":  return `خدمة: ${serviceCount || ""} ${parsed.serviceType || ""} ${target || ""}`.trim();
-          default:         return `إعلان ${Date.now()}`;
-        }
-      })();
+      // عنوان افتراضي منطقي
+      const title =
+        (parsed.title && parsed.title.trim()) ||
+        (parsed.kind === "channel"   ? (unifiedUsername ? `@${unifiedUsername}` : "Channel")
+        : parsed.kind === "username" ? (unifiedUsername || "Username")
+        : parsed.kind === "account"  ? `${parsed.platform || ""} account`.trim()
+        :                               `${parsed.serviceType || "service"} ${target || ""}`.trim());
 
+      // payload مطابق لجدول listings
       const payload = {
         sellerId,
         kind: parsed.kind,
         platform: parsed.platform ?? "telegram",
-        username: unifiedUsername || `listing_${Date.now()}`,
-        name: autoName, // ← إلزامي للـ DB
-        title: parsed.title ?? null,
+        username: unifiedUsername || null,
+        title,
         description: parsed.description || "",
         price: parsed.price,
         currency: parsed.currency,
@@ -134,14 +133,15 @@ export function mountListings(app: Express) {
 
         // channel
         channelMode: parsed.channelMode,
-        subscribers,
-        engagement: parsed.engagement ?? "0.00",
+        subscribersCount,
+        giftsCount: parsed.giftsCount != null ? Number(parsed.giftsCount) : undefined,
+        giftKind: parsed.giftKind,
 
-        // username
+        // username/account
         tgUserType: parsed.tgUserType,
 
         // account
-        followersCount: followers,
+        followersCount,
         accountCreatedAt: parsed.createdAt,
 
         // service
@@ -151,12 +151,9 @@ export function mountListings(app: Express) {
       };
 
       const listing = await storage.createChannel(payload as any);
-      return res.json({ ok: true, listing });
+      return res.status(201).json(listing);
     } catch (e: any) {
-      console.error("❌ Invalid payload at /api/listings");
-      try { console.error("Body:", JSON.stringify(req.body, null, 2)); } catch {}
-      console.error("Message:", e?.message);
-      if (e?.issues) console.error("Zod issues:", JSON.stringify(e.issues, null, 2));
+      console.error("❌ Invalid payload at /api/listings", e?.message);
       return res.status(400).json({
         error: "Invalid payload",
         message: e?.message || "Validation failed",
@@ -165,6 +162,7 @@ export function mountListings(app: Express) {
     }
   });
 
+  // جلب الإعلانات
   app.get("/api/listings", async (req, res) => {
     try {
       const filters = {
