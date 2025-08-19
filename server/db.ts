@@ -12,19 +12,11 @@ const pool = new Pool({
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 2_000,
 });
-
 pool.on("connect", () => console.log("Connected to PostgreSQL"));
 pool.on("error", (err) => console.error("PostgreSQL connection error:", err));
 
 export const db = drizzle(pool, { schema });
-
-export async function closeDb() {
-  await pool.end();
-}
-
-// helper: فحص unique_violation
+export async function closeDb() { await pool.end(); }
 export function isDbUniqueError(err: any): boolean {
   return !!err && (err.code === "23505" || /unique/i.test(String(err.message)));
 }
-
-
