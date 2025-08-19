@@ -1,9 +1,15 @@
+// server/routers/activities.ts
 import type { Express } from "express";
 import { storage } from "../storage";
 import { insertActivitySchema } from "@shared/schema";
+import { ensureBuyerHasFunds } from "../ton-utils";
 
 /* ========= Telegram notify helper ========= */
-async function sendTelegramMessage(telegramId: string | null | undefined, text: string, replyMarkup?: any) {
+async function sendTelegramMessage(
+  telegramId: string | null | undefined,
+  text: string,
+  replyMarkup?: any
+) {
   const token = process.env.TELEGRAM_BOT_TOKEN; // يجب ضبطه في Render
   if (!token) {
     console.warn("[notify] TELEGRAM_BOT_TOKEN missing – skipping telegram notify");
@@ -27,9 +33,7 @@ async function sendTelegramMessage(telegramId: string | null | undefined, text: 
       }),
     });
     const data = await res.json();
-    if (!data?.ok) {
-      console.warn("[notify] telegram sendMessage failed:", data);
-    }
+    if (!data?.ok) console.warn("[notify] telegram sendMessage failed:", data);
   } catch (e) {
     console.error("[notify] telegram error:", e);
   }
@@ -100,13 +104,30 @@ export function mountActivities(app: Express) {
         }
       }
 
+      // 🔒 منع الشراء بدون رصيد كافٍ (TON فقط حالياً)
+      if (incoming.type === "buy") {
+        const buyer = await storage.getUser(incoming.buyerId);
+        if (!buyer?.tonWallet) {
+          return res.status(400).json({ error: "Buyer wallet not set" });
+        }
+        const priceTON = parseFloat(String(listing.price).replace(",", "."));
+        try {
+          await ensureBuyerHasFunds({ userTonAddress: buyer.tonWallet, amountTON: priceTON });
+        } catch (err: any) {
+          if (err?.code === "INSUFFICIENT_FUNDS") {
+            return res.status(402).json({ error: err.message, details: err.details }); // 402 Payment Required
+          }
+          return res.status(400).json({ error: err?.message || "Balance check failed" });
+        }
+      }
+
       // تحقق نهائي عبر الـ schema
       const activityData = insertActivitySchema.parse(incoming);
 
       // أنشئ الـ Activity (التحقق الإضافي موجود داخل storage.createActivity أيضًا)
       const activity = await storage.createActivity(activityData);
 
-      // إذا كانت عملية شراء "buy" وعلى نوع غير "service" → عطّل الإعلان حتى ما ينشرى مرتين
+      // إذا كانت عملية شراء "buy" وعلى نوع غير "service" → عطّل الإعلان حتى لا يُشترى مرتين
       let listingUpdated: any = null;
       if (activity.type === "buy" && (listing.kind || "") !== "service") {
         if (listing.isActive) {
@@ -153,7 +174,9 @@ export function mountActivities(app: Express) {
             buyer?.username ? `<b>Buyer:</b> @${buyer.username}` : "",
             ``,
             `Please proceed with delivery and communicate in-app if needed.`,
-          ].filter(Boolean).join("\n")
+          ]
+            .filter(Boolean)
+            .join("\n")
         );
       }
 
