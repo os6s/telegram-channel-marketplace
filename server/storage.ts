@@ -4,12 +4,18 @@ import {
   users,
   listings,
   activities,
+  payments,
+  payouts,
   type User,
   type InsertUser,
   type Listing as Channel,            // نستخدم Listing كـ Channel
   type InsertListing as InsertChannel, // و InsertListing كـ InsertChannel
   type Activity,
   type InsertActivity,
+  type Payment,
+  type InsertPayment,
+  type Payout,
+  type InsertPayout,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
@@ -43,6 +49,19 @@ export interface IStorage {
   createActivity(activity: InsertActivity): Promise<Activity>;
   updateActivity(id: string, updates: Partial<Activity>): Promise<Activity | undefined>;
 
+  // payments (escrow)
+  getPayment(id: string): Promise<Payment | undefined>;
+  listPaymentsByBuyer(buyerId: string): Promise<Payment[]>;
+  listPaymentsByListing(listingId: string): Promise<Payment[]>;
+  createPayment(data: InsertPayment): Promise<Payment>;
+  updatePayment(id: string, updates: Partial<Payment>): Promise<Payment | undefined>;
+
+  // payouts
+  getPayout(id: string): Promise<Payout | undefined>;
+  listPayoutsBySeller(sellerId: string): Promise<Payout[]>;
+  createPayout(data: InsertPayout): Promise<Payout>;
+  updatePayout(id: string, updates: Partial<Payout>): Promise<Payout | undefined>;
+
   // stats
   getMarketplaceStats(): Promise<{ activeListings: number; totalVolume: string; totalSales: number }>;
 }
@@ -52,6 +71,8 @@ export class MemStorage implements IStorage {
   private _users = new Map<string, User>();
   private _listings = new Map<string, Channel>();
   private _acts = new Map<string, Activity>();
+  private _pays = new Map<string, Payment>();
+  private _pouts = new Map<string, Payout>();
 
   // users
   async getUser(id: string) { return this._users.get(id); }
@@ -128,6 +149,54 @@ export class MemStorage implements IStorage {
     const cur = this._acts.get(id); if (!cur) return undefined;
     const next = { ...cur, ...updates }; this._acts.set(id, next); return next;
   }
+
+  // payments
+  async getPayment(id: string) { return this._pays.get(id); }
+  async listPaymentsByBuyer(buyerId: string) {
+    return Array.from(this._pays.values()).filter((p) => p.buyerId === buyerId);
+  }
+  async listPaymentsByListing(listingId: string) {
+    return Array.from(this._pays.values()).filter((p) => p.listingId === listingId);
+  }
+  async createPayment(data: InsertPayment) {
+    const id = randomUUID();
+    const now = new Date() as any;
+    const pay: Payment = {
+      id,
+      createdAt: now,
+      status: "pending",
+      feeAmount: "0" as any,      // احسبها في الراوتر قبل الإدخال
+      sellerAmount: "0" as any,   // احسبها في الراوتر قبل الإدخال
+      buyerConfirmed: false as any,
+      sellerConfirmed: false as any,
+      adminAction: "none" as any,
+      ...data,
+    } as any;
+    this._pays.set(id, pay);
+    return pay;
+  }
+  async updatePayment(id: string, updates: Partial<Payment>) {
+    const cur = this._pays.get(id); if (!cur) return undefined;
+    const next = { ...cur, ...updates } as Payment;
+    this._pays.set(id, next); return next;
+  }
+
+  // payouts
+  async getPayout(id: string) { return this._pouts.get(id); }
+  async listPayoutsBySeller(sellerId: string) {
+    return Array.from(this._pouts.values()).filter((p) => p.sellerId === sellerId);
+  }
+  async createPayout(data: InsertPayout) {
+    const id = randomUUID();
+    const p: Payout = { id, status: "queued" as any, createdAt: new Date() as any, ...data } as any;
+    this._pouts.set(id, p); return p;
+  }
+  async updatePayout(id: string, updates: Partial<Payout>) {
+    const cur = this._pouts.get(id); if (!cur) return undefined;
+    const next = { ...cur, ...updates } as Payout;
+    this._pouts.set(id, next); return next;
+  }
+
   async getMarketplaceStats() {
     const active = Array.from(this._listings.values()).filter((c: any) => c.isActive).length;
     const completed = Array.from(this._acts.values()).filter((a) => a.status === "completed");
@@ -177,7 +246,7 @@ class PostgreSQLStorage implements IStorage {
     const conds: any[] = [eq(listings.isActive, true)];
 
     if (filters.sellerId) conds.push(eq(listings.sellerId, filters.sellerId));
-    if (filters.category) conds.push(eq((listings as any).category, filters.category)); // إن وُجدت
+    if (filters.category) conds.push(eq((listings as any).category, filters.category));
 
     if (filters.search) {
       const s = `%${filters.search}%`;
@@ -195,7 +264,6 @@ class PostgreSQLStorage implements IStorage {
     }
 
     if (filters.maxPrice) {
-      // لو price نص: حوّل إلى numeric للمقارنة
       conds.push(sql`(${listings.price})::numeric <= ${Number(filters.maxPrice)}`);
     }
 
@@ -256,6 +324,46 @@ class PostgreSQLStorage implements IStorage {
   async updateActivity(id: string, updates: Partial<Activity>) {
     const rows = await db.update(activities).set(updates).where(eq(activities.id, id)).returning();
     return rows[0];
+  }
+
+  /* payments */
+  async getPayment(id: string) {
+    const rows = await db.select().from(payments).where(eq(payments.id, id)).limit(1);
+    return rows[0];
+  }
+  async listPaymentsByBuyer(buyerId: string) {
+    const rows = await db.select().from(payments).where(eq(payments.buyerId, buyerId)).orderBy(desc(payments.createdAt));
+    return rows as Payment[];
+  }
+  async listPaymentsByListing(listingId: string) {
+    const rows = await db.select().from(payments).where(eq(payments.listingId, listingId)).orderBy(desc(payments.createdAt));
+    return rows as Payment[];
+  }
+  async createPayment(data: InsertPayment) {
+    const rows = await db.insert(payments).values(data as any).returning();
+    return rows[0] as Payment;
+  }
+  async updatePayment(id: string, updates: Partial<Payment>) {
+    const rows = await db.update(payments).set(updates as any).where(eq(payments.id, id)).returning();
+    return rows[0] as Payment;
+  }
+
+  /* payouts */
+  async getPayout(id: string) {
+    const rows = await db.select().from(payouts).where(eq(payouts.id, id)).limit(1);
+    return rows[0];
+  }
+  async listPayoutsBySeller(sellerId: string) {
+    const rows = await db.select().from(payouts).where(eq(payouts.sellerId, sellerId)).orderBy(desc(payouts.createdAt));
+    return rows as Payout[];
+  }
+  async createPayout(data: InsertPayout) {
+    const rows = await db.insert(payouts).values(data as any).returning();
+    return rows[0] as Payout;
+  }
+  async updatePayout(id: string, updates: Partial<Payout>) {
+    const rows = await db.update(payouts).set(updates as any).where(eq(payouts.id, id)).returning();
+    return rows[0] as Payout;
   }
 
   async getMarketplaceStats() {
