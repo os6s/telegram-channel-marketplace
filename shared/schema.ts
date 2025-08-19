@@ -15,22 +15,23 @@ export const serviceTypeEnum = pgEnum("service_type", ["followers","members","bo
 /* Users */
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
-  telegramId: varchar("telegram_id", { length: 64 }).notNull().unique(),
+  telegramId: varchar("telegram_id", { length: 64 }).unique(),
   username: varchar("username", { length: 64 }),
   firstName: varchar("first_name", { length: 128 }),
   lastName: varchar("last_name", { length: 128 }),
   tonWallet: varchar("ton_wallet", { length: 128 }),
+  role: varchar("role", { length: 32 }).default("user"),
   createdAt: timestamp("created_at", { withTimezone: false }).defaultNow().notNull(),
 });
 
-/* Channels = unified listings */
+/* Channels/Listings */
 export const channels = pgTable("channels", {
   id: uuid("id").defaultRandom().primaryKey(),
   sellerId: uuid("seller_id").notNull().references(() => users.id),
 
   kind: kindEnum("kind").notNull().default("channel"),
   platform: platformEnum("platform"),
-  name: varchar("name", { length: 256 }).notNull(),      // ← صار إلزامي
+  name: varchar("name", { length: 256 }).notNull(),
   username: varchar("username", { length: 64 }).unique(),
   title: varchar("title", { length: 256 }),
   description: text("description"),
@@ -42,12 +43,12 @@ export const channels = pgTable("channels", {
   avatarUrl: text("avatar_url"),
 
   channelMode: channelModeEnum("channel_mode"),
-  subscribers: integer("subscribers").default(0),
-  engagement: varchar("engagement", { length: 32 }).default("0.00"),
+  subscribers: integer("subscribers"),
+  engagement: varchar("engagement", { length: 64 }),
   giftsCount: integer("gifts_count"),
-  giftKind: varchar("gift_kind", { length: 32 }),
+  giftKind: varchar("gift_kind", { length: 64 }),
 
-  tgUserType: varchar("tg_user_type", { length: 32 }),
+  tgUserType: varchar("tg_user_type", { length: 64 }),
 
   followersCount: integer("followers_count"),
   accountCreatedAt: varchar("account_created_at", { length: 64 }),
@@ -101,22 +102,16 @@ const priceRe = /^\d+(\.\d{1,9})?$/;
 const yyyyMmRe = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 export const insertUserSchema = createInsertSchema(users, {
-  telegramId: z.string().min(1),
+  telegramId: z.string().optional().nullable(),
   username: z.string().optional().nullable(),
   firstName: z.string().optional().nullable(),
   lastName: z.string().optional().nullable(),
   tonWallet: z.string().optional().nullable(),
+  role: z.string().optional(),
 }).strict();
 
 export const insertChannelSchema = createInsertSchema(channels, {
-  sellerId: z.string().uuid(),
-  kind: z.enum(["channel","username","account","service"]),
-  platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional(),
-  name: z.string().min(1),                                 // ← إلزامي
-  username: z.string().optional(),
-  title: z.string().optional().nullable(),
-  description: z.string().optional().nullable(),
-  category: z.string().optional().nullable(),
+  name: z.string().min(1),
   price: z.string().regex(priceRe, "invalid price"),
   currency: z.enum(["TON","USDT"]).default("TON"),
   isVerified: z.boolean().optional(),
@@ -138,3 +133,12 @@ export const insertChannelSchema = createInsertSchema(channels, {
   target: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional().nullable(),
   serviceCount: z.coerce.number().int().min(0).optional().nullable(),
 }).strict();
+
+/* Zod (insert) - Activity */
+export const insertActivitySchema = z.object({
+  channelId: z.string().uuid(),
+  buyerId: z.string().uuid(),
+  amount: z.string().regex(/^\d+(\.\d{1,9})?$/),
+  currency: z.enum(["TON","USDT"]).default("TON"),
+  transactionHash: z.string().optional().nullable(),
+});
