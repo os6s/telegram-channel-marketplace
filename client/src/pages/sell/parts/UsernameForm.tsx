@@ -11,8 +11,7 @@ export default function UsernameForm({
   platform: string;
 }) {
   const { t } = useLanguage();
-  const selectCls =
-    "w-full rounded-md border px-3 py-2 bg-card text-foreground";
+  const selectCls = "w-full rounded-md border px-3 py-2 bg-background text-foreground";
 
   return (
     <>
@@ -23,7 +22,7 @@ export default function UsernameForm({
           <FormItem>
             <FormLabel>{t("sell.platform")}</FormLabel>
             <FormControl>
-              <Input {...field} readOnly value={platform} className="bg-card" />
+              <Input {...field} readOnly value={platform} className="bg-background text-foreground" />
             </FormControl>
           </FormItem>
         )}
@@ -36,11 +35,7 @@ export default function UsernameForm({
           <FormItem>
             <FormLabel>{t("sell.usernameLabel")}</FormLabel>
             <FormControl>
-              <Input
-                {...field}
-                placeholder="username"
-                className="bg-card"
-              />
+              <Input {...field} placeholder="username" className="bg-background text-foreground" />
             </FormControl>
             <FormMessage />
           </FormItem>
