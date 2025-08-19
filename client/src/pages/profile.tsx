@@ -1,5 +1,5 @@
 // client/src/pages/profile.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,36 +9,29 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Edit3, Wallet, Plus, Settings, Users, DollarSign, MessageSquare, X } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { WalletConnect } from "@/components/wallet-connect";
-import { ChannelCard } from "@/components/channel-card";
 import { SettingsModal } from "@/components/settings-modal";
 import { telegramWebApp } from "@/lib/telegram";
 import { useTon, type TonWallet } from "@/lib/ton-connect";
-import { type Channel, type User } from "@shared/schema";
+import { type Listing as Channel, type User, type Activity } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
 import { ActivityTimeline, type ActivityEvent } from "@/components/activity-timeline";
-import { MockChat } from "@/components/chat/mock-chat";
+import { ListingCard } from "@/components/listing-card"; // ← استخدم الكارد الجديدة المتوافقة مع listings
 
-// Mock orders store
-import {
-  listOrdersForUser,
-  listAllOrders,
-  seedOrdersFor,
-  buyerConfirmReceived,
-  type Order,
-} from "@/store/mock-orders";
+/* helpers آمنة */
+const S = (v: unknown) => (typeof v === "string" ? v : "");
+const initialFrom = (v: unknown) => {
+  const s = S(v);
+  return s ? s[0].toUpperCase() : "U";
+};
+const N = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
 
 export default function Profile() {
   const [connectedWallet, setConnectedWallet] = useState<TonWallet | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-
-  // Chat dialog
   const [chatOpen, setChatOpen] = useState(false);
-  const [selected, setSelected] = useState<Order | null>(null);
-
-  // Orders state
-  const [myOrders, setMyOrders] = useState<Order[]>([]);
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -46,9 +39,62 @@ export default function Profile() {
   const { wallet, getBalance } = useTon();
 
   const telegramUser = telegramWebApp.user;
-  const userId = telegramUser?.id.toString() || "temp-user-id";
+  const telegramId = telegramUser?.id ? String(telegramUser.id) : undefined;
 
-  // Wallet connect
+  /* تحميل/إنشاء المستخدم الحقيقي */
+  const { data: user } = useQuery({
+    enabled: !!telegramId,
+    queryKey: ["user/by-telegram", telegramId],
+    queryFn: async () => {
+      // جرّب مسار REST موجود عندك. عدّله إذا مسارك مختلف.
+      const r = await fetch(`/api/users/by-telegram/${telegramId}`);
+      if (r.ok) return (await r.json()) as User;
+
+      // إنشاء سريع إذا غير موجود
+      const created = await apiRequest("POST", "/api/users", {
+        telegramId,
+        username: telegramUser?.username,
+        firstName: telegramUser?.first_name,
+        lastName: telegramUser?.last_name,
+      });
+      return created as User;
+    },
+  });
+
+  /* Listings الخاصة بالمستخدم */
+  const { data: myListings = [], isLoading: listingsLoading } = useQuery({
+    enabled: !!user?.id,
+    queryKey: ["listings/by-seller", user?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/listings?sellerId=${user!.id}`);
+      if (!res.ok) throw new Error("Failed to fetch listings");
+      return (await res.json()) as Channel[];
+    },
+  });
+
+  /* Activities الحقيقية */
+  const { data: myActivities = [] } = useQuery({
+    enabled: !!user?.id,
+    queryKey: ["activities/by-user", user?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/activities?userId=${user!.id}`);
+      if (!res.ok) return [] as Activity[];
+      return (await res.json()) as Activity[];
+    },
+  });
+
+  /* Wallet connect وتحديثه على المستخدم */
+  const updateWalletMutation = useMutation({
+    mutationFn: async (walletAddress: string) => {
+      const res = await apiRequest("PATCH", `/api/users/${user!.id}`, { tonWallet: walletAddress });
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user/by-telegram", telegramId] });
+      toast({ title: t("wallet.connected") });
+    },
+  });
+
   useEffect(() => {
     (async () => {
       if (wallet?.address) {
@@ -61,86 +107,55 @@ export default function Profile() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wallet?.address]);
-
-  // Seed + load orders
-  useEffect(() => {
-    seedOrdersFor(userId);
-    const mine = listOrdersForUser(userId);
-    setMyOrders(mine.length ? mine : listAllOrders());
-  }, [userId]);
-
-  const { data: user } = useQuery({
-    queryKey: ["/api/users", userId],
-    queryFn: async () => {
-      try {
-        const res = await fetch(`/api/users/${userId}`);
-        if (res.ok) return (await res.json()) as User;
-        if (telegramUser) {
-          const created = await apiRequest("POST", "/api/users", {
-            telegramId: telegramUser.id.toString(),
-            username: telegramUser.username,
-            firstName: telegramUser.first_name,
-            lastName: telegramUser.last_name,
-            tonWallet: connectedWallet?.address ?? undefined,
-          });
-          return created as User;
-        }
-      } catch {}
-      return null;
-    },
-  });
-
-  const { data: userChannels = [], isLoading: channelsLoading } = useQuery({
-    queryKey: ["/api/channels", "user", userId],
-    queryFn: async () => {
-      const res = await fetch(`/api/channels?sellerId=${userId}`);
-      if (!res.ok) throw new Error("Failed to fetch user channels");
-      return (await res.json()) as Channel[];
-    },
-  });
-
-  const updateWalletMutation = useMutation({
-    mutationFn: async (walletAddress: string) => {
-      const res = await apiRequest("PATCH", `/api/users/${userId}`, { tonWallet: walletAddress });
-      return res;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users", userId] });
-      toast({ title: t("wallet.connected") });
-    },
-  });
+  }, [wallet?.address, user?.id]);
 
   const handleWalletConnect = (w: TonWallet) => {
     setConnectedWallet(w);
     if (user && user.tonWallet !== w.address) updateWalletMutation.mutate(w.address);
   };
 
-  const handleViewDetails = (channel: Channel) => console.log("View channel details:", channel.id);
-  const handleEditChannel = (channel: Channel) => console.log("Edit channel:", channel.id);
   const handleBack = () => window.history.back();
 
-  const stats = (() => {
-    const activeChannels = userChannels.filter((c) => c.isActive).length;
-    const totalValue = userChannels.filter(c => c.isActive).reduce((s, c) => s + parseFloat(c.price), 0);
-    const totalSubscribers = userChannels.filter(c => c.isActive).reduce((s, c) => s + c.subscribers, 0);
-    return { activeChannels, totalValue: totalValue.toFixed(2), totalSubscribers };
-  })();
+  /* إحصاءات */
+  const stats = useMemo(() => {
+    const active = myListings.filter((l) => l.isActive);
+    const activeCount = active.length;
+    const totalValue = active.reduce((s, l) => s + Number(String(l.price).replace(",", ".")), 0);
+    // reach للقنوات فقط
+    const totalSubs = active
+      .filter((l) => l.kind === "channel")
+      .reduce((s, l) => s + N((l as any).subscribersCount), 0);
+    return { activeCount, totalValue: totalValue.toFixed(2), totalSubs };
+  }, [myListings]);
 
-  const sellerActivity: ActivityEvent[] = [
-    { id: "e1", type: "LISTED", title: "You listed @mychannel", subtitle: "Price: 120 TON", createdAt: new Date().toISOString() },
-    { id: "e2", type: "UPDATED", title: "Updated @mychannel", subtitle: "Price changed to 150 TON", createdAt: new Date(Date.now() - 3600_000).toISOString() },
-    { id: "e3", type: "SOLD", title: "You sold @oldgroup", subtitle: "for 300 TON", createdAt: new Date(Date.now() - 4 * 3600_000).toISOString() },
-  ];
+  /* Activity timeline عرض بسيط */
+  const sellerActivity: ActivityEvent[] = useMemo(() => {
+    return myActivities
+      .slice(0, 20)
+      .map((a) => ({
+        id: a.id,
+        type:
+          a.type === "buy" ? "SOLD"
+          : a.type === "confirm" ? "RELEASED"
+          : a.type === "cancel" ? "CANCELLED"
+          : "UPDATED",
+        title:
+          a.type === "buy" ? "Order paid to escrow"
+          : a.type === "confirm" ? "Buyer confirmed. Payout queued"
+          : a.type === "cancel" ? "Order cancelled"
+          : "Activity",
+        subtitle: `${S(a.currency) || "TON"} ${S(a.amount) || ""}`.trim(),
+        createdAt: (a.createdAt as any) ?? new Date().toISOString(),
+      }));
+  }, [myActivities]);
 
-  const isAdmin = user?.role === "admin";
-
+  /* رندرة */
   return (
     <div className="min-h-screen bg-background">
       <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="px-4 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-3">
               <Button variant="ghost" size="sm" onClick={handleBack}><ArrowLeft className="w-4 h-4" /></Button>
               <div>
                 <h1 className="text-lg font-semibold text-foreground">{t("profilePage.title")}</h1>
@@ -157,19 +172,19 @@ export default function Profile() {
       <div className="px-4 py-6 space-y-6">
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-4">
               <Avatar className="w-16 h-16">
                 <AvatarImage src={telegramUser?.photo_url} />
                 <AvatarFallback className="bg-telegram-500 text-white text-xl">
-                  {telegramUser?.first_name?.charAt(0) || "U"}
+                  {initialFrom(telegramUser?.first_name)}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
                 <h2 className="text-xl font-semibold text-foreground">
-                  {telegramUser?.first_name} {telegramUser?.last_name}
+                  {S(telegramUser?.first_name)} {S(telegramUser?.last_name)}
                 </h2>
                 {telegramUser?.username && <p className="text-muted-foreground">@{telegramUser.username}</p>}
-                <div className="flex items-center space-x-2 mt-2">
+                <div className="flex items-center gap-2 mt-2">
                   {telegramUser?.is_premium && (
                     <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">⭐</Badge>
                   )}
@@ -182,7 +197,7 @@ export default function Profile() {
 
             <div className="mt-4 pt-4 border-t border-border">
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <Wallet className="w-5 h-5 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">{t("profilePage.tonWallet")}</span>
                 </div>
@@ -201,7 +216,7 @@ export default function Profile() {
           <Card>
             <CardContent className="p-4 text-center">
               <div className="flex items-center justify-center mb-2"><Plus className="w-5 h-5 text-telegram-500" /></div>
-              <div className="text-2xl font-bold text-foreground">{stats.activeChannels}</div>
+              <div className="text-2xl font-bold text-foreground">{stats.activeCount}</div>
               <div className="text-sm text-muted-foreground">Active listings</div>
             </CardContent>
           </Card>
@@ -216,7 +231,7 @@ export default function Profile() {
             <CardContent className="p-4 text-center">
               <div className="flex items-center justify-center mb-2"><Users className="w-5 h-5 text-blue-500" /></div>
               <div className="text-2xl font-bold text-foreground">
-                {stats.totalSubscribers > 1000 ? `${(stats.totalSubscribers / 1000).toFixed(1)}K` : stats.totalSubscribers}
+                {stats.totalSubs > 1000 ? `${(stats.totalSubs / 1000).toFixed(1)}K` : stats.totalSubs}
               </div>
               <div className="text-sm text-muted-foreground">Total reach</div>
             </CardContent>
@@ -229,7 +244,6 @@ export default function Profile() {
             <TabsTrigger value="activity">{t("profilePage.tabs.activity")}</TabsTrigger>
           </TabsList>
 
-          {/* My Listings بدل My Channels */}
           <TabsContent value="listings" className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-foreground">My Listings</h3>
@@ -239,25 +253,23 @@ export default function Profile() {
               </Button>
             </div>
 
-            {channelsLoading ? (
+            {listingsLoading ? (
               <div className="text-center py-8">
                 <div className="animate-pulse space-y-4">
                   {[...Array(2)].map((_, i) => (
-                    <Card key={i}>
-                      <CardContent className="p-4">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-12 h-12 bg-muted rounded-full"></div>
-                          <div className="flex-1 space-y-2">
-                            <div className="h-4 bg-muted rounded w-1/3"></div>
-                            <div className="h-3 bg-muted rounded w-1/4"></div>
-                          </div>
+                    <Card key={i}><CardContent className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-muted rounded-full"></div>
+                        <div className="flex-1 space-y-2">
+                          <div className="h-4 bg-muted rounded w-1/3"></div>
+                          <div className="h-3 bg-muted rounded w-1/4"></div>
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </CardContent></Card>
                   ))}
                 </div>
               </div>
-            ) : userChannels.length === 0 ? (
+            ) : myListings.length === 0 ? (
               <Card>
                 <CardContent className="p-8 text-center">
                   <div className="text-muted-foreground text-6xl mb-4">📺</div>
@@ -271,11 +283,16 @@ export default function Profile() {
               </Card>
             ) : (
               <div className="space-y-4">
-                {userChannels.map((channel) => (
-                  <div key={channel.id} className="relative">
-                    <ChannelCard channel={channel} onViewDetails={handleViewDetails} onBuyNow={handleEditChannel} />
+                {myListings.map((l) => (
+                  <div key={l.id} className="relative">
+                    <ListingCard
+                      listing={l}
+                      onViewDetails={() => {}}
+                      onBuyNow={() => {}}
+                      currentUser={{ username: telegramUser?.username }}
+                    />
                     <div className="absolute top-4 right-4">
-                      <Button variant="ghost" size="sm" onClick={() => handleEditChannel(channel)}>
+                      <Button variant="ghost" size="sm" onClick={() => { /* TODO: edit flow */ }}>
                         <Edit3 className="w-4 h-4" />
                       </Button>
                     </div>
@@ -286,87 +303,45 @@ export default function Profile() {
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-4">
-            {!isAdmin ? (
-              <>
-                {/* My Orders (Buyer/Seller) */}
-                <Card>
-                  <CardContent className="p-4 space-y-3">
-                    <div className="text-sm font-semibold flex items-center gap-2">
-                      <MessageSquare className="w-4 h-4" />
-                      My Orders (chat / dispute)
-                    </div>
-                    {myOrders.map(o => (
-                      <div key={o.id} className="border rounded p-3 flex items-center justify-between">
-                        <div>
-                          <div className="text-sm font-medium">Order #{o.id} · {o.amount} {o.currency}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {new Date(o.createdAt).toLocaleString()} · status: {o.status} ·
-                            {" "}buyer:{o.buyer.id === userId ? "You" : (o.buyer.name || o.buyer.id)}
-                            {" "}· seller:{o.seller.id === userId ? "You" : (o.seller.name || o.seller.id)}
-                          </div>
-                        </div>
-                        <Button size="sm" onClick={() => { setSelected(o); setChatOpen(true); }}>
-                          Open chat {o.thread?.length ? `(${o.thread.length})` : ""}
-                        </Button>
-                      </div>
-                    ))}
-                    {myOrders.length === 0 && (
-                      <div className="text-sm text-muted-foreground">No orders yet.</div>
-                    )}
-                  </CardContent>
-                </Card>
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <div className="text-sm font-semibold flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  My Activity
+                </div>
 
-                {/* Seller activity timeline */}
-                <ActivityTimeline
-                  events={sellerActivity}
-                  emptyText={t("activityPage.empty") || "No seller activity yet"}
-                />
-              </>
-            ) : (
-              <Card>
-                <CardContent className="p-6 text-sm">
-                  أنت أدمن. استخدم صفحة <a href="/admin" className="underline">Admin</a> لإدارة النزاعات والدفع.
-                </CardContent>
-              </Card>
-            )}
+                {myActivities.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">{t("activityPage.empty") || "No activity yet."}</div>
+                ) : (
+                  <ActivityTimeline
+                    events={sellerActivity}
+                    emptyText={t("activityPage.empty") || "No activity yet"}
+                  />
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
 
-      {/* Chat/Dialog */}
+      {/* Dialog مبسّط لعرض activity لاحقًا */}
       <Dialog.Root open={chatOpen} onOpenChange={setChatOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/40" />
           <Dialog.Content className="fixed left-1/2 top-1/2 w-[96vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-0 shadow-lg">
-            {selected && (
+            {selectedActivity && (
               <>
-                {/* Header مع زر إغلاق وزر تأكيد استلام عند المشتري */}
                 <div className="flex items-center justify-between px-3 py-2 border-b">
-                  <div className="text-sm font-semibold">Chat · #{selected.id}</div>
+                  <div className="text-sm font-semibold">Activity · #{selectedActivity.id}</div>
                   <div className="flex items-center gap-2">
-                    {(selected.buyer.id === userId) && selected.status === "awaiting_buyer_confirm" && (
-                      <Button
-                        size="sm"
-                        className="bg-emerald-600 hover:bg-emerald-700"
-                        onClick={() => {
-                          buyerConfirmReceived(selected.id, selected.buyer.id);
-                          toast({ title: "Confirmed", description: "Receipt confirmed. Funds will be released." });
-                          setChatOpen(false);
-                        }}
-                      >
-                        تأكيد استلام الطلب
-                      </Button>
-                    )}
                     <Button variant="ghost" size="icon" onClick={() => setChatOpen(false)}>
                       <X className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
-
-                <MockChat
-                  order={selected}
-                  me={isAdmin ? "admin" : (selected.buyer.id === userId ? "buyer" : "seller")}
-                />
+                <div className="p-4 text-sm">
+                  {/* تفاصيل إضافية للنشاط */}
+                </div>
               </>
             )}
           </Dialog.Content>
