@@ -1,7 +1,7 @@
 // server/routers/channels.ts
 import type { Express } from "express";
 import { storage } from "../storage";
-import { insertChannelSchema } from "@shared/schema";
+import { insertListingSchema } from "@shared/schema";
 import { normalizeUsername } from "../utils/normalize";
 
 export function mountChannels(app: Express) {
