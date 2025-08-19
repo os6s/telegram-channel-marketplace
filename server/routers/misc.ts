@@ -10,7 +10,6 @@ function baseUrl(req: any) {
 export function mountMisc(app: Express) {
   app.set("trust proxy", 1);
 
-  // Health check
   app.get("/healthz", (_req, res) => {
     res.status(200).json({
       status: "ok",
@@ -20,12 +19,10 @@ export function mountMisc(app: Express) {
     });
   });
 
-  // Redirect للبوت
   app.get("/redirect-to-bot", (_req, res) => {
     res.redirect(302, "https://t.me/giftspremarketbot");
   });
 
-  // Setup webhook
   app.post("/setup-webhook", async (req, res) => {
     try {
       const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -36,22 +33,18 @@ export function mountMisc(app: Express) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: webhookUrl }),
       });
-      const data = await r.json();
-      res.json({ ok: true, webhook_url: webhookUrl, telegram: data });
+      res.json({ ok: true, webhook_url: webhookUrl, telegram: await r.json() });
     } catch (e: any) {
       res.status(500).json({ error: e?.message || "Failed to setup webhook" });
     }
   });
 
-  // static frontend serving
-  const clientDist = path.join(process.cwd(), "dist", "client");
+  // ✅ المسار الصحيح لملفات الواجهة
+  const clientDist = path.join(process.cwd(), "client", "dist");
   app.use(express.static(clientDist));
 
-  // fallback → يخلي React/Vue Router يشتغل
   app.get("*", (req, res) => {
-    if (req.path.startsWith("/api/") || req.path.startsWith("/webhook/")) {
-      return res.status(404).end();
-    }
+    if (req.path.startsWith("/api/") || req.path.startsWith("/webhook/")) return res.status(404).end();
     res.sendFile(path.join(clientDist, "index.html"));
   });
 }
