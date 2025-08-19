@@ -22,11 +22,9 @@ export function log(message: string, source = "express") {
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = { middlewareMode: true, hmr: { server }, allowedHosts: true as const };
 
-  // حل: حمّل إعدادات فيت لو كانت دالة
   const baseConfig =
     typeof rawViteConfig === "function"
-      ? // نمرر mode=development لأن setupVite يستخدم أثناء dev
-        (rawViteConfig as any)({ mode: "development", command: "serve" })
+      ? (rawViteConfig as any)({ mode: "development", command: "serve" })
       : rawViteConfig;
 
   const vite = await createViteServer({
@@ -48,7 +46,7 @@ export async function setupVite(app: Express, server: Server) {
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
     try {
-      const clientTemplate = path.resolve(import.meta.dirname, "..", "client", "index.html");
+      const clientTemplate = path.resolve(process.cwd(), "client", "index.html");
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(`src="/src/main.tsx"`, `src="/src/main.tsx?v=${nanoid()}"`);
       const page = await vite.transformIndexHtml(url, template);
@@ -61,8 +59,8 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  // عند التشغيل من dist، import.meta.dirname === dist/
-  const distPath = path.resolve(import.meta.dirname, "public");
+  // 👇 نعدل هنا
+  const distPath = path.resolve(process.cwd(), "dist", "public");
 
   if (!fs.existsSync(distPath)) {
     throw new Error(`Could not find the build directory: ${distPath}, make sure to build the client first`);
@@ -70,7 +68,6 @@ export function serveStatic(app: Express) {
 
   app.use(express.static(distPath));
 
-  // SPA history fallback
   app.use("*", (_req, res) => {
     res.sendFile(path.resolve(distPath, "index.html"));
   });
