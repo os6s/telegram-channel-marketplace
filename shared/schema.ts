@@ -287,6 +287,15 @@ export const insertActivitySchema = z.object({
   note: z.string().optional().nullable(),
 });
 
+export const insertDisputeSchema = z.object({
+  paymentId: z.string().uuid(),
+  buyerId: z.string().uuid(),
+  sellerId: z.string().uuid(),
+  reason: z.string().optional().nullable(),
+  evidence: z.string().optional().nullable(),
+  status: z.enum(["open","reviewing","resolved","cancelled"]).optional().default("open"),
+});
+
 export const insertMessageSchema = z.object({
   disputeId: z.string().uuid(),
   senderId: z.string().uuid(),
