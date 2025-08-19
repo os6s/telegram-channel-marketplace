@@ -5,7 +5,7 @@ export async function bootstrapUser(): Promise<string | null> {
   const tg = telegramWebApp?.user;
   if (!tg?.id) return null;
 
-  // جرّب تجيب الموجود
+  // حاول تجيب الموجود
   try {
     const r = await fetch(`/api/users?telegramId=${tg.id}`, { credentials: "include" });
     if (r.ok) {
