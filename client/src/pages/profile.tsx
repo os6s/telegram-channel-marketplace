@@ -17,7 +17,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
 import { ActivityTimeline, type ActivityEvent } from "@/components/activity-timeline";
-import { ListingCard } from "@/components/listing-card"; // ← استخدم الكارد الجديدة المتوافقة مع listings
+import { ListingCard } from "@/components/ListingCard"; // ← استخدم الكارد الجديدة المتوافقة مع listings
 
 /* helpers آمنة */
 const S = (v: unknown) => (typeof v === "string" ? v : "");
