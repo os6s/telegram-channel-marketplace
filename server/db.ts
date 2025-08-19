@@ -22,3 +22,9 @@ export async function closeDb() {
   await pool.end();
 }
 
+// helper: فحص unique_violation
+export function isDbUniqueError(err: any): boolean {
+  return !!err && (err.code === "23505" || /unique/i.test(String(err.message)));
+}
+
+
