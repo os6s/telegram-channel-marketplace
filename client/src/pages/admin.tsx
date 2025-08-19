@@ -6,31 +6,33 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { X, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { MockChat } from "@/components/chat/mock-chat";
 import { apiRequest } from "@/lib/queryClient";
 
 /* -------- Types aligned with backend -------- */
 type AdminOrderStatus =
-  | "held"                    // الأموال محتجزة بالإسكرو
-  | "awaiting_buyer_confirm"  // ننتظر تأكيد المشتري
-  | "disputed"                // نزاع مفتوح
-  | "released"                // أُفرجت للبائع
-  | "refunded"                // رُدّت للمشتري
-  | "cancelled";              // أُلغيت
+  | "held"
+  | "awaiting_buyer_confirm"
+  | "disputed"
+  | "released"
+  | "refunded"
+  | "cancelled";
+
+type AdminUserRef = { id: string; username?: string | null; name?: string | null };
 
 type AdminOrder = {
-  id: string;               // paymentId أو orderId حسب الباك
+  id: string;               // paymentId
   listingId: string;
   createdAt: string;
   amount: string;
   currency: "TON" | "USDT";
   status: AdminOrderStatus;
-  buyer: { id: string; username?: string | null; name?: string | null };
-  seller: { id: string; username?: string | null; name?: string | null };
-  // اختياري:
-  unlockAt?: string | null; // إن كان في تايمر (24h)
-  thread?: { role: "buyer"|"seller"|"admin"; text: string; at: string; author?: {id:string;name?:string} }[];
+  buyer: AdminUserRef;
+  seller: AdminUserRef;
+  unlockAt?: string | null;
+  disputeId?: string | null; // إن كان النزاع موجود
 };
+
+type DisputeMsg = { id: string; senderId: string; content: string; createdAt: string };
 
 /* -------- Helpers -------- */
 function formatRemaining(ms: number) {
@@ -43,7 +45,6 @@ function formatRemaining(ms: number) {
 }
 
 function calcUnlockAt(o: AdminOrder) {
-  // إن لم يرسل الباك unlockAt نحتسب 24h افتراضيًا من createdAt
   return new Date(o.unlockAt || new Date(new Date(o.createdAt).getTime() + 24 * 3600_000).toISOString());
 }
 
@@ -65,7 +66,6 @@ export default function AdminPage() {
     return () => clearInterval(id);
   }, []);
 
-  // fetch orders from backend
   const load = async () => {
     setLoading(true);
     try {
@@ -79,7 +79,6 @@ export default function AdminPage() {
       setLoading(false);
     }
   };
-
   useEffect(() => { load(); }, []);
 
   const filtered = useMemo(() => {
@@ -116,7 +115,6 @@ export default function AdminPage() {
   };
 
   const onOpenChat = (o: AdminOrder) => {
-    // مؤقتًا نبقي MockChat لحد ما نربط /api/disputes/:id/messages
     setSelected(o);
     setOpenChat(true);
   };
@@ -218,7 +216,7 @@ export default function AdminPage() {
                     Refund
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => onOpenChat(o)}>
-                    Dispute {o.thread?.length ? `(${o.thread.length})` : ""}
+                    Dispute
                   </Button>
                 </div>
               </CardContent>
@@ -228,31 +226,95 @@ export default function AdminPage() {
         {!loading && filtered.length === 0 && <div className="text-sm text-muted-foreground">No results.</div>}
       </div>
 
-      {/* Chat Dialog (placeholder until disputes API wired) */}
+      {/* Chat Dialog */}
       <Dialog.Root open={openChat} onOpenChange={setOpenChat}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 w-[96vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-0 shadow-lg">
+            <div className="flex items-center justify-between px-3 py-2 border-b">
+              <div className="text-sm font-semibold">Dispute chat · #{selected?.id}</div>
+              <Button variant="ghost" size="icon" onClick={() => setOpenChat(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            {selected && (
+              <RealDisputeChat
+                paymentId={selected.id}
+              />
+            )}
+          </Dialog.Content>
         </Dialog.Portal>
-        <Dialog.Content className="fixed left-1/2 top-1/2 w-[96vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-0 shadow-lg">
-          <div className="flex items-center justify-between px-3 py-2 border-b">
-            <div className="text-sm font-semibold">Dispute chat · #{selected?.id}</div>
-            <Button variant="ghost" size="icon" onClick={() => setOpenChat(false)}>
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-          {selected && <MockChat order={{
-            // تكييف مؤقت لواجهة MockChat
-            id: selected.id,
-            createdAt: selected.createdAt,
-            amount: selected.amount,
-            currency: selected.currency,
-            status: selected.status as any,
-            buyer: { id: selected.buyer.id, name: selected.buyer.username || selected.buyer.name },
-            seller: { id: selected.seller.id, name: selected.seller.username || selected.seller.name },
-            thread: selected.thread || [],
-          } as any} me="admin" />}
-        </Dialog.Content>
       </Dialog.Root>
+    </div>
+  );
+}
+
+/* ===== RealDisputeChat (uses your real disputes API) ===== */
+function RealDisputeChat({ paymentId }: { paymentId: string }) {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [msgs, setMsgs] = useState<DisputeMsg[]>([]);
+  const [text, setText] = useState("");
+
+  const [disputeId, setDisputeId] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      // 1) resolve disputeId from payment
+      const dRes = await fetch(`/api/disputes/by-payment/${paymentId}`);
+      if (!dRes.ok) throw new Error(await dRes.text());
+      const d = await dRes.json();
+      setDisputeId(d.id);
+
+      // 2) load messages
+      const r = await fetch(`/api/disputes/${d.id}/messages`);
+      if (!r.ok) throw new Error(await r.text());
+      const data = (await r.json()) as DisputeMsg[];
+      setMsgs(data ?? []);
+    } catch (e: any) {
+      toast({ title: "Error", description: e?.message || "Failed to load dispute", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [paymentId]);
+
+  const send = async () => {
+    if (!text.trim() || !disputeId) return;
+    try {
+      await apiRequest("POST", `/api/disputes/${disputeId}/messages`, { content: text });
+      setText("");
+      load();
+    } catch (e: any) {
+      toast({ title: "Error", description: e?.message || "Send failed", variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="p-3 space-y-3">
+      <div className="h-72 overflow-auto rounded border p-2">
+        {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
+        {!loading && msgs.map((m) => (
+          <div key={m.id} className="text-sm mb-3">
+            <div className="opacity-60 text-xs">{new Date(m.createdAt).toLocaleString()}</div>
+            <div>{m.content}</div>
+          </div>
+        ))}
+        {!loading && msgs.length === 0 && (
+          <div className="text-sm text-muted-foreground">No messages.</div>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <input
+          className="flex-1 rounded-md border px-3 py-2 bg-background text-foreground"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="اكتب رسالة…"
+        />
+        <Button onClick={send}>Send</Button>
+      </div>
     </div>
   );
 }
