@@ -13,44 +13,76 @@ function normUsername(v: string) {
     .toLowerCase();
 }
 
+// يطبع أي قيمة إلى نص ويشيل @ وروابط t.me
+const zNormUsername = z
+  .string()
+  .transform((v) => normUsername(v))
+  .refine(() => true);
+
 /* -------- Validation -------- */
-const createListingSchema = z.object({
-  sellerId: z.string().uuid().optional(),
-  telegramId: z.string().optional(),
+// ملاحظة: نسمح بالأرقام أو النص ونحوّل لاحقًا
+const zStrOrNum = z.union([z.string(), z.number()]).optional();
 
-  kind: z.enum(["channel", "username", "account", "service"]),
-  platform: z
-    .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
-    .optional(),
-  price: z.string().min(1),
-  currency: z.enum(["TON", "USDT"]).default("TON"),
-  description: z.string().optional(),
-  isVerified: z.boolean().optional(),
+const createListingSchema = z
+  .object({
+    sellerId: z.string().uuid().optional(),
+    telegramId: z.union([z.string(), z.number()]).transform((v) => (v == null ? undefined : String(v))).optional(),
 
-  // channel
-  channelMode: z.enum(["subscribers", "gifts"]).optional(),
-  link: z.string().optional(),
-  channelUsername: z.string().optional(),
-  subscribersCount: z.string().optional(),
-  engagement: z.string().optional(),
+    kind: z.enum(["channel", "username", "account", "service"]),
+    platform: z
+      .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
+      .optional(),
+    price: z.string().min(1),
+    currency: z.enum(["TON", "USDT"]).default("TON"),
+    description: z.string().optional(),
+    isVerified: z.boolean().optional(),
 
-  // username
-  username: z.string().optional(),
-  tgUserType: z.string().optional(),
+    // channel
+    channelMode: z.enum(["subscribers", "gifts"]).optional(),
+    link: z.string().optional(),
+    channelUsername: z.string().optional(),
+    subscribersCount: zStrOrNum, // كان string فقط
+    engagement: z.string().optional(),
 
-  // account
-  followersCount: z.string().optional(),
-  createdAt: z.string().optional(),
+    // username
+    username: z.string().optional(),
+    tgUserType: z.string().optional(),
 
-  // service
-  serviceType: z
-    .enum(["followers", "members", "boost_channel", "boost_group"])
-    .optional(),
-  target: z
-    .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
-    .optional(),
-  count: z.string().optional(),
-});
+    // account
+    followersCount: zStrOrNum, // كان string فقط
+    createdAt: z
+      .string()
+      .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+      .optional(), // YYYY-MM
+
+    // service
+    serviceType: z
+      .enum(["followers", "members", "boost_channel", "boost_group"])
+      .optional(),
+    target: z
+      .union([
+        z.enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"]),
+        z.literal("telegram_channel"),
+        z.literal("telegram_group"),
+      ])
+      .optional(),
+    count: zStrOrNum, // كان string فقط
+  })
+  .superRefine((val, ctx) => {
+    // username مطلوب لكل الأنواع ما عدا service
+    const unifiedUsername =
+      val.kind === "channel"
+        ? normUsername(val.channelUsername || val.link || val.username || "")
+        : normUsername(val.username || "");
+
+    if (val.kind !== "service" && !unifiedUsername) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["username"],
+        message: "username is required",
+      });
+    }
+  });
 
 /* -------- Router -------- */
 export function mountListings(app: Express) {
@@ -60,6 +92,7 @@ export function mountListings(app: Express) {
       const raw = req.body || {};
       console.log("➡️  /api/listings incoming:", raw);
 
+      // تطبيع أولي لليوزرنيم
       const unifiedUsername =
         raw.kind === "channel"
           ? normUsername(raw.channelUsername || raw.link || raw.username || "")
@@ -83,29 +116,39 @@ export function mountListings(app: Express) {
       }
       if (!sellerId) return res.status(400).json({ error: "Missing sellerId" });
 
-      // prevent duplicate username when provided
-      if (parsed.username) {
-        const dupe = await storage.getChannelByUsername(parsed.username);
+      // منع تكرار username إذا موجود
+      if (unifiedUsername) {
+        const dupe = await storage.getChannelByUsername(unifiedUsername);
         if (dupe) return res.status(400).json({ error: "Username already exists" });
       }
 
-      // numeric coercions
+      // تطبيع الأرقام
       const subscribers =
-        parsed.subscribersCount && parsed.subscribersCount.trim() !== ""
+        parsed.subscribersCount != null && String(parsed.subscribersCount).trim() !== ""
           ? Number(parsed.subscribersCount)
           : undefined;
+
       const followers =
-        parsed.followersCount && parsed.followersCount.trim() !== ""
+        parsed.followersCount != null && String(parsed.followersCount).trim() !== ""
           ? Number(parsed.followersCount)
           : undefined;
+
       const serviceCount =
-        parsed.count && parsed.count.trim() !== "" ? Number(parsed.count) : undefined;
+        parsed.count != null && String(parsed.count).trim() !== ""
+          ? Number(parsed.count)
+          : undefined;
+
+      // تطبيع التارگت للخدمات
+      let target = parsed.target;
+      if (target === "telegram_channel" || target === "telegram_group") {
+        target = "telegram";
+      }
 
       const payload = {
         sellerId,
         kind: parsed.kind,
         platform: parsed.platform ?? "telegram",
-        username: parsed.username || "listing_" + Date.now(),
+        username: unifiedUsername || `listing_${Date.now()}`, // خدمات بدون يوزرنيم
         title: raw.title ?? null,
         description: parsed.description || "",
         price: parsed.price,
@@ -128,7 +171,7 @@ export function mountListings(app: Express) {
 
         // service
         serviceType: parsed.serviceType,
-        target: parsed.target,
+        target,
         serviceCount,
       };
 
@@ -161,7 +204,7 @@ export function mountListings(app: Express) {
       const filters = {
         search: (req.query.search as string) || undefined,
         sellerId: (req.query.sellerId as string) || undefined,
-        // يمكنك توسيعها لاحقًا: kind, platform, price range...
+        // TODO: توسعة لاحقًا: kind, platform, price range...
       };
       const list = await storage.getChannels(filters);
       res.json(list);
