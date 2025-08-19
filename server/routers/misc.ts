@@ -1,8 +1,11 @@
-// server/routers/misc.ts
 import type { Express } from "express";
+import path from "path";
+import express from "express";
 
 function baseUrl(req: any) {
-  return process.env.WEBAPP_URL?.replace(/\/+$/, "") || `${req.protocol}://${req.get("host")}`;
+  const setUrl = process.env.WEBAPP_URL;
+  if (setUrl) return setUrl.replace(/\/+$/, "");
+  return `${req.protocol}://${req.get("host")}`;
 }
 
 export function mountMisc(app: Express) {
@@ -27,8 +30,7 @@ export function mountMisc(app: Express) {
       if (!token) return res.status(400).json({ error: "TELEGRAM_BOT_TOKEN not set" });
       const webhookUrl = `${baseUrl(req)}/webhook/telegram`;
       const r = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: webhookUrl }),
       });
       res.json({ ok: true, webhook_url: webhookUrl, telegram: await r.json() });
@@ -36,4 +38,7 @@ export function mountMisc(app: Express) {
       res.status(500).json({ error: e?.message || "Failed to setup webhook" });
     }
   });
+
+  // لا نضيف static هنا لأننا نخدمها من server/vite.ts (serveStatic)
+  // وأي fallback للفرونت متكفّل به index.ts بعد serveStatic.
 }
