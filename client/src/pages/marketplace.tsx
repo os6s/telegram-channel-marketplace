@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Filter, AtSign, Hash, Sparkles, User2, Users, Gift, Megaphone, Rocket } from "lucide-react";
-import { ChannelCard } from "@/components/channel-card";
+import { ListingCard } from "@/components/ListingCard";
 import { useLanguage } from "@/contexts/language-context";
 import type { Channel } from "@shared/schema";
 import { onListingsChange, listLocalListings, type AnyListing } from "@/store/listings";
