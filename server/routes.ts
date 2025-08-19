@@ -1,4 +1,3 @@
-// server/routes.ts
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { registerBotRoutes } from "./telegram-bot";
@@ -7,28 +6,25 @@ import { mountUsers } from "./routers/users";
 import { mountListings } from "./routers/listings";
 import { mountChannels } from "./routers/channels";
 import { mountActivities } from "./routers/activities";
-import { mountPayments } from "./routers/payments"; // ← NEW
 import { mountStats } from "./routers/stats";
 import { mountMisc } from "./routers/misc";
 
-const WEBAPP_URL = process.env.WEBAPP_URL ?? "https://your-app.onrender.com";
+const WEBAPP_URL = process.env.WEBAPP_URL!; // required in prod
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // 1) Webhook أولًا
+  // webhook + /api/config
   mountWebhook(app, WEBAPP_URL);
 
-  // 2) مسارات البوت الأخرى فقط (بدون تعريف /webhook/telegram)
+  // bot routes only if token exists
   registerBotRoutes(app);
 
-  // 3) APIs
-  mountUsers(app);       // users أولًا
-  mountListings(app);    // ثم listings
+  // APIs
+  mountUsers(app);
+  mountListings(app);
   mountChannels(app);
   mountActivities(app);
-  mountPayments(app);    // ← NEW: payments
   mountStats(app);
-  mountMisc(app);        // يجب أن يحتوي /api/config
+  mountMisc(app);
 
-  const httpServer = createServer(app);
-  return httpServer;
+  return createServer(app);
 }
