@@ -1,5 +1,5 @@
 // server/storage.ts
-import { and, ilike, eq } from "drizzle-orm";
+import { and, or, ilike, eq, gte, lte, desc } from "drizzle-orm";
 import {
   users,
   channels,
@@ -59,11 +59,9 @@ export class MemStorage implements IStorage {
 
   // users
   async getUser(id: string) { return this.users.get(id); }
-
   async getUserByTelegramId(telegramId: string) {
     return Array.from(this.users.values()).find((u) => u.telegramId === telegramId);
   }
-
   async createUser(data: InsertUser) {
     const id = randomUUID();
     const user: User = {
@@ -78,7 +76,6 @@ export class MemStorage implements IStorage {
     this.users.set(id, user);
     return user;
   }
-
   async updateUser(id: string, updates: Partial<User>) {
     const cur = this.users.get(id); if (!cur) return undefined;
     const next = { ...cur, ...updates };
@@ -88,17 +85,14 @@ export class MemStorage implements IStorage {
 
   // channels
   async getChannel(id: string) { return this.channels.get(id); }
-
   async getChannelByUsername(username: string) {
     const u = String(username || "").toLowerCase();
     return Array.from(this.channels.values()).find((c) => (c.username ?? "").toLowerCase() === u);
   }
-
   async getChannels(filters: {
     category?: string; minSubscribers?: number; maxPrice?: string; search?: string; sellerId?: string;
   } = {}) {
     let result = Array.from(this.channels.values()).filter((c) => c.isActive);
-
     if (filters.category) result = result.filter((c) => (c.category ?? null) === filters.category);
     if (filters.minSubscribers != null) result = result.filter((c) => (c.subscribers ?? 0) >= filters.minSubscribers!);
     if (filters.maxPrice) result = result.filter((c) => parseFloat(c.price) <= parseFloat(filters.maxPrice!));
@@ -109,15 +103,12 @@ export class MemStorage implements IStorage {
       );
     }
     if (filters.sellerId) result = result.filter((c) => c.sellerId === filters.sellerId);
-
-    // الأحدث أولاً
     return result.sort((a, b) => {
       const ta = (a.createdAt as any) ? new Date(a.createdAt as any).getTime() : 0;
       const tb = (b.createdAt as any) ? new Date(b.createdAt as any).getTime() : 0;
-      return tb - ta;
+      return tb - ta; // الأحدث أولاً
     });
   }
-
   async createChannel(data: InsertChannel & { sellerId: string }) {
     const id = randomUUID();
     const channel: Channel = {
@@ -131,29 +122,24 @@ export class MemStorage implements IStorage {
     this.channels.set(id, channel);
     return channel;
   }
-
   async updateChannel(id: string, updates: Partial<Channel>) {
     const cur = this.channels.get(id); if (!cur) return undefined;
     const next = { ...cur, ...updates };
     this.channels.set(id, next);
     return next;
   }
-
   async deleteChannel(id: string) { return this.channels.delete(id); }
 
   // activities
   async getActivity(id: string) { return this.activities.get(id); }
-
   async getActivitiesByUser(userId: string) {
     return Array.from(this.activities.values()).filter(
       (a) => a.buyerId === userId || a.sellerId === userId
     );
   }
-
   async getActivitiesByChannel(channelId: string) {
     return Array.from(this.activities.values()).filter((a) => a.channelId === channelId);
   }
-
   async createActivity(data: InsertActivity) {
     const id = randomUUID();
     const ch = await this.getChannel(data.channelId);
@@ -164,19 +150,17 @@ export class MemStorage implements IStorage {
       sellerId: ch.sellerId,
       completedAt: (data as any).completedAt ?? (new Date() as any),
       transactionHash: data.transactionHash ?? null,
-      status: data.status ?? "completed",
+      status: (data as any).status ?? "completed",
     };
     this.activities.set(id, act);
     return act;
   }
-
   async updateActivity(id: string, updates: Partial<Activity>) {
     const cur = this.activities.get(id); if (!cur) return undefined;
     const next = { ...cur, ...updates };
     this.activities.set(id, next);
     return next;
   }
-
   async getMarketplaceStats() {
     const active = Array.from(this.channels.values()).filter((c) => c.isActive).length;
     const completed = Array.from(this.activities.values()).filter((a) => a.status === "completed");
@@ -222,10 +206,15 @@ class PostgreSQLStorage implements IStorage {
     if (filters.category) conds.push(eq(channels.category, filters.category));
     if (filters.sellerId) conds.push(eq(channels.sellerId, filters.sellerId));
     if (filters.search) conds.push(ilike(channels.name, `%${filters.search}%`));
+    if (filters.minSubscribers != null) conds.push(gte(channels.subscribers, filters.minSubscribers));
+    if (filters.maxPrice) conds.push(lte(channels.price, String(filters.maxPrice)));
 
-    // ملاحظة: minSubscribers/maxPrice ممكن تضيف لها فلترة إضافية إذا احتجت
     const where = conds.length > 1 ? and(...conds) : conds[0];
-    const rows = await db.select().from(channels).where(where).orderBy(channels.createdAt);
+    const rows = await db
+      .select()
+      .from(channels)
+      .where(where)
+      .orderBy(desc(channels.createdAt)); // الأحدث أولاً
     return rows;
   }
   async createChannel(data: InsertChannel & { sellerId: string }) {
@@ -247,15 +236,10 @@ class PostgreSQLStorage implements IStorage {
     return rows[0];
   }
   async getActivitiesByUser(userId: string) {
-    const rows = await db.select().from(activities).where(
-      and(
-        // buyer أو seller
-        // لا توجد OR سهلة في drizzle بدون and/or helpers إضافية، فتبسيطًا:
-        // سنجلب كل شيء ثم نفلتر في التطبيق إذا أردت. أو تستخدم raw sql.
-        // هنا نجلب حسب buyerId فقط لأبسطية:
-        eq(activities.buyerId, userId)
-      )
-    );
+    const rows = await db
+      .select()
+      .from(activities)
+      .where(or(eq(activities.buyerId, userId), eq(activities.sellerId, userId)));
     return rows;
   }
   async getActivitiesByChannel(channelId: string) {
@@ -272,13 +256,15 @@ class PostgreSQLStorage implements IStorage {
   }
 
   async getMarketplaceStats() {
-    const active = await db.select({ c: channels.id }).from(channels).where(eq(channels.isActive, true));
+    const active = await db.select({ id: channels.id }).from(channels).where(eq(channels.isActive, true));
     const sales = await db.select().from(activities).where(eq(activities.status, "completed"));
     const volume = sales.reduce((sum, a: any) => sum + parseFloat(a.amount), 0);
     return { activeListings: active.length, totalVolume: volume.toFixed(2), totalSales: sales.length };
-  }
+    }
 }
 
 /* ---------- Export concrete storage ---------- */
-export const storage: IStorage = process.env.DATABASE_URL ? new PostgreSQLStorage() : new MemStorage();
+export const storage: IStorage =
+  process.env.DATABASE_URL ? new PostgreSQLStorage() : new MemStorage();
+
 console.log(`Using ${process.env.DATABASE_URL ? "PostgreSQL" : "in-memory"} storage`);
