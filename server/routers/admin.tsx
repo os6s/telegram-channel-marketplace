@@ -1,128 +1,177 @@
 // server/routers/admin.ts
-import type { Express, Request, Response, NextFunction } from "express";
-import { storage } from "../storage";
+import type { Express } from "express";
+import { db } from "../db";
+import { activities, listings, payments, users } from "@shared/schema";
+import { and, desc, eq } from "drizzle-orm";
 
-/* ========= الإعداد =========
-   لازم تضيف في Render:
-   - ADMIN_USERNAME = Os6s7  (أو الاسم الإداري اللي تريده)
-   - TELEGRAM_BOT_TOKEN (إذا تريد إشعار تلغرام للبائع عند الحذف)
-================================ */
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const adminEnv = process.env.ADMIN_USERNAME; // إلزامي
-  if (!adminEnv) {
-    return res.status(500).json({ error: "ADMIN_USERNAME env var is required by admin routes" });
-  }
-  const caller = String(req.header("x-admin-username") || "");
-  if (!caller || caller !== adminEnv) {
-    return res.status(403).json({ error: "Admin only" });
-  }
-  next();
-}
-
-/* ========= إشعار تلغرام اختياري ========= */
-async function sendTelegramMessage(telegramId: string | null | undefined, text: string) {
+/* --- Telegram notify helper --- */
+async function notify(telegramId: string | null | undefined, text: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return; // بدون توكن، نتجاهل الإشعار بهدوء
+  if (!token) return;
   const chatId = telegramId ? Number(telegramId) : NaN;
   if (!Number.isFinite(chatId)) return;
-
   try {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
     });
-  } catch (e) {
-    // لا نكسر الطلب بسبب إشعار فاشل
-    console.warn("[admin notify] telegram error:", (e as Error)?.message);
-  }
+  } catch {}
 }
 
 export function mountAdmin(app: Express) {
-  /* --------------------------------------
-   * GET /api/admin/stats
-   * نظرة سريعة للأرقام
-   * ------------------------------------ */
-  app.get("/api/admin/stats", requireAdmin, async (_req, res) => {
+  // ✅ جلب جميع الطلبات للإدمن
+  app.get("/api/admin/orders", async (_req, res) => {
     try {
-      const s = await storage.getMarketplaceStats();
-      res.json(s);
+      // نجيب كل الـ payments ذات الحالات المهمة
+      const rows = await db
+        .select({
+          id: payments.id,
+          listingId: payments.listingId,
+          createdAt: payments.createdAt,
+          amount: payments.amount,
+          currency: payments.currency,
+          status: payments.status,
+          adminAction: payments.adminAction,
+          buyerId: payments.buyerId,
+          escrowAddress: payments.escrowAddress,
+          sellerId: listings.sellerId,
+        })
+        .from(payments)
+        .innerJoin(listings, eq(listings.id, payments.listingId))
+        .orderBy(desc(payments.createdAt));
+
+      if (rows.length === 0) return res.json([]);
+
+      // جِب المستخدمين
+      const buyerIds = Array.from(new Set(rows.map(r => r.buyerId)));
+      const sellerIds = Array.from(new Set(rows.map(r => r.sellerId)));
+      const allUserIds = Array.from(new Set([...buyerIds, ...sellerIds]));
+
+      const us = await db.select().from(users).where(
+        allUserIds.length ? (eq(users.id, allUserIds[0]) as any) : (eq(users.id, "___never___") as any)
+      );
+      // workaround لعدم وجود or(...) هنا: نعمل fetch لكل واحد (خفيف عادة)
+      // لو عندك or(...) سويها مثل باقي الملفات
+
+      // خريطة users
+      const U = new Map<string, typeof us[number]>();
+      for (const id of allUserIds) {
+        const row = (await db.select().from(users).where(eq(users.id, id)).limit(1))[0];
+        if (row) U.set(id, row);
+      }
+
+      const out = rows.map((r) => {
+        const buyer = U.get(r.buyerId);
+        const seller = U.get(r.sellerId);
+        // تحويل حالة payments.status -> AdminOrderStatus
+        // mapping تقريبي: pending/waiting => held، disputed => disputed، refunded => refunded، cancelled => cancelled
+        // released ما نستخدمها إلا بعد قرار الإدمن
+        let status: "held"|"awaiting_buyer_confirm"|"disputed"|"released"|"refunded"|"cancelled" =
+          r.status === "disputed" ? "disputed"
+          : r.status === "refunded" ? "refunded"
+          : r.status === "cancelled" ? "cancelled"
+          : "held";
+
+        return {
+          id: r.id,
+          listingId: r.listingId,
+          createdAt: r.createdAt as unknown as string,
+          amount: String(r.amount),
+          currency: (r.currency as any) || "TON",
+          status,
+          buyer: { id: r.buyerId, username: buyer?.username ?? null, name: buyer?.firstName ?? null },
+          seller: { id: r.sellerId, username: seller?.username ?? null, name: seller?.firstName ?? null },
+          unlockAt: null,
+          thread: [], // رح نربطها مع /api/disputes لاحقاً
+        };
+      });
+
+      res.json(out);
     } catch (e: any) {
-      res.status(500).json({ error: e?.message || "Failed to fetch stats" });
+      res.status(500).json({ error: e?.message || "failed to load orders" });
     }
   });
 
-  /* --------------------------------------
-   * PATCH /api/admin/listings/:id
-   * تعديلات بسيطة (تفعيل/تعطيل/توثيق …)
-   * body: { isActive?, isVerified?, title?, price? }
-   * ------------------------------------ */
-  app.patch("/api/admin/listings/:id", requireAdmin, async (req, res) => {
+  // ✅ قرار الإدمن: Release (تحويل الحالة فقط، بدون إرسال فعلي)
+  app.post("/api/admin/payments/:id/release", async (req, res) => {
     try {
-      const id = req.params.id;
-      const allowed: Record<string, any> = {};
-      const { isActive, isVerified, title, price } = (req.body || {}) as Record<string, any>;
+      const pid = req.params.id;
 
-      if (typeof isActive === "boolean") allowed.isActive = isActive;
-      if (typeof isVerified === "boolean") allowed.isVerified = isVerified;
-      if (typeof title === "string") allowed.title = title;
-      if (price != null) allowed.price = String(price);
+      const pay = (await db.select().from(payments).where(eq(payments.id, pid)).limit(1))[0];
+      if (!pay) return res.status(404).json({ error: "Payment not found" });
 
-      if (Object.keys(allowed).length === 0) {
-        return res.status(400).json({ error: "No valid fields to update" });
-      }
+      // عدّل حالة الدفع
+      await db
+        .update(payments)
+        .set({ status: "completed", adminAction: "payout", confirmedAt: new Date() as any })
+        .where(eq(payments.id, pid));
 
-      const updated = await storage.updateChannel(id, allowed);
-      if (!updated) return res.status(404).json({ error: "Listing not found" });
+      // activity
+      const listing = (await db.select().from(listings).where(eq(listings.id, pay.listingId)).limit(1))[0];
+      await db.insert(activities).values({
+        listingId: pay.listingId,
+        buyerId: pay.buyerId,
+        sellerId: listing.sellerId,
+        paymentId: pay.id,
+        type: "admin_release",
+        status: "completed",
+        amount: pay.amount,
+        currency: pay.currency,
+        note: "Admin released funds to seller",
+      });
 
-      res.json(updated);
+      // إشعار
+      const buyer = (await db.select().from(users).where(eq(users.id, pay.buyerId)).limit(1))[0];
+      const seller = (await db.select().from(users).where(eq(users.id, listing.sellerId)).limit(1))[0];
+
+      await notify(buyer?.telegramId, `✅ <b>Order Released</b>\nYour payment was released to the seller.`);
+      await notify(seller?.telegramId, `✅ <b>Payout Approved</b>\nAdmin has released the funds to your wallet.`);
+
+      res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e?.message || "Failed to update listing" });
+      res.status(500).json({ error: e?.message || "release failed" });
     }
   });
 
-  /* --------------------------------------
-   * DELETE /api/admin/listings/:id
-   * حذف نهائي مع تأكيد
-   * body: { confirm: true, reason?: string }
-   * — يرسل إشعار للبائع إذا كان لديه telegramId
-   * ------------------------------------ */
-  app.delete("/api/admin/listings/:id", requireAdmin, async (req, res) => {
+  // ✅ قرار الإدمن: Refund
+  app.post("/api/admin/payments/:id/refund", async (req, res) => {
     try {
-      const id = req.params.id;
-      const { confirm, reason } = (req.body || {}) as { confirm?: boolean; reason?: string };
-      if (!confirm) return res.status(400).json({ error: "Confirmation required: { confirm: true }" });
+      const pid = req.params.id;
 
-      const listing = await storage.getChannel(id);
-      if (!listing) return res.status(404).json({ error: "Listing not found" });
+      const pay = (await db.select().from(payments).where(eq(payments.id, pid)).limit(1))[0];
+      if (!pay) return res.status(404).json({ error: "Payment not found" });
 
-      // نفّذ الحذف
-      const ok = await storage.deleteChannel(id);
-      if (!ok) return res.status(500).json({ error: "Failed to delete listing" });
+      // عدّل حالة الدفع
+      await db
+        .update(payments)
+        .set({ status: "refunded", adminAction: "refund", confirmedAt: new Date() as any })
+        .where(eq(payments.id, pid));
 
-      // إشعار البائع (اختياري إذا توكن موجود)
-      const seller = await storage.getUser(listing.sellerId);
-      if (seller?.telegramId) {
-        const title =
-          listing.title ||
-          (listing.username ? `@${listing.username}` : `${listing.platform || ""} ${listing.kind || ""}`.trim());
+      // activity
+      const listing = (await db.select().from(listings).where(eq(listings.id, pay.listingId)).limit(1))[0];
+      await db.insert(activities).values({
+        listingId: pay.listingId,
+        buyerId: pay.buyerId,
+        sellerId: listing.sellerId,
+        paymentId: pay.id,
+        type: "admin_refund",
+        status: "completed",
+        amount: pay.amount,
+        currency: pay.currency,
+        note: "Admin refunded buyer",
+      });
 
-        const msg = [
-          "🗑 <b>Your listing was removed by admin</b>",
-          "",
-          `<b>Item:</b> ${title}`,
-          reason ? `<b>Reason:</b> ${reason}` : "",
-        ]
-          .filter(Boolean)
-          .join("\n");
+      // إشعار
+      const buyer = (await db.select().from(users).where(eq(users.id, pay.buyerId)).limit(1))[0];
+      const seller = (await db.select().from(users).where(eq(users.id, listing.sellerId)).limit(1))[0];
 
-        await sendTelegramMessage(seller.telegramId, msg);
-      }
+      await notify(buyer?.telegramId, `↩️ <b>Refund Approved</b>\nAdmin has refunded your payment.`);
+      await notify(seller?.telegramId, `⚠️ <b>Order Refunded</b>\nAdmin refunded the buyer for this order.`);
 
-      res.json({ ok: true, deletedId: id });
+      res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e?.message || "Failed to delete listing" });
+      res.status(500).json({ error: e?.message || "refund failed" });
     }
   });
 }
