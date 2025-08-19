@@ -1,24 +1,19 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
-import path from "path";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 if (process.env.NODE_ENV === "production") {
-  if (!process.env.SESSION_SECRET) {
-    console.warn("SESSION_SECRET not set. Using default.");
-    process.env.SESSION_SECRET = "telegram-marketplace-default-secret-change-in-production";
-  }
-  if (!process.env.DATABASE_URL) {
-    console.error("DATABASE_URL is required in production");
-    process.exit(1);
-  }
+  if (!process.env.SESSION_SECRET) throw new Error("SESSION_SECRET is required");
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
+  if (!process.env.WEBAPP_URL) throw new Error("WEBAPP_URL is required");
 }
 
 const app = express();
 app.set("trust proxy", 1);
 
+// Security
 app.use(
   helmet({
     contentSecurityPolicy: false,
@@ -26,29 +21,23 @@ app.use(
   })
 );
 
-const envOrigins =
-  (process.env.WEBAPP_URL || process.env.WEBAPP_URLS || "")
-    .split(",")
-    .map(s => s.trim())
-    .filter(Boolean);
-
+// CORS
 const allowRenderWildcard = process.env.ALLOW_RENDER_ORIGIN === "true";
+const allowed = (process.env.WEBAPP_URL || process.env.WEBAPP_URLS || "")
+  .split(",").map(s => s.trim()).filter(Boolean);
 
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin) return cb(null, true);
-      if (envOrigins.length === 0 || envOrigins.includes(origin)) return cb(null, true);
+      if (!origin) return cb(null, true); // WebView
+      if (allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
       if (allowRenderWildcard) {
-        try {
-          const host = new URL(origin).hostname;
-          if (/\.onrender\.com$/.test(host)) return cb(null, true);
-        } catch {}
+        try { const host = new URL(origin).hostname; if (/\.onrender\.com$/.test(host)) return cb(null, true); } catch {}
       }
       return cb(null, false);
     },
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-setup-key", "x-telegram-bot-api-secret-token"],
+    methods: ["GET","POST","PATCH","DELETE","OPTIONS"],
+    allowedHeaders: ["Content-Type","Authorization","x-setup-key","x-telegram-bot-api-secret-token"],
     credentials: true,
   })
 );
@@ -58,16 +47,16 @@ app.use(express.urlencoded({ extended: false, limit: "2mb" }));
 
 app.get(["/health", "/healthz"], (_req, res) => res.type("text").send("ok"));
 
+// API logger
 app.use((req, res, next) => {
-  const start = Date.now();
-  let captured: any;
+  const t0 = Date.now(); const path = req.path; let captured: any;
   const orig = res.json as any;
   (res as any).json = function (body: any, ...args: any[]) { captured = body; return orig.apply(this, [body, ...args]); };
   res.on("finish", () => {
-    if (req.path.startsWith("/api") || req.path.startsWith("/webhook")) {
-      let line = `${req.method} ${req.path} ${res.statusCode} in ${Date.now() - start}ms`;
+    if (path.startsWith("/api") || path.startsWith("/webhook")) {
+      let line = `${req.method} ${path} ${res.statusCode} in ${Date.now()-t0}ms`;
       if (captured) { try { line += ` :: ${JSON.stringify(captured)}`; } catch {} }
-      if (line.length > 160) line = line.slice(0, 159) + "…";
+      if (line.length > 160) line = line.slice(0,159) + "…";
       log(line);
     }
   });
@@ -87,14 +76,20 @@ app.use((req, res, next) => {
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {
-    serveStatic(app);
+    serveStatic(app); // serves dist/public
   }
 
+  // SPA fallback
   app.get("*", (req: Request, res: Response) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/webhook")) {
       return res.status(404).json({ error: "Not Found" });
     }
-    return res.sendFile(path.resolve(process.cwd(), "dist/public/index.html"));
+    try {
+      const path = require("path");
+      return res.sendFile(path.resolve("dist/public/index.html"));
+    } catch {
+      return res.status(404).json({ error: "Not Found" });
+    }
   });
 
   const port = parseInt(process.env.PORT || "5000", 10);
