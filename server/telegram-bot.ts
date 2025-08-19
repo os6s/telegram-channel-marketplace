@@ -32,7 +32,7 @@ export class TelegramBot {
     this.baseUrl = `https://api.telegram.org/bot${token}`;
   }
 
-  async sendMessage(chatId: number, text: string, replyMarkup?: any) {
+  async sendMessage(chatId: number | string, text: string, replyMarkup?: any) {
     try {
       const response = await fetch(`${this.baseUrl}/sendMessage`, {
         method: "POST",
@@ -127,22 +127,12 @@ export class TelegramBot {
 
           await this.sendMessage(
             buyerId,
-            `🎉 <b>Channel Transfer Complete!</b>
-
-You are now the owner of the channel. The escrow will be released shortly.
-
-<b>Channel:</b> ${channelId}
-<b>Status:</b> ✅ Ownership Verified`
+            `🎉 <b>Channel Transfer Complete!</b>\n\nYou are now the owner of the channel. The escrow will be released shortly.\n\n<b>Channel:</b> ${channelId}\n<b>Status:</b> ✅ Ownership Verified`
           );
 
           await this.sendMessage(
             sellerId,
-            `✅ <b>Channel Transfer Confirmed!</b>
-
-The buyer has successfully become the channel owner. The transaction is complete.
-
-<b>Channel:</b> ${channelId}
-<b>Status:</b> ✅ Transfer Verified`
+            `✅ <b>Channel Transfer Confirmed!</b>\n\nThe buyer has successfully become the channel owner. The transaction is complete.\n\n<b>Channel:</b> ${channelId}\n<b>Status:</b> ✅ Transfer Verified`
           );
 
           console.log("Channel transfer completed:", { channelId, sellerId, buyerId, escrowId });
@@ -150,12 +140,7 @@ The buyer has successfully become the channel owner. The transaction is complete
           this.cleanupMonitor(escrowId);
           await this.sendMessage(
             buyerId,
-            `⚠️ <b>Transfer Timeout</b>
-
-The channel transfer has not been completed within 24 hours. Please contact support.
-
-<b>Channel:</b> ${channelId}
-<b>Status:</b> ❌ Timeout`
+            `⚠️ <b>Transfer Timeout</b>\n\nThe channel transfer has not been completed within 24 hours. Please contact support.\n\n<b>Channel:</b> ${channelId}\n<b>Status:</b> ❌ Timeout`
           );
         }
       } catch (error) {
@@ -235,7 +220,7 @@ Contact our support team or check our documentation.
     const text = message.text;
 
     if (text === "/start") {
-      const webappUrl = process.env.WEBAPP_URL; // لا قيم مؤقتة
+      const webappUrl = process.env.WEBAPP_URL; // إلزامي بالـ Render
 
       const welcomeText = `
 🎉 <b>Welcome to Channel Marketplace!</b>
@@ -255,10 +240,7 @@ ${webappUrl ? "👇 <b>Get started by opening our marketplace:</b>" : "⚠️ WE
         ? {
             inline_keyboard: [
               [
-                {
-                  text: "🛒 Open Marketplace",
-                  web_app: { url: webappUrl },
-                },
+                { text: "🛒 Open Marketplace", web_app: { url: webappUrl } },
               ],
               [
                 { text: "📋 How it works", callback_data: "how_it_works" },
@@ -273,6 +255,22 @@ ${webappUrl ? "👇 <b>Get started by opening our marketplace:</b>" : "⚠️ WE
   }
 }
 
+/* ---- Bot instance + helper ---- */
+let botInstance: TelegramBot | null = null;
+
+/** استدعاء هذه الدالة لإرسال إشعار لأي يوزر من أي مكان بالسيرفر */
+export async function notifyUser(telegramId: string | number, text: string) {
+  if (!botInstance) {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) {
+      console.error("TELEGRAM_BOT_TOKEN not set - cannot send Telegram notifications");
+      return;
+    }
+    botInstance = new TelegramBot(token);
+  }
+  await botInstance.sendMessage(telegramId, text);
+}
+
 export function registerBotRoutes(app: express.Express) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const webappUrl = process.env.WEBAPP_URL;
@@ -282,25 +280,23 @@ export function registerBotRoutes(app: express.Express) {
     return;
   }
 
-  const bot = new TelegramBot(botToken);
+  botInstance = new TelegramBot(botToken);
 
   if (process.env.NODE_ENV === "development") {
-    bot.removeWebhook().then(() => {
+    botInstance.removeWebhook().then(() => {
       console.log("Webhook removed for development mode");
-      startPolling(bot);
+      startPolling(botInstance!);
     });
   } else {
-    // في الإنتاج: لا نحاول تعيين الويبهوك إذا WEBAPP_URL غير مضبوط
     if (!webappUrl) {
       console.error("WEBAPP_URL is required in production to configure Telegram webhook.");
     } else {
       setTimeout(async () => {
         const webhookUrl = `${webappUrl}/webhook/telegram`;
         try {
-          // إزالة أي ويبهوك سابق
-          await bot.removeWebhook();
+          await botInstance!.removeWebhook();
           await new Promise((r) => setTimeout(r, 800));
-          const result = await bot.setWebhook(webhookUrl);
+          const result = await botInstance!.setWebhook(webhookUrl);
           if (result?.ok) {
             console.log("✅ Webhook configured successfully");
           } else {
@@ -313,14 +309,13 @@ export function registerBotRoutes(app: express.Express) {
     }
   }
 
-  // نقطة إعداد ويبهوك يدوية (تعمل فقط لو WEBAPP_URL مضبوط)
   app.post("/setup-webhook", async (req, res) => {
     try {
       if (!webappUrl) {
         return res.status(400).json({ error: "WEBAPP_URL env var is required" });
       }
       const webhookUrl = `${webappUrl}/webhook/telegram`;
-      const result = await bot.setWebhook(webhookUrl);
+      const result = await botInstance!.setWebhook(webhookUrl);
       res.json(result);
     } catch (error) {
       console.error("Error setting up webhook:", error);
