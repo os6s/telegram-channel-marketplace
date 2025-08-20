@@ -20,48 +20,103 @@ import { mountAdminPayouts } from "./routers/admin-payouts";
 import { mountStats } from "./routers/stats";
 import { mountMisc } from "./routers/misc";
 
-// 🌐 WEBAPP_URL: واجهة الميني‑آب
+/* ---------- env & helpers ---------- */
 const WEBAPP_URL = process.env.WEBAPP_URL!; // مطلوب في Render
-// 🌐 PUBLIC_BASE_URL: الدومين العام الذي استعملته مع setWebhook  (اختياري)
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || WEBAPP_URL;
+
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || process.env.SESSION_SECRET || "";
+
+function webhookUrl() {
+  return `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/webhook/telegram`;
+}
+
+async function ensureWebhook(): Promise<void> {
+  if (!BOT_TOKEN) {
+    console.warn("[webhook] TELEGRAM_BOT_TOKEN not set — skip auto-registration");
+    return;
+  }
+  const needUrl = webhookUrl();
+  const needSecret = WEBHOOK_SECRET || undefined;
+
+  // 1) getWebhookInfo
+  try {
+    const infoRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo`);
+    const info = await infoRes.json().catch(() => ({}));
+    const curUrl = info?.result?.url as string | undefined;
+    const pending = info?.result?.pending_update_count;
+
+    // 2) If different/missing -> setWebhook
+    if (curUrl !== needUrl) {
+      const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: needUrl, ...(needSecret ? { secret_token: needSecret } : {}) }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (j?.ok) {
+        console.log("✅ Webhook configured successfully");
+      } else {
+        console.error("❌ setWebhook failed:", j);
+      }
+      return;
+    }
+
+    // 3) If URL same, optionally refresh to set secret (harmless idempotent)
+    if (needSecret) {
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: needUrl, secret_token: needSecret, drop_pending_updates: false }),
+      }).catch(() => {});
+    }
+
+    console.log(`🔗 Webhook already set (${curUrl})${typeof pending === "number" ? `, pending=${pending}` : ""}`);
+  } catch (e) {
+    console.error("❌ ensureWebhook error:", e);
+  }
+}
+
+/* ---------- register routes ---------- */
 console.log("[routes] WEBAPP_URL =", WEBAPP_URL);
 console.log("[routes] PUBLIC_BASE_URL =", PUBLIC_BASE_URL);
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // 1) Webhook + /api/config (أولاً)
-  // نمرّر WEBAPP_URL فقط لاستخدامه داخل رسائل البوت (زر Open Marketplace)
-  // عنوان الويبهوك الفعلي هو: `${PUBLIC_BASE_URL}/webhook/telegram` الذي ضبطته عبر setWebhook
+  // 1) Webhook + /api/config
   mountWebhook(app, WEBAPP_URL);
 
-  // 2) مسارات البوت (تفعل فقط عند وجود TELEGRAM_BOT_TOKEN)
+  // 2) Telegram bot extra routes (optional)
   registerBotRoutes(app);
 
-  // 3) REST APIs (ترتيب منطقي)
+  // 3) REST APIs
   mountUsers(app);
   mountListings(app);
   mountChannels(app);
   mountActivities(app);
 
-  // رصيد/محفظة/سحب
+  // Wallet / Profile / Balance / Payouts
   mountWallet(app);
   mountProfile(app);
   mountBalance(app);
   mountPayouts(app);
 
-  // مدفوعات الطلبات من الرصيد
+  // Payments (escrow from internal balance)
   mountPayments(app);
 
-  // نزاعات ورسائلها
+  // Disputes & messages
   mountDisputes(app);
   mountDisputeMessages(app);
 
-  // لوحات الأدمن
+  // Admin
   mountAdmin(app);
   mountAdminPayouts(app);
 
-  // إحصائيات ومتفرقات أخيراً
+  // Stats & misc
   mountStats(app);
   mountMisc(app);
+
+  // Try to (re)register webhook on boot
+  ensureWebhook().catch(() => {});
 
   return createServer(app);
 }
