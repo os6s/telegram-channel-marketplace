@@ -1,31 +1,29 @@
 // server/telegram-bot.ts
 import express from "express";
 
+/* =========================
+   Types
+========================= */
 interface TelegramMessage {
   message_id: number;
-  from: {
-    id: number;
-    is_bot: boolean;
-    first_name: string;
-    username?: string;
-  };
-  chat: {
-    id: number;
-    type: string;
-  };
+  from: { id: number; is_bot: boolean; first_name: string; username?: string };
+  chat: { id: number; type: string };
   date: number;
   text?: string;
 }
-
 interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   callback_query?: any;
 }
 
+/* =========================
+   Bot class (no webhook mgmt in prod)
+========================= */
 export class TelegramBot {
   private token: string;
   private baseUrl: string;
+  private activeMonitors = new Map<string, NodeJS.Timeout>();
 
   constructor(token: string) {
     this.token = token;
@@ -34,7 +32,7 @@ export class TelegramBot {
 
   async sendMessage(chatId: number | string, text: string, replyMarkup?: any) {
     try {
-      const response = await fetch(`${this.baseUrl}/sendMessage`, {
+      const r = await fetch(`${this.baseUrl}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -44,123 +42,73 @@ export class TelegramBot {
           parse_mode: "HTML",
         }),
       });
-      return await response.json();
-    } catch (error) {
-      console.error("Error sending message:", error);
-    }
-  }
-
-  async setWebhook(webhookUrl: string) {
-    try {
-      const response = await fetch(`${this.baseUrl}/setWebhook`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: webhookUrl,
-          allowed_updates: ["message", "callback_query"],
-          drop_pending_updates: true,
-        }),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error("Error setting webhook:", error);
-      throw error;
-    }
-  }
-
-  async getWebhookInfo() {
-    try {
-      const response = await fetch(`${this.baseUrl}/getWebhookInfo`);
-      return await response.json();
-    } catch (error) {
-      console.error("Error getting webhook info:", error);
-      return null;
-    }
-  }
-
-  async removeWebhook() {
-    try {
-      const response = await fetch(`${this.baseUrl}/deleteWebhook`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ drop_pending_updates: true }),
-      });
-      const result = await response.json();
-      return result;
-    } catch (error) {
-      console.error("Error removing webhook:", error);
+      return await r.json();
+    } catch (e) {
+      console.error("Error sending message:", e);
     }
   }
 
   async checkChannelOwnership(channelId: string, userId: number): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/getChatMember`, {
+      const r = await fetch(`${this.baseUrl}/getChatMember`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: channelId, user_id: userId }),
       });
-      const result = await response.json();
-      return result.ok && ["creator", "administrator"].includes(result.result?.status);
-    } catch (error) {
-      console.error("Error checking channel ownership:", error);
+      const j = await r.json();
+      return j.ok && ["creator", "administrator"].includes(j.result?.status);
+    } catch (e) {
+      console.error("Error checking channel ownership:", e);
       return false;
     }
   }
 
-  private activeMonitors = new Map<string, NodeJS.Timeout>();
-
   async monitorChannelTransfer(channelId: string, sellerId: number, buyerId: number, escrowId: string) {
-    const existingMonitor = this.activeMonitors.get(escrowId);
-    if (existingMonitor) clearInterval(existingMonitor);
+    const existing = this.activeMonitors.get(escrowId);
+    if (existing) clearInterval(existing);
 
-    let checkCount = 0;
+    let checks = 0;
     const maxChecks = 48; // 24h @ 30s
-
-    const checkInterval = setInterval(async () => {
-      checkCount++;
+    const h = setInterval(async () => {
+      checks++;
       try {
-        const buyerIsOwner = await this.checkChannelOwnership(channelId, buyerId);
-        const sellerIsOwner = await this.checkChannelOwnership(channelId, sellerId);
+        const buyerOwns = await this.checkChannelOwnership(channelId, buyerId);
+        const sellerOwns = await this.checkChannelOwnership(channelId, sellerId);
 
-        if (buyerIsOwner && !sellerIsOwner) {
+        if (buyerOwns && !sellerOwns) {
           this.cleanupMonitor(escrowId);
-
           await this.sendMessage(
             buyerId,
-            `🎉 <b>Channel Transfer Complete!</b>\n\nYou are now the owner of the channel. The escrow will be released shortly.\n\n<b>Channel:</b> ${channelId}\n<b>Status:</b> ✅ Ownership Verified`
+            `🎉 <b>Channel Transfer Complete!</b>\n\nYou are now the owner. Escrow will be released.\n\n<b>Channel:</b> ${channelId}\n<b>Status:</b> ✅ Ownership Verified`
           );
-
           await this.sendMessage(
             sellerId,
-            `✅ <b>Channel Transfer Confirmed!</b>\n\nThe buyer has successfully become the channel owner. The transaction is complete.\n\n<b>Channel:</b> ${channelId}\n<b>Status:</b> ✅ Transfer Verified`
+            `✅ <b>Transfer Confirmed</b>\nBuyer is now the owner.\n\n<b>Channel:</b> ${channelId}\n<b>Status:</b> ✅ Verified`
           );
-
-          console.log("Channel transfer completed:", { channelId, sellerId, buyerId, escrowId });
-        } else if (checkCount >= maxChecks) {
+        } else if (checks >= maxChecks) {
           this.cleanupMonitor(escrowId);
           await this.sendMessage(
             buyerId,
-            `⚠️ <b>Transfer Timeout</b>\n\nThe channel transfer has not been completed within 24 hours. Please contact support.\n\n<b>Channel:</b> ${channelId}\n<b>Status:</b> ❌ Timeout`
+            `⚠️ <b>Transfer Timeout</b>\nNo completion within 24h. Please contact support.\n\n<b>Channel:</b> ${channelId}`
           );
         }
-      } catch (error) {
-        console.error("Error monitoring channel transfer:", error);
+      } catch (e) {
+        console.error("Error monitoring channel transfer:", e);
       }
-    }, 30000);
+    }, 30_000);
 
-    this.activeMonitors.set(escrowId, checkInterval);
+    this.activeMonitors.set(escrowId, h);
   }
 
   private cleanupMonitor(escrowId: string) {
-    const monitor = this.activeMonitors.get(escrowId);
-    if (monitor) {
-      clearInterval(monitor);
+    const h = this.activeMonitors.get(escrowId);
+    if (h) {
+      clearInterval(h);
       this.activeMonitors.delete(escrowId);
     }
   }
-
   cleanupAllMonitors() {
-    this.activeMonitors.forEach((m) => clearInterval(m));
+    this.activeMonitors.forEach(clearInterval);
     this.activeMonitors.clear();
   }
 
@@ -169,79 +117,71 @@ export class TelegramBot {
     if (update.callback_query) this.handleCallbackQuery(update.callback_query);
   }
 
-  private async handleCallbackQuery(callbackQuery: any) {
-    const chatId = callbackQuery.message.chat.id;
-    const data = callbackQuery.data;
+  private async handleCallbackQuery(cq: any) {
+    const chatId = cq.message?.chat?.id;
+    const data = cq.data;
 
-    if (data === "how_it_works") {
-      const howItWorksText = `
-📋 <b>How Channel Marketplace Works:</b>
-
-1️⃣ <b>Browse Channels</b> - Find channels by category, price, or subscribers
-2️⃣ <b>Secure Purchase</b> - Use TON cryptocurrency with escrow protection
-3️⃣ <b>Verification</b> - Ownership is verified before transfer
-4️⃣ <b>Transfer</b> - Admin rights transferred to you safely
-
-💰 <b>Escrow Protection:</b>
-• Your payment is held securely
-• Released only after successful transfer
-• Full refund if transfer fails
-
-🔒 <b>Verification Process:</b>
-• Sellers must prove channel ownership
-• Bot verification ensures legitimacy
-• No fake or stolen channels
-      `;
-      await this.sendMessage(chatId, howItWorksText);
-    } else if (data === "support") {
-      const supportText = `
-💬 <b>Need Help?</b>
-
-For support with:
-• Technical issues
-• Transaction problems
-• Account questions
-• General inquiries
-
-Contact our support team or check our documentation.
-      `;
-      await this.sendMessage(chatId, supportText);
+    if (chatId && data) {
+      if (data === "how_it_works") {
+        await this.sendMessage(
+          chatId,
+          [
+            "📋 <b>How Channel Marketplace Works</b>",
+            "",
+            "1️⃣ Browse channels",
+            "2️⃣ Secure escrow payment (TON)",
+            "3️⃣ Ownership verification",
+            "4️⃣ Safe transfer",
+            "",
+            "💰 Escrow: held until transfer, refund if failed.",
+            "🔒 Verification: seller proves ownership.",
+          ].join("\n")
+        );
+      } else if (data === "support") {
+        await this.sendMessage(
+          chatId,
+          [
+            "💬 <b>Need Help?</b>",
+            "",
+            "• Technical issues",
+            "• Transaction problems",
+            "• Account questions",
+            "",
+            "Contact support from the app.",
+          ].join("\n")
+        );
+      }
     }
 
     await fetch(`${this.baseUrl}/answerCallbackQuery`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ callback_query_id: callbackQuery.id }),
+      body: JSON.stringify({ callback_query_id: cq.id }),
     });
   }
 
-  private async handleMessage(message: TelegramMessage) {
-    const chatId = message.chat.id;
-    const text = message.text;
-
+  private async handleMessage(msg: TelegramMessage) {
+    const chatId = msg.chat.id;
+    const text = msg.text;
     if (text === "/start") {
-      const webappUrl = process.env.WEBAPP_URL; // إلزامي بالـ Render
-
-      const welcomeText = `
+      const webappUrl = process.env.WEBAPP_URL;
+      const welcome = `
 🎉 <b>Welcome to Channel Marketplace!</b>
 
-Buy and sell Telegram channels with secure escrow using TON cryptocurrency.
+Buy & sell Telegram channels with secure TON escrow.
 
-🔥 <b>Features:</b>
-• Browse verified channels
-• Secure escrow transactions
-• TON cryptocurrency payments
-• Channel ownership verification
+🔥 <b>Features</b>
+• Verified listings
+• Escrow protection
+• Ownership verification
 
-${webappUrl ? "👇 <b>Get started by opening our marketplace:</b>" : "⚠️ WEBAPP_URL is not configured by the server admin."}
+${webappUrl ? "👇 <b>Open the marketplace:</b>" : "⚠️ WEBAPP_URL is not configured."}
       `.trim();
 
       const keyboard = webappUrl
         ? {
             inline_keyboard: [
-              [
-                { text: "🛒 Open Marketplace", web_app: { url: webappUrl } },
-              ],
+              [{ text: "🛒 Open Marketplace", web_app: { url: webappUrl } }],
               [
                 { text: "📋 How it works", callback_data: "how_it_works" },
                 { text: "💬 Support", callback_data: "support" },
@@ -250,15 +190,17 @@ ${webappUrl ? "👇 <b>Get started by opening our marketplace:</b>" : "⚠️ WE
           }
         : undefined;
 
-      await this.sendMessage(chatId, welcomeText, keyboard);
+      await this.sendMessage(chatId, welcome, keyboard);
     }
   }
 }
 
-/* ---- Bot instance + helper ---- */
+/* =========================
+   Singleton + helpers
+========================= */
 let botInstance: TelegramBot | null = null;
 
-/** استدعاء هذه الدالة لإرسال إشعار لأي يوزر من أي مكان بالسيرفر */
+/** Send a message to any Telegram user from anywhere in the server */
 export async function notifyUser(telegramId: string | number, text: string) {
   if (!botInstance) {
     const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -271,83 +213,67 @@ export async function notifyUser(telegramId: string | number, text: string) {
   await botInstance.sendMessage(telegramId, text);
 }
 
+/* =========================
+   Route registration
+   - DEV: polling (webhook removed)
+   - PROD: webhook handled elsewhere (routers/webhook.ts + setWebhook done outside)
+========================= */
 export function registerBotRoutes(app: express.Express) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const webappUrl = process.env.WEBAPP_URL;
-
-  if (!botToken) {
-    console.warn("TELEGRAM_BOT_TOKEN not set - bot functionality disabled");
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.warn("TELEGRAM_BOT_TOKEN not set - bot disabled");
     return;
   }
-
-  botInstance = new TelegramBot(botToken);
+  botInstance = new TelegramBot(token);
 
   if (process.env.NODE_ENV === "development") {
-    botInstance.removeWebhook().then(() => {
-      console.log("Webhook removed for development mode");
+    // Use long polling locally for convenience
+    removeWebhookSafe(token).then(() => {
+      console.log("Webhook removed for development mode (polling on).");
       startPolling(botInstance!);
     });
   } else {
-    if (!webappUrl) {
-      console.error("WEBAPP_URL is required in production to configure Telegram webhook.");
-    } else {
-      setTimeout(async () => {
-        const webhookUrl = `${webappUrl}/webhook/telegram`;
-        try {
-          await botInstance!.removeWebhook();
-          await new Promise((r) => setTimeout(r, 800));
-          const result = await botInstance!.setWebhook(webhookUrl);
-          if (result?.ok) {
-            console.log("✅ Webhook configured successfully");
-          } else {
-            console.error("❌ Failed to configure webhook:", result);
-          }
-        } catch (error) {
-          console.error("❌ Error configuring webhook:", error);
-        }
-      }, 1500);
-    }
+    console.log("Production mode: webhook managed via routers/webhook.ts and external setWebhook.");
   }
-
-  app.post("/setup-webhook", async (req, res) => {
-    try {
-      if (!webappUrl) {
-        return res.status(400).json({ error: "WEBAPP_URL env var is required" });
-      }
-      const webhookUrl = `${webappUrl}/webhook/telegram`;
-      const result = await botInstance!.setWebhook(webhookUrl);
-      res.json(result);
-    } catch (error) {
-      console.error("Error setting up webhook:", error);
-      res.status(500).json({ error: "Failed to setup webhook" });
-    }
-  });
 
   console.log("Telegram bot routes registered");
 }
 
+/* =========================
+   Internals
+========================= */
+async function removeWebhookSafe(token: string) {
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ drop_pending_updates: true }),
+    });
+    await r.json().catch(() => ({}));
+  } catch (e) {
+    console.warn("deleteWebhook failed (dev):", e);
+  }
+}
+
 async function startPolling(bot: TelegramBot) {
   let offset = 0;
-
   const poll = async () => {
     try {
-      const response = await fetch(
+      const r = await fetch(
         `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getUpdates?offset=${offset}&timeout=30`
       );
-      const data = await response.json();
-
-      if (data.ok && data.result.length > 0) {
+      const data = await r.json();
+      if (data.ok && Array.isArray(data.result) && data.result.length > 0) {
         for (const update of data.result) {
           bot.handleUpdate(update);
           offset = update.update_id + 1;
         }
       }
-    } catch (error) {
-      console.error("Polling error:", error);
+    } catch (e) {
+      console.error("Polling error:", e);
     }
     setTimeout(poll, 1000);
   };
-
-  console.log("Starting Telegram bot polling...");
+  console.log("Starting Telegram bot polling (development)...");
   poll();
 }
