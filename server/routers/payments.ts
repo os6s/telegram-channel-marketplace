@@ -19,7 +19,11 @@ export function mountPayments(app: Express) {
   // إنشاء Payment معلّق + Activity: buy(pending) + إشعار للبائع
   app.post("/api/payments", tgAuth, async (req, res) => {
     try {
-      const escrowAddress = process.env.ESCROW_WALLET || "ESCROW_PLACEHOLDER";
+      // محفظة الوسيط مطلوبة
+      const escrowAddress = (process.env.ESCROW_WALLET || "").trim();
+      if (!escrowAddress) {
+        return res.status(500).json({ error: "ESCROW_WALLET not set" });
+      }
       const feePercent = Number(process.env.FEE_PERCENT || "5");
 
       // المشتري من Telegram initData
@@ -43,12 +47,24 @@ export function mountPayments(app: Express) {
         return res.status(400).json({ error: "Amount does not match listing price" });
       }
 
+      // منع التكرار: 1) Idempotency-Key  2) pending لنفس buyer+listing
+      const idem = (req.get("Idempotency-Key") || req.get("idempotency-key") || "").trim();
+      try {
+        // إن وجد دفع pending لنفس الإعلان والمشتري رجّعه
+        if ((storage as any).listPaymentsByBuyer) {
+          const existingList: any[] = await (storage as any).listPaymentsByBuyer(buyer.id);
+          const dup = existingList.find(p => p.listingId === listing.id && p.status === "pending");
+          if (dup) return res.status(200).json(dup);
+        }
+      } catch { /* تجاهل في حال ما موجودة */ }
+
       // بناء الداتا والتحقق بالـ schema بعد تثبيت buyerId
       const draft = insertPaymentSchema.parse({
         ...req.body,
         buyerId: buyer.id,
         escrowAddress,
         feePercent: String(feePercent),
+        // ملاحظة: لا نضيف idempotencyKey إذا الـ schema ما يدعمه
       });
 
       const { fee, sellerAmount } = feeCalc(expected, feePercent);
@@ -58,8 +74,11 @@ export function mountPayments(app: Express) {
         feeAmount: String(fee),
         sellerAmount: String(sellerAmount),
         status: "pending" as any,
+        // إن كان عندك عمود idempotency_key بالـ DB أضِفه هنا:
+        // idempotencyKey: idem || null,
       } as any);
 
+      // إشعار pending
       await storage.createActivity({
         listingId: listing.id,
         buyerId: buyer.id,
@@ -107,7 +126,9 @@ export function mountPayments(app: Express) {
       const listing = await storage.getChannel(payment.listingId);
       if (!listing) return res.status(404).json({ error: "Listing not found" });
 
-      const escrow = payment.escrowAddress || process.env.ESCROW_WALLET || "";
+      const escrow = (payment.escrowAddress || process.env.ESCROW_WALLET || "").trim();
+      if (!escrow) return res.status(500).json({ error: "ESCROW_WALLET not set" });
+
       const expectedAmount = num(payment.amount);
 
       const ok = await verifyTonPayment({
