@@ -15,8 +15,9 @@ export const users = pgTable("users", {
   username: varchar("username", { length: 64 }),
   firstName: varchar("first_name", { length: 128 }),
   lastName: varchar("last_name", { length: 128 }),
-  tonWallet: varchar("ton_wallet", { length: 128 }),
-  role: varchar("role", { length: 32 }).notNull().default("user"), // user | admin
+  tonWallet: varchar("ton_wallet", { length: 128 }),                 // متروك للتوافق
+  walletAddress: varchar("wallet_address", { length: 128 }),         // عنوان السحب المربوط
+  role: varchar("role", { length: 32 }).notNull().default("user"),   // user | admin
   createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
 });
 
@@ -65,8 +66,13 @@ export const listings = pgTable("listings", {
 ========================= */
 export const payments = pgTable("payments", {
   id: uuid("id").defaultRandom().primaryKey(),
-  listingId: uuid("listing_id").notNull().references(() => listings.id),
+  // للإيداع يكون null، وللطلب يكون listingId موجود
+  listingId: uuid("listing_id").references(() => listings.id),
   buyerId: uuid("buyer_id").notNull().references(() => users.id),
+
+  kind: varchar("kind", { length: 16 }).notNull().default("order"),     // deposit | order
+  locked: boolean("locked").notNull().default(false),                    // حجز رصيد للطلبات
+
   amount: numeric("amount", { precision: 30, scale: 9 }).notNull(),
   currency: varchar("currency", { length: 8 }).notNull().default("TON"),
   feePercent: numeric("fee_percent", { precision: 5, scale: 2 }).notNull().default("5.00"),
@@ -79,9 +85,9 @@ export const payments = pgTable("payments", {
   buyerConfirmed: boolean("buyer_confirmed").notNull().default(false),
   sellerConfirmed: boolean("seller_confirmed").notNull().default(false),
 
-  // state control (no auto release)
+  // state control
   status: varchar("status", { length: 16 }).notNull().default("pending"),
-  // pending | waiting | completed | disputed | refunded | cancelled
+  // pending | waiting | paid | completed | disputed | refunded | cancelled
 
   // final admin decision (manual)
   adminAction: varchar("admin_action", { length: 16 }).notNull().default("none"),
@@ -93,16 +99,21 @@ export const payments = pgTable("payments", {
 });
 
 /* =========================
-   payouts (release to seller)
+   payouts (release to user/seller)
 ========================= */
 export const payouts = pgTable("payouts", {
   id: uuid("id").defaultRandom().primaryKey(),
-  paymentId: uuid("payment_id").notNull().references(() => payments.id),
+  // للسحب بطلب مستخدم قد لا يرتبط بدفع معيّن
+  paymentId: uuid("payment_id").references(() => payments.id),
   sellerId: uuid("seller_id").notNull().references(() => users.id),
   toAddress: varchar("to_address", { length: 128 }).notNull(),
   amount: numeric("amount", { precision: 30, scale: 9 }).notNull(),
-  status: varchar("status", { length: 16 }).notNull().default("queued"), // queued | sent | confirmed | failed
+  currency: varchar("currency", { length: 8 }).notNull().default("TON"),
+  status: varchar("status", { length: 16 }).notNull().default("queued"), // queued | sent | confirmed | failed | rejected
   txHash: varchar("tx_hash", { length: 128 }),
+  note: text("note"),
+  adminChecked: boolean("admin_checked").notNull().default(false),
+  checklist: text("checklist"),
   createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
   sentAt: timestamp("sent_at", { withTimezone: false }),
   confirmedAt: timestamp("confirmed_at", { withTimezone: false }),
@@ -113,7 +124,7 @@ export const payouts = pgTable("payouts", {
 ========================= */
 export const activities = pgTable("activities", {
   id: uuid("id").defaultRandom().primaryKey(),
-  listingId: uuid("listing_id").notNull().references(() => listings.id, { onDelete: "cascade" }),
+  listingId: uuid("listing_id").references(() => listings.id, { onDelete: "cascade" }),
   buyerId: uuid("buyer_id").notNull().references(() => users.id),
   sellerId: uuid("seller_id").notNull().references(() => users.id),
   paymentId: uuid("payment_id").references(() => payments.id),
@@ -209,6 +220,7 @@ export const insertUserSchema = z.object({
   firstName: z.string().optional().nullable(),
   lastName: z.string().optional().nullable(),
   tonWallet: z.string().optional().nullable(),
+  walletAddress: z.string().optional().nullable(),
   role: z.string().optional(),
 });
 
@@ -243,30 +255,39 @@ export const insertListingSchema = z.object({
 });
 
 export const insertPaymentSchema = z.object({
-  listingId: z.string().uuid(),
+  listingId: z.string().uuid().optional().nullable(),          // null عند الإيداع
   buyerId: z.string().uuid(),
+  kind: z.enum(["deposit","order"]).default("order"),
+  locked: z.boolean().optional().default(false),
+
   amount: z.string().regex(priceRe),
   currency: z.enum(["TON","USDT"]).default("TON"),
   feePercent: z.string().regex(/^\d+(\.\d{1,2})?$/).default("5.00"),
+  feeAmount: z.string().regex(priceRe).optional().nullable(),
+  sellerAmount: z.string().regex(priceRe).optional().nullable(),
   escrowAddress: z.string().min(3),
   comment: z.string().optional().nullable(),
   txHash: z.string().optional().nullable(),
 
   buyerConfirmed: z.boolean().optional().default(false),
   sellerConfirmed: z.boolean().optional().default(false),
-  status: z.enum(["pending","waiting","completed","disputed","refunded","cancelled"]).default("pending"),
+  status: z.enum(["pending","waiting","paid","completed","disputed","refunded","cancelled"]).default("pending"),
   adminAction: z.enum(["none","refund","payout"]).default("none"),
 });
 
 export const insertPayoutSchema = z.object({
-  paymentId: z.string().uuid(),
+  paymentId: z.string().uuid().optional().nullable(),
   sellerId: z.string().uuid(),
   toAddress: z.string().min(3),
   amount: z.string().regex(priceRe),
+  currency: z.enum(["TON","USDT"]).default("TON"),
+  status: z.enum(["queued","sent","confirmed","failed","rejected"]).default("queued"),
+  note: z.string().optional().nullable(),
+  txHash: z.string().optional().nullable(),
 });
 
 export const insertActivitySchema = z.object({
-  listingId: z.string().uuid(),
+  listingId: z.string().uuid().optional().nullable(),
   buyerId: z.string().uuid(),
   sellerId: z.string().uuid(),
   paymentId: z.string().uuid().optional().nullable(),
