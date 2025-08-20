@@ -12,27 +12,47 @@ import { mountPayments } from "./routers/payments";
 import { mountDisputes } from "./routers/disputes";
 import { mountDisputeMessages } from "./routers/messages";
 import { mountWallet } from "./routers/wallet";
+import { mountProfile } from "./routers/profile";
+import { mountBalance } from "./routers/balance";
+import { mountPayouts } from "./routers/payouts";
+import { mountAdmin } from "./routers/admin";
+import { mountAdminPayouts } from "./routers/admin-payouts";
 import { mountStats } from "./routers/stats";
 import { mountMisc } from "./routers/misc";
 
-const WEBAPP_URL = process.env.WEBAPP_URL!; // لازم تكون مضبوطة في Render
+const WEBAPP_URL = process.env.WEBAPP_URL!; // مطلوب في Render
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // 1) webhook + /api/config (webhook لازم يتركب أولاً)
+  // 1) Webhook + /api/config (أولاً)
   mountWebhook(app, WEBAPP_URL);
 
-  // 2) مسارات البوت (تفعل فقط إذا TELEGRAM_BOT_TOKEN موجود)
+  // 2) مسارات البوت (تفعل فقط عند وجود TELEGRAM_BOT_TOKEN)
   registerBotRoutes(app);
 
-  // 3) REST APIs
+  // 3) REST APIs (ترتيب منطقي)
   mountUsers(app);
   mountListings(app);
   mountChannels(app);
   mountActivities(app);
+
+  // رصيد/محفظة/سحب
+  mountWallet(app);
+  mountProfile(app);
+  mountBalance(app);
+  mountPayouts(app);
+
+  // مدفوعات الطلبات من الرصيد
   mountPayments(app);
+
+  // نزاعات ورسائلها
   mountDisputes(app);
   mountDisputeMessages(app);
-  mountWallet(app);
+
+  // لوحات الأدمن
+  mountAdmin(app);
+  mountAdminPayouts(app);
+
+  // إحصائيات ومتفرقات أخيراً
   mountStats(app);
   mountMisc(app);
 
