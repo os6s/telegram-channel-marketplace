@@ -20,10 +20,17 @@ import { mountAdminPayouts } from "./routers/admin-payouts";
 import { mountStats } from "./routers/stats";
 import { mountMisc } from "./routers/misc";
 
+// 🌐 WEBAPP_URL: واجهة الميني‑آب
 const WEBAPP_URL = process.env.WEBAPP_URL!; // مطلوب في Render
+// 🌐 PUBLIC_BASE_URL: الدومين العام الذي استعملته مع setWebhook  (اختياري)
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || WEBAPP_URL;
+console.log("[routes] WEBAPP_URL =", WEBAPP_URL);
+console.log("[routes] PUBLIC_BASE_URL =", PUBLIC_BASE_URL);
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // 1) Webhook + /api/config (أولاً)
+  // نمرّر WEBAPP_URL فقط لاستخدامه داخل رسائل البوت (زر Open Marketplace)
+  // عنوان الويبهوك الفعلي هو: `${PUBLIC_BASE_URL}/webhook/telegram` الذي ضبطته عبر setWebhook
   mountWebhook(app, WEBAPP_URL);
 
   // 2) مسارات البوت (تفعل فقط عند وجود TELEGRAM_BOT_TOKEN)
