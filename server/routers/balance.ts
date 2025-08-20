@@ -13,9 +13,9 @@ export function mountBalance(app: Express) {
     if (!me) return res.status(404).json({ error: "user_not_found" });
 
     const pays = await storage.listPaymentsByBuyer(me.id);
-    const deposits = sum(pays, p => p.kind === "deposit" && p.status === "paid"));
-    const locked = sum(pays, p => p.kind === "order" && p.locked && (p.status === "pending" || p.status === "paid")));
-    const balance = +(deposits - locked).toFixed(9);
+    const deposits = sum(pays, p => p.kind === "deposit" && p.status === "paid");
+    const locked   = sum(pays, p => p.kind === "order" && p.locked && (p.status === "pending" || p.status === "paid"));
+    const balance  = +(deposits - locked).toFixed(9);
 
     res.json({ deposits, locked, balance, currency: "TON" });
   });
