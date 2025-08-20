@@ -9,11 +9,11 @@
     "build:client": "vite build",
     "build:server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist/server --sourcemap",
     "build": "npm run build:client && npm run build:server",
-    "build:render": "npm run clean && npm run build && npm run db:migrate",
-    "start": "NODE_ENV=production node dist/server/index.js",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "npm run db:generate && npm run db:push",
+    "build:render": "npm run clean && npm run build && npm run db:migrate",
+    "start": "NODE_ENV=production node dist/server/index.js",
     "check": "tsc"
   },
   "dependencies": {
