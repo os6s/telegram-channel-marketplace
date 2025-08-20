@@ -61,3 +61,8 @@ attached_assets/
 # Deployment files (optional, keep if you want to include them)
 # DEPLOYMENT_*.md
 # render.yaml
+# Drizzle migrations
+!drizzle/
+!drizzle/*.sql
+!drizzle/meta/
+!drizzle/meta/_journal.json
