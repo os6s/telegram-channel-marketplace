@@ -9,7 +9,12 @@ import { nanoid } from "nanoid";
 const viteLogger = createLogger();
 
 export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true });
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
@@ -26,7 +31,10 @@ export async function setupVite(app: Express, server: Server) {
     configFile: false,
     customLogger: {
       ...viteLogger,
-      error: (msg, options) => { viteLogger.error(msg, options); process.exit(1); },
+      error: (msg, options) => {
+        viteLogger.error(msg, options);
+        process.exit(1);
+      },
     },
     server: serverOptions,
     appType: "custom",
