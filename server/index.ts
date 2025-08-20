@@ -1,6 +1,8 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
+import hpp from "hpp";
+import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
@@ -13,18 +15,47 @@ if (process.env.NODE_ENV === "production") {
 const app = express();
 app.set("trust proxy", 1);
 
-// Security
+// Security headers
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: false, // سنضبط CSP يدويًا أدناه
     crossOriginEmbedderPolicy: false,
+  })
+);
+
+// Content Security Policy (نقطة 6)
+app.use((_, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self' https: data: blob:",
+      "connect-src 'self' https: wss:",
+      "img-src 'self' https: data: blob:",
+      "style-src 'self' 'unsafe-inline' https:",
+      "script-src 'self' 'wasm-unsafe-eval' https:",
+      "frame-ancestors https://web.telegram.org https://*.telegram.org",
+    ].join("; ")
+  );
+  next();
+});
+
+// HPP + Rate limit (نقطة 7)
+app.use(hpp());
+app.use(
+  rateLimit({
+    windowMs: 60_000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
   })
 );
 
 // CORS
 const allowRenderWildcard = process.env.ALLOW_RENDER_ORIGIN === "true";
 const allowed = (process.env.WEBAPP_URL || process.env.WEBAPP_URLS || "")
-  .split(",").map(s => s.trim()).filter(Boolean);
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
@@ -32,31 +63,50 @@ app.use(
       if (!origin) return cb(null, true); // WebView
       if (allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
       if (allowRenderWildcard) {
-        try { const host = new URL(origin).hostname; if (/\.onrender\.com$/.test(host)) return cb(null, true); } catch {}
+        try {
+          const host = new URL(origin).hostname;
+          if (/\.onrender\.com$/.test(host)) return cb(null, true);
+        } catch {}
       }
       return cb(null, false);
     },
-    methods: ["GET","POST","PATCH","DELETE","OPTIONS"],
-    allowedHeaders: ["Content-Type","Authorization","x-setup-key","x-telegram-bot-api-secret-token"],
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-setup-key",
+      "x-telegram-bot-api-secret-token",
+      "x-telegram-init-data" // للسماح بتمرير initData من الويب‑أب
+    ],
     credentials: true,
   })
 );
 
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: false, limit: "2mb" }));
+// Body limits
+app.use(express.json({ limit: "200kb" }));
+app.use(express.urlencoded({ extended: false, limit: "200kb" }));
 
 app.get(["/health", "/healthz"], (_req, res) => res.type("text").send("ok"));
 
 // API logger
 app.use((req, res, next) => {
-  const t0 = Date.now(); const path = req.path; let captured: any;
+  const t0 = Date.now();
+  const path = req.path;
+  let captured: any;
   const orig = res.json as any;
-  (res as any).json = function (body: any, ...args: any[]) { captured = body; return orig.apply(this, [body, ...args]); };
+  (res as any).json = function (body: any, ...args: any[]) {
+    captured = body;
+    return orig.apply(this, [body, ...args]);
+  };
   res.on("finish", () => {
     if (path.startsWith("/api") || path.startsWith("/webhook")) {
-      let line = `${req.method} ${path} ${res.statusCode} in ${Date.now()-t0}ms`;
-      if (captured) { try { line += ` :: ${JSON.stringify(captured)}`; } catch {} }
-      if (line.length > 160) line = line.slice(0,159) + "…";
+      let line = `${req.method} ${path} ${res.statusCode} in ${Date.now() - t0}ms`;
+      if (captured) {
+        try {
+          line += ` :: ${JSON.stringify(captured)}`;
+        } catch {}
+      }
+      if (line.length > 160) line = line.slice(0, 159) + "…";
       log(line);
     }
   });
