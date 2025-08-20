@@ -24,15 +24,30 @@ export function mountMisc(app: Express) {
     res.redirect(302, "https://t.me/giftspremarketbot");
   });
 
+  // حماية إعداد الويبهوك بمفتاح سري
   app.post("/setup-webhook", async (req, res) => {
     try {
       const token = process.env.TELEGRAM_BOT_TOKEN;
       if (!token) return res.status(400).json({ error: "TELEGRAM_BOT_TOKEN not set" });
+
+      const expectedSecret = process.env.WEBHOOK_SECRET || process.env.SESSION_SECRET;
+      const provided = req.get("x-setup-key");
+      if (!expectedSecret || provided !== expectedSecret) {
+        return res.status(403).json({ error: "forbidden" });
+      }
+
       const webhookUrl = `${baseUrl(req)}/webhook/telegram`;
+
       const r = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: webhookUrl }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: webhookUrl,
+          secret_token: expectedSecret, // للتحقق من جهة Telegram عند وصول التحديثات
+          allowed_updates: ["message", "callback_query"]
+        }),
       });
+
       res.json({ ok: true, webhook_url: webhookUrl, telegram: await r.json() });
     } catch (e: any) {
       res.status(500).json({ error: e?.message || "Failed to setup webhook" });
