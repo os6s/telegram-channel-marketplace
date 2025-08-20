@@ -43,8 +43,7 @@ export function mountWallet(app: Express) {
 
     // احجز سجل waiting حتى ما يُختطف الكود
     await storage.createPayment({
-      // deposit لا يرتبط بإعلان
-      listingId: (null as unknown) as any, // حقل غير nullable في بعض المخططات، استعمل null cast إذا لازم
+      listingId: null as any,
       buyerId: me.id,
       kind: "deposit" as any,
       locked: false as any,
@@ -54,12 +53,14 @@ export function mountWallet(app: Express) {
       feeAmount: "0",
       sellerAmount: "0",
       escrowAddress: escrow,
-      comment: code,       // الربط سيتم عبر هذا الكود
+      comment: code, // الربط سيتم عبر هذا الكود
       txHash: null,
       buyerConfirmed: false,
       sellerConfirmed: false,
       status: "waiting" as any,
       adminAction: "none",
+      // ⬇️ إضافة انتهاء صلاحية: ساعة من الآن
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000) as any,
     });
 
     const ton = `ton://transfer/${escrow}?amount=${amountNano}&text=${text}`;
@@ -77,7 +78,7 @@ export function mountWallet(app: Express) {
     });
   });
 
-  // 2) تحقق الإيداع: POST حتى لا ينكشف الكود في الـ logs، تحديث سجل waiting نفسه
+  // 2) تحقق الإيداع: POST حتى لا ينكشف الكود في الـ logs
   app.post("/api/wallet/deposit/status", tgAuth, async (req, res) => {
     const tgUser = (req as unknown as { telegramUser?: TgUser }).telegramUser;
     if (!tgUser) return res.status(401).json({ error: "unauthorized" });
@@ -96,6 +97,11 @@ export function mountWallet(app: Express) {
     );
     if (!waiting) return res.status(404).json({ status: "not_found" });
 
+    // ⬇️ تحقق من صلاحية الكود
+    if (waiting.expiresAt && new Date(waiting.expiresAt).getTime() < Date.now()) {
+      return res.status(410).json({ status: "expired" });
+    }
+
     // تحقق on-chain بالتعليق
     const v = await verifyTonDepositByComment({
       escrow,
@@ -106,9 +112,10 @@ export function mountWallet(app: Express) {
     if (!v.ok) return res.json({ status: "pending" });
 
     // منع تكرار المطالبة لنفس المستخدم وtx
-    const already = myPays.find(p => p.kind === "deposit" && p.txHash && v.txHash && p.txHash === v.txHash);
+    const already = myPays.find(
+      p => p.kind === "deposit" && p.txHash && v.txHash && p.txHash === v.txHash
+    );
     if (already) {
-      // لو سجلنا مسبقًا كـ paid رجّع الحالة
       return res.json({ status: "paid", amount: Number(already.amount), txHash: already.txHash });
     }
 
@@ -132,8 +139,11 @@ export function mountWallet(app: Express) {
 
     const pays = await storage.listPaymentsByBuyer(me.id);
     const deposits = sum(pays, p => p.kind === "deposit" && p.status === "paid");
-    const locked   = sum(pays, p => p.kind === "order" && p.locked && (p.status === "pending" || p.status === "paid"));
-    const balance  = +(deposits - locked).toFixed(9);
+    const locked = sum(
+      pays,
+      p => p.kind === "order" && p.locked && (p.status === "pending" || p.status === "paid")
+    );
+    const balance = +(deposits - locked).toFixed(9);
 
     res.json({ deposits, locked, balance, currency: "TON" });
   });
