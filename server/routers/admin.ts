@@ -8,26 +8,29 @@ import {
   users,
   type User,
 } from "@shared/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
+import { tgAuth } from "../middleware/tgAuth";
+import { storage } from "../storage";
 
-/* --- helpers: auth (مبسّط) --- */
+/* --- auth صار عبر tgAuth + لائحة الإدمن من ENV --- */
+const ADMIN_TG = new Set(
+  (process.env.ADMIN_TG_IDS || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean)
+);
+
 async function resolveActor(req: Request): Promise<User | undefined> {
-  const userId = (req as any)?.session?.userId || (req.query.userId as string | undefined);
-  const telegramId = req.query.telegramId as string | undefined;
-
-  if (userId) {
-    const rows = await db.select().from(users).where(eq(users.id, String(userId))).limit(1);
-    return rows[0];
-  }
-  if (telegramId) {
-    const rows = await db.select().from(users).where(eq(users.telegramId, String(telegramId))).limit(1);
-    return rows[0];
-  }
-  return undefined;
+  const tg = (req as any).telegramUser as { id: number } | undefined;
+  if (!tg) return undefined;
+  return storage.getUserByTelegramId(String(tg.id));
 }
-function isAdmin(u?: Pick<User, "role" | "username">) {
-  const uname = (u?.username ?? "").toLowerCase();
-  return u?.role === "admin" || uname === "os6s7";
+function isAdmin(u?: Pick<User, "role" | "telegramId" | "username">) {
+  if (!u) return false;
+  if (u.role === "admin") return true;
+  const ok = u.telegramId ? ADMIN_TG.has(u.telegramId) : false;
+  // خيار بديل احتياطي لاسم واحد محدد
+  return ok || (u.username || "").toLowerCase() === "os6s7";
 }
 
 /* --- Telegram notify helper --- */
@@ -42,18 +45,15 @@ async function notify(telegramId: string | null | undefined, text: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
     });
-  } catch {
-    // ignore
-  }
+  } catch { /* ignore */ }
 }
 
 export function mountAdmin(app: Express) {
   // ✅ جميع الطلبات (kind='order' فقط)
-  app.get("/api/admin/orders", async (req, res) => {
+  app.get("/api/admin/orders", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
-    // طلبات الشراء فقط + لها listingId
     const rows = await db
       .select({
         id: payments.id,
@@ -75,32 +75,17 @@ export function mountAdmin(app: Express) {
     if (rows.length === 0) return res.json([]);
 
     // جلب بيانات المشترين والبائعين
-    const buyerIds = Array.from(new Set(rows.map(r => r.buyerId)));
-    const sellerIds = Array.from(new Set(rows.map(r => r.sellerId)));
-    const allUserIds = Array.from(new Set([...buyerIds, ...sellerIds]));
-
-    const usersRows = allUserIds.length
-      ? await db.select().from(users).where(eq(users.id, allUserIds[0])).then(async first =>
-          allUserIds.length === 1 ? first : await db.select().from(users).where(
-            // drizzle ما يدعم IN مباشرة هنا بدون helpers، فنبقيها بسيطة باستعلامات متعددة عند الحاجة
-            // لكن لتقليل الاستعلامات، نرجع لاستعلام واحد لكل id (صغير العدد عادة)
-            // إذا تحب IN: استعمل sql`... IN (...)`
-            // للحفاظ على البساطة والtype-safety نكرر:
-            // ملاحظة: لتحسين الأداء استبدلها بـ sql in.
-            // ندمج النتائج:
-            Promise.all(allUserIds.map(async id => (await db.select().from(users).where(eq(users.id, id)).limit(1))[0]))
-          )
-        )
-      : [];
-
-    const flatUsers = Array.isArray(usersRows) ? usersRows.flat() : usersRows;
-    const U = new Map(flatUsers.filter(Boolean).map(u => [u.id, u]));
+    const ids = Array.from(new Set(rows.flatMap(r => [r.buyerId, r.sellerId])));
+    const U = new Map(
+      (await Promise.all(ids.map(async id => (await db.select().from(users).where(eq(users.id, id)).limit(1))[0])))
+        .filter(Boolean)
+        .map(u => [u.id, u])
+    );
 
     const out = rows.map(r => {
       const buyer = U.get(r.buyerId);
       const seller = U.get(r.sellerId);
 
-      // mapping: paid/pending = held, completed+payout = released, refunded = refunded, disputed = disputed, cancelled = cancelled
       const status:
         | "held"
         | "awaiting_buyer_confirm"
@@ -132,7 +117,7 @@ export function mountAdmin(app: Express) {
   });
 
   // ✅ Release: تحويل الحالة فقط، بدون إرسال فعلي
-  app.post("/api/admin/payments/:id/release", async (req, res) => {
+  app.post("/api/admin/payments/:id/release", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
@@ -140,8 +125,6 @@ export function mountAdmin(app: Express) {
     const pay = (await db.select().from(payments).where(eq(payments.id, pid)).limit(1))[0];
     if (!pay) return res.status(404).json({ error: "Payment not found" });
     if (pay.kind !== "order") return res.status(400).json({ error: "Not an order payment" });
-
-    // حالات مُغلقة لا تُعدّل
     if (pay.status === "refunded") return res.status(409).json({ error: "Already refunded" });
     if (pay.status === "completed" && pay.adminAction === "payout") {
       return res.status(409).json({ error: "Already released" });
@@ -180,7 +163,7 @@ export function mountAdmin(app: Express) {
   });
 
   // ✅ Refund
-  app.post("/api/admin/payments/:id/refund", async (req, res) => {
+  app.post("/api/admin/payments/:id/refund", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
@@ -188,7 +171,6 @@ export function mountAdmin(app: Express) {
     const pay = (await db.select().from(payments).where(eq(payments.id, pid)).limit(1))[0];
     if (!pay) return res.status(404).json({ error: "Payment not found" });
     if (pay.kind !== "order") return res.status(400).json({ error: "Not an order payment" });
-
     if (pay.status === "completed" && pay.adminAction === "payout") {
       return res.status(409).json({ error: "Already released" });
     }
