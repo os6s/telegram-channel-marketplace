@@ -30,7 +30,7 @@ function isAdmin(u?: Pick<User, "role" | "telegramId" | "username">) {
   if (u.role === "admin") return true;
   const ok = u.telegramId ? ADMIN_TG.has(u.telegramId) : false;
   // خيار بديل احتياطي لاسم واحد محدد
-  return ok || (u.username || "").toLowerCase() === "Os6s7";
+  return ok || (u.username || "").toLowerCase() === "os6s7";
 }
 
 /* --- Telegram notify helper --- */
