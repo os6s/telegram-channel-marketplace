@@ -1,3 +1,4 @@
+// server/vite.ts
 import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
@@ -57,7 +58,7 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(import.meta.dirname, "public");
+  const distPath = path.resolve(process.cwd(), "dist/public");
   if (!fs.existsSync(distPath)) {
     throw new Error(`Build output not found: ${distPath}. Run client build first.`);
   }
