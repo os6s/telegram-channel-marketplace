@@ -36,7 +36,6 @@ export function mountPayments(app: Express) {
           firstName: tgUser.first_name ?? null,
           lastName: null,
           tonWallet: null,
-          walletAddress: null,
           role: "user",
         });
       }
@@ -49,7 +48,7 @@ export function mountPayments(app: Express) {
 
       // رصيد المشتري المتاح = إيداعات مدفوعة - طلبات محجوزة (pending/paid)
       const pays = await storage.listPaymentsByBuyer(buyer.id);
-      const deposits = sum(pays, p => p.kind === "deposit" && p.status === "paid"));
+      const deposits = sum(pays, p => p.kind === "deposit" && p.status === "paid");
       const locked   = sum(pays, p => p.kind === "order"   && p.locked && (p.status === "pending" || p.status === "paid"));
       const balance  = +(deposits - locked).toFixed(9);
       if (balance < expected) {
@@ -117,7 +116,7 @@ export function mountPayments(app: Express) {
     }
   });
 
-  // تأكيد الطلب: يثبت الدفع داخليًا من الرصيد (لا حاجة تحقق on-chain هنا)
+  // تأكيد الطلب: يثبت الدفع داخليًا من الرصيد
   app.patch("/api/payments/:id/confirm", tgAuth, async (req, res) => {
     try {
       const id = req.params.id;
