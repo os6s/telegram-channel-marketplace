@@ -6,26 +6,25 @@ import hpp from "hpp";
 import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import path from "path";                // <-- ESM import بدال require
+import { fileURLToPath } from "url";    // لحساب __dirname
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 if (process.env.NODE_ENV === "production") {
   if (!process.env.SESSION_SECRET) throw new Error("SESSION_SECRET is required");
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
   if (!process.env.WEBAPP_URL) throw new Error("WEBAPP_URL is required");
-  // PUBLIC_BASE_URL اختياري
 }
 
 const app = express();
 app.set("trust proxy", 1);
 
 // Security headers
-app.use(
-  helmet({
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false,
-  })
-);
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 
-// Content Security Policy
+// CSP
 app.use((_, res, next) => {
   res.setHeader(
     "Content-Security-Policy",
@@ -44,15 +43,12 @@ app.use((_, res, next) => {
   next();
 });
 
-// HPP
 app.use(hpp());
 
 // CORS
 const allowRenderWildcard = process.env.ALLOW_RENDER_ORIGIN === "true";
 const allowed = (process.env.WEBAPP_URL || process.env.WEBAPP_URLS || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+  .split(",").map((s) => s.trim()).filter(Boolean);
 
 app.use(
   cors({
@@ -84,13 +80,7 @@ app.use(express.json({ limit: "200kb" }));
 app.use(express.urlencoded({ extended: false, limit: "200kb" }));
 
 // Rate limit
-const apiLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 120,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use("/api", apiLimiter);
+app.use("/api", rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
 app.use("/webhook/telegram", rateLimit({ windowMs: 60_000, max: 120 }));
 
 app.get(["/health", "/healthz"], (_req, res) => res.type("text").send("ok"));
@@ -98,7 +88,7 @@ app.get(["/health", "/healthz"], (_req, res) => res.type("text").send("ok"));
 // API logger
 app.use((req, res, next) => {
   const t0 = Date.now();
-  const path = req.path;
+  const pathUrl = req.path;
   let captured: unknown;
   const orig = res.json as any;
   (res as any).json = function (body: unknown, ...args: unknown[]) {
@@ -106,12 +96,10 @@ app.use((req, res, next) => {
     return orig.apply(this, [body, ...args]);
   };
   res.on("finish", () => {
-    if (path.startsWith("/api") || path.startsWith("/webhook")) {
-      let line = `${req.method} ${path} ${res.statusCode} in ${Date.now() - t0}ms`;
+    if (pathUrl.startsWith("/api") || pathUrl.startsWith("/webhook")) {
+      let line = `${req.method} ${pathUrl} ${res.statusCode} in ${Date.now() - t0}ms`;
       if (captured) {
-        try {
-          line += ` :: ${JSON.stringify(captured)}`;
-        } catch {}
+        try { line += ` :: ${JSON.stringify(captured)}`; } catch {}
       }
       if (line.length > 160) line = line.slice(0, 159) + "…";
       log(line);
@@ -121,20 +109,14 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // نحدد base URL حسب البيئة
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.WEBAPP_URL || "";
-  if (!publicBaseUrl) {
-    throw new Error("PUBLIC_BASE_URL or WEBAPP_URL must be set");
-  }
+  if (!publicBaseUrl) throw new Error("PUBLIC_BASE_URL or WEBAPP_URL must be set");
 
   const server = await registerRoutes(app, { publicBaseUrl });
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const e = err as { status?: number; statusCode?: number; message?: string };
-    const status = e?.status || e?.statusCode || 500;
-    const message = e?.message || "Internal Server Error";
-    console.error("[ERROR]", err);
-    res.status(status).json({ message });
+    res.status(e?.status || e?.statusCode || 500).json({ message: e?.message || "Internal Server Error" });
   });
 
   if (process.env.NODE_ENV === "development") {
@@ -148,12 +130,8 @@ app.use((req, res, next) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/webhook")) {
       return res.status(404).json({ error: "Not Found" });
     }
-    try {
-      const path = require("path");
-      return res.sendFile(path.resolve("dist/public/index.html"));
-    } catch {
-      return res.status(404).json({ error: "Not Found" });
-    }
+    // يخدم index.html من dist/public
+    return res.sendFile(path.resolve(__dirname, "../public/index.html"));
   });
 
   const port = parseInt(process.env.PORT || "5000", 10);
