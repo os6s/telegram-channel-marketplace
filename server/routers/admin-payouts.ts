@@ -4,23 +4,31 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { users, type User } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { tgAuth } from "../middleware/tgAuth";
 
-/* auth مبسّط مطابق لـ admin.ts */
+/* --- auth موحّد مع admin.ts --- */
+const ADMIN_TG = new Set(
+  (process.env.ADMIN_TG_IDS || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean)
+);
+
 async function resolveActor(req: Request): Promise<User | undefined> {
-  const userId = (req as any)?.session?.userId || (req.query.userId as string | undefined);
-  const telegramId = req.query.telegramId as string | undefined;
-  if (userId)  return (await db.select().from(users).where(eq(users.id, String(userId))).limit(1))[0];
-  if (telegramId) return (await db.select().from(users).where(eq(users.telegramId, String(telegramId))).limit(1))[0];
-  return undefined;
+  const tg = (req as any).telegramUser as { id: number } | undefined;
+  if (!tg) return undefined;
+  return storage.getUserByTelegramId(String(tg.id));
 }
-function isAdmin(u?: Pick<User, "role" | "username">) {
-  const uname = (u?.username ?? "").toLowerCase();
-  return u?.role === "admin" || uname === "os6s7";
+function isAdmin(u?: Pick<User, "role" | "telegramId" | "username">) {
+  if (!u) return false;
+  if (u.role === "admin") return true;
+  const ok = u.telegramId ? ADMIN_TG.has(u.telegramId) : false;
+  return ok || (u.username || "").toLowerCase() === "os6s7";
 }
 
 export function mountAdminPayouts(app: Express) {
   // GET /api/admin/payouts?sellerId=&status=&limit=&offset=
-  app.get("/api/admin/payouts", async (req, res) => {
+  app.get("/api/admin/payouts", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
@@ -30,7 +38,7 @@ export function mountAdminPayouts(app: Express) {
     let rows = sellerId ? await storage.listPayoutsBySeller(sellerId) : [];
     if (status) rows = rows.filter(p => p.status === status);
 
-    rows.sort((a, b) => new Date(b.createdAt as unknown as string).getTime() - new Date(a.createdAt as unknown as string).getTime());
+    rows.sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime());
 
     const limit = Math.max(0, Number(req.query.limit ?? 50));
     const offset = Math.max(0, Number(req.query.offset ?? 0));
@@ -38,7 +46,7 @@ export function mountAdminPayouts(app: Express) {
   });
 
   // PATCH /api/admin/payouts/:id/approve
-  app.patch("/api/admin/payouts/:id/approve", async (req, res) => {
+  app.patch("/api/admin/payouts/:id/approve", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
@@ -62,7 +70,7 @@ export function mountAdminPayouts(app: Express) {
   });
 
   // PATCH /api/admin/payouts/:id/reject
-  app.patch("/api/admin/payouts/:id/reject", async (req, res) => {
+  app.patch("/api/admin/payouts/:id/reject", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
