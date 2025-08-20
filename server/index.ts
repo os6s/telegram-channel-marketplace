@@ -11,12 +11,13 @@ if (process.env.NODE_ENV === "production") {
   if (!process.env.SESSION_SECRET) throw new Error("SESSION_SECRET is required");
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
   if (!process.env.WEBAPP_URL) throw new Error("WEBAPP_URL is required");
+  // PUBLIC_BASE_URL اختياري
 }
 
 const app = express();
 app.set("trust proxy", 1);
 
-// Security headers (CSP نضبطه يدويًا أدناه)
+// Security headers
 app.use(
   helmet({
     contentSecurityPolicy: false,
@@ -78,11 +79,11 @@ app.use(
   })
 );
 
-// Body limits (عام)
+// Body limits
 app.use(express.json({ limit: "200kb" }));
 app.use(express.urlencoded({ extended: false, limit: "200kb" }));
 
-// Rate limit: طبّقه على /api و /webhook فقط
+// Rate limit
 const apiLimiter = rateLimit({
   windowMs: 60_000,
   max: 120,
@@ -108,7 +109,9 @@ app.use((req, res, next) => {
     if (path.startsWith("/api") || path.startsWith("/webhook")) {
       let line = `${req.method} ${path} ${res.statusCode} in ${Date.now() - t0}ms`;
       if (captured) {
-        try { line += ` :: ${JSON.stringify(captured)}`; } catch {}
+        try {
+          line += ` :: ${JSON.stringify(captured)}`;
+        } catch {}
       }
       if (line.length > 160) line = line.slice(0, 159) + "…";
       log(line);
@@ -118,7 +121,13 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  const server = await registerRoutes(app);
+  // نحدد base URL حسب البيئة
+  const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.WEBAPP_URL || "";
+  if (!publicBaseUrl) {
+    throw new Error("PUBLIC_BASE_URL or WEBAPP_URL must be set");
+  }
+
+  const server = await registerRoutes(app, { publicBaseUrl });
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const e = err as { status?: number; statusCode?: number; message?: string };
@@ -131,7 +140,7 @@ app.use((req, res, next) => {
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {
-    serveStatic(app); // serves dist/public
+    serveStatic(app);
   }
 
   // SPA fallback
