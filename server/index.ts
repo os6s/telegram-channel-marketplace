@@ -1,3 +1,4 @@
+// server/index.ts
 import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -15,40 +16,35 @@ if (process.env.NODE_ENV === "production") {
 const app = express();
 app.set("trust proxy", 1);
 
-// Security headers
+// Security headers (CSP نضبطه يدويًا أدناه)
 app.use(
   helmet({
-    contentSecurityPolicy: false, // سنضبط CSP يدويًا أدناه
+    contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
   })
 );
 
-// Content Security Policy (نقطة 6)
+// Content Security Policy
 app.use((_, res, next) => {
   res.setHeader(
     "Content-Security-Policy",
     [
       "default-src 'self' https: data: blob:",
+      "script-src 'self' 'unsafe-inline' https://telegram.org https://*.telegram.org",
       "connect-src 'self' https: wss:",
       "img-src 'self' https: data: blob:",
       "style-src 'self' 'unsafe-inline' https:",
-      "script-src 'self' 'wasm-unsafe-eval' https:",
-      "frame-ancestors https://web.telegram.org https://*.telegram.org",
+      "font-src 'self' https: data:",
+      "worker-src 'self' blob:",
+      "frame-src 'self' https://t.me https://web.telegram.org https://*.telegram.org",
+      "frame-ancestors https://t.me https://web.telegram.org https://*.telegram.org",
     ].join("; ")
   );
   next();
 });
 
-// HPP + Rate limit (نقطة 7)
+// HPP
 app.use(hpp());
-app.use(
-  rateLimit({
-    windowMs: 60_000,
-    max: 120,
-    standardHeaders: true,
-    legacyHeaders: false,
-  })
-);
 
 // CORS
 const allowRenderWildcard = process.env.ALLOW_RENDER_ORIGIN === "true";
@@ -60,7 +56,7 @@ const allowed = (process.env.WEBAPP_URL || process.env.WEBAPP_URLS || "")
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin) return cb(null, true); // WebView
+      if (!origin) return cb(null, true); // WebView داخل Telegram
       if (allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
       if (allowRenderWildcard) {
         try {
@@ -76,15 +72,25 @@ app.use(
       "Authorization",
       "x-setup-key",
       "x-telegram-bot-api-secret-token",
-      "x-telegram-init-data" // للسماح بتمرير initData من الويب‑أب
+      "x-telegram-init-data",
     ],
     credentials: true,
   })
 );
 
-// Body limits
+// Body limits (عام)
 app.use(express.json({ limit: "200kb" }));
 app.use(express.urlencoded({ extended: false, limit: "200kb" }));
+
+// Rate limit: طبّقه على /api و /webhook فقط
+const apiLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use("/api", apiLimiter);
+app.use("/webhook/telegram", rateLimit({ windowMs: 60_000, max: 120 }));
 
 app.get(["/health", "/healthz"], (_req, res) => res.type("text").send("ok"));
 
@@ -92,9 +98,9 @@ app.get(["/health", "/healthz"], (_req, res) => res.type("text").send("ok"));
 app.use((req, res, next) => {
   const t0 = Date.now();
   const path = req.path;
-  let captured: any;
+  let captured: unknown;
   const orig = res.json as any;
-  (res as any).json = function (body: any, ...args: any[]) {
+  (res as any).json = function (body: unknown, ...args: unknown[]) {
     captured = body;
     return orig.apply(this, [body, ...args]);
   };
@@ -102,9 +108,7 @@ app.use((req, res, next) => {
     if (path.startsWith("/api") || path.startsWith("/webhook")) {
       let line = `${req.method} ${path} ${res.statusCode} in ${Date.now() - t0}ms`;
       if (captured) {
-        try {
-          line += ` :: ${JSON.stringify(captured)}`;
-        } catch {}
+        try { line += ` :: ${JSON.stringify(captured)}`; } catch {}
       }
       if (line.length > 160) line = line.slice(0, 159) + "…";
       log(line);
@@ -116,9 +120,10 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    const e = err as { status?: number; statusCode?: number; message?: string };
+    const status = e?.status || e?.statusCode || 500;
+    const message = e?.message || "Internal Server Error";
     console.error("[ERROR]", err);
     res.status(status).json({ message });
   });
