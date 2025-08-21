@@ -28,7 +28,7 @@ export const users = pgTable(
     tonWallet: varchar("ton_wallet", { length: 128 }), // legacy
     walletAddress: varchar("wallet_address", { length: 128 }), // linked withdrawal addr
     role: varchar("role", { length: 32 }).notNull().default("user"), // user | admin
-    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     usersTelegramIdx: index("users_telegram_idx").on(t.telegramId),
@@ -79,7 +79,7 @@ export const listings = pgTable(
     target: varchar("target", { length: 16 }),
     serviceCount: integer("service_count"),
 
-    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     listingsSellerIdx: index("listings_seller_idx").on(t.sellerId),
@@ -125,8 +125,8 @@ export const payments = pgTable(
     // none | refund | payout
 
     comment: text("comment"),
-    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
-    confirmedAt: timestamp("confirmed_at", { withTimezone: false }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
   },
   (t) => ({
     paymentsBuyerIdx: index("payments_buyer_idx").on(t.buyerId, t.createdAt),
@@ -156,9 +156,9 @@ export const payouts = pgTable(
     note: text("note"),
     adminChecked: boolean("admin_checked").notNull().default(false),
     checklist: text("checklist"),
-    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
-    sentAt: timestamp("sent_at", { withTimezone: false }),
-    confirmedAt: timestamp("confirmed_at", { withTimezone: false }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
   },
   (t) => ({
     payoutsSellerIdx: index("payouts_seller_idx").on(t.sellerId),
@@ -186,7 +186,7 @@ export const activities = pgTable(
     currency: varchar("currency", { length: 8 }),
     txHash: varchar("tx_hash", { length: 128 }),
     note: text("note"),
-    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     actsListingIdx: index("activities_listing_idx").on(t.listingId),
@@ -210,8 +210,8 @@ export const disputes = pgTable(
     reason: text("reason"),
     status: varchar("status", { length: 16 }).notNull().default("open"), // open | reviewing | resolved | cancelled
     evidence: text("evidence"),
-    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
-    resolvedAt: timestamp("resolved_at", { withTimezone: false }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },
   (t) => ({
     disputesPaymentIdx: index("disputes_payment_idx").on(t.paymentId),
@@ -232,7 +232,7 @@ export const messages = pgTable(
     disputeId: uuid("dispute_id").notNull().references(() => disputes.id, { onDelete: "cascade" }),
     senderId: uuid("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     content: text("content").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     messagesDisputeIdx: index("messages_dispute_idx").on(t.disputeId),
@@ -327,7 +327,7 @@ export const insertListingSchema = z.object({
   tgUserType: z.string().optional().nullable(),
 
   followersCount: z.coerce.number().int().min(0).optional().nullable(),
-  createdAt: z.string().regex(yyyyMmRe).optional().nullable(),
+  accountCreatedAt: z.string().regex(yyyyMmRe).optional().nullable(),
 
   serviceType: z
     .enum(["followers", "members", "boost_channel", "boost_group"])
@@ -337,7 +337,7 @@ export const insertListingSchema = z.object({
     .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
     .optional()
     .nullable(),
-  count: z.coerce.number().int().min(0).optional().nullable(),
+  serviceCount: z.coerce.number().int().min(0).optional().nullable(),
 });
 
 export const insertPaymentSchema = z.object({
@@ -349,8 +349,8 @@ export const insertPaymentSchema = z.object({
   amount: z.string().regex(priceRe),
   currency: z.enum(["TON", "USDT"]).default("TON"),
   feePercent: z.string().regex(/^\d+(\.\d{1,2})?$/).default("5.00"),
-  feeAmount: z.string().regex(priceRe).optional().nullable(),
-  sellerAmount: z.string().regex(priceRe).optional().nullable(),
+  feeAmount: z.string().regex(priceRe),
+  sellerAmount: z.string().regex(priceRe),
   escrowAddress: z.string().min(3),
   comment: z.string().optional().nullable(),
   txHash: z.string().optional().nullable(),
