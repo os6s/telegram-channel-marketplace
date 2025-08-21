@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ActivityTimeline, type ActivityEvent } from "@/components/activity-timeline";
 import { useLanguage } from "@/contexts/language-context";
+import { apiRequest } from "@/lib/queryClient";
 
 type ApiActivity =
   | {
@@ -31,23 +32,24 @@ export default function Activity() {
   const { t } = useLanguage();
 
   const { data, isLoading, error } = useQuery<ApiActivity[]>({
-    queryKey: ["/api/market-activity", { limit: 50 }], // تقدر تغيّر limit
-    queryFn: async () => {
-      const res = await fetch(`/api/market-activity?limit=50`);
-      if (!res.ok) throw new Error("Failed to load market activity");
-      return res.json();
+    queryKey: ["/api/market-activity", { limit: 50 }],
+    queryFn: async ({ queryKey }) => {
+      const [, params] = queryKey as [string, { limit?: number }];
+      const limit = params?.limit ?? 50;
+      const res = (await apiRequest("GET", `/api/market-activity?limit=${limit}`)) as ApiActivity[];
+      return Array.isArray(res) ? res : [];
     },
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    retry: false,
   });
 
   const events: ActivityEvent[] = useMemo(() => {
-    if (!data) return [];
+    if (!Array.isArray(data)) return [];
     return data.map((item) => {
-      const tag = item.username ? `@${item.username}` : (item.title ?? "Listing");
+      const tag = item.username ? `@${item.username}` : item.title ?? "Listing";
       const price =
-        item.price != null && item.currency
-          ? `${String(item.price)} ${item.currency}`
-          : undefined;
+        item.price != null && item.currency ? `${String(item.price)} ${item.currency}` : undefined;
 
       if (item.kind === "sold") {
         const subtitleParts = [
@@ -62,19 +64,16 @@ export default function Activity() {
           subtitle: subtitleParts.join(" • "),
           createdAt: item.createdAt,
         };
-      } else {
-        const subtitleParts = [
-          item.seller ? `by @${item.seller}` : undefined,
-          price,
-        ].filter(Boolean);
-        return {
-          id: item.id,
-          type: "LISTED",
-          title: `Listed ${tag}`,
-          subtitle: subtitleParts.join(" • "),
-          createdAt: item.createdAt,
-        };
       }
+
+      const subtitleParts = [item.seller ? `by @${item.seller}` : undefined, price].filter(Boolean);
+      return {
+        id: item.id,
+        type: "LISTED",
+        title: `Listed ${tag}`,
+        subtitle: subtitleParts.join(" • "),
+        createdAt: item.createdAt,
+      };
     });
   }, [data]);
 
