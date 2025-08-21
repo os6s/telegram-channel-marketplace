@@ -9,6 +9,7 @@ import { Search, Filter, AtSign, Hash, Sparkles, User2, Users, Gift, Megaphone, 
 import { ListingCard } from "@/components/ListingCard";
 import { useLanguage } from "@/contexts/language-context";
 import { onListingsChange, listLocalListings, type AnyListing } from "@/store/listings";
+import { apiRequest } from "@/lib/queryClient";
 
 type Kind = "username" | "account" | "channel" | "service" | "";
 type Platform = "telegram" | "twitter" | "instagram" | "discord" | "snapchat" | "tiktok" | "";
@@ -73,24 +74,34 @@ export default function Marketplace() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const { data: stats, isLoading: statsLoading } = useQuery({ queryKey: ["/api/stats"] });
+  // Stats من الباك الحالي
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ["/api/stats"],
+    queryFn: async () => (await apiRequest("GET", "/api/stats")) ?? {},
+    staleTime: 30_000,
+    retry: false,
+  });
 
-  const qk = ["/api/listings", { search, kind, platform, channelMode, serviceType }];
+  // Listings مع بارامترات متطابقة للباك
+  const qk = ["/api/listings", { search, kind, platform, channelMode, serviceType }] as const;
   const { data: serverListings = [], isLoading: listingsLoading } = useQuery({
     queryKey: qk,
     queryFn: async () => {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
-      if (kind) params.set("type", kind);
+      if (kind) params.set("type", kind);                 // يتطابق مع الباك
       if (platform) params.set("platform", platform);
       if (channelMode) params.set("channelMode", channelMode);
       if (serviceType) params.set("serviceType", serviceType);
-      const res = await fetch(`/api/listings?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch listings");
-      return (await res.json()) as AnyListing[];
+      const res = (await apiRequest("GET", `/api/listings?${params.toString()}`)) as AnyListing[] | null;
+      return Array.isArray(res) ? res : [];
     },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    retry: false,
   });
 
+  // دمج المحلي مع السيرفر
   const [localListings, setLocalListings] = useState<AnyListing[]>(() => listLocalListings());
   useEffect(() => {
     setLocalListings(listLocalListings());
@@ -104,6 +115,7 @@ export default function Marketplace() {
     return Array.from(map.values());
   }, [localListings, serverListings]);
 
+  // فلترة متوافقة مع السكيمة
   const filtered = merged.filter((it) => {
     if (kind && (it.kind || "channel") !== kind) return false;
     if (platform && (it.platform || "telegram") !== platform) return false;
@@ -139,31 +151,23 @@ export default function Marketplace() {
           </div>
 
           {!statsLoading && (
-            <div
-              className={[
-                "transition-all duration-300 overflow-hidden",
-                showStats ? "max-h-24 opacity-100 mt-2" : "max-h-0 opacity-0 mt-0 pointer-events-none"
-              ].join(" ")}
-            >
+            <div className={[
+              "transition-all duration-300 overflow-hidden",
+              showStats ? "max-h-24 opacity-100 mt-2" : "max-h-0 opacity-0 mt-0 pointer-events-none"
+            ].join(" ")}>
               <div className="grid grid-cols-3 gap-2">
-                <Card>
-                  <CardContent className="px-3 py-2 text-center">
-                    <div className="text-base font-bold text-foreground">{(stats as any)?.totalSales ?? 0}</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesCountLabel}</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="px-3 py-2 text-center">
-                    <div className="text-base font-bold text-foreground">{(stats as any)?.totalVolume ?? 0} USDT</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesVolumeLabel}</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="px-3 py-2 text-center">
-                    <div className="text-base font-bold text-foreground">{(stats as any)?.activeListings ?? 0}</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">{L.activeListingsLabel}</div>
-                  </CardContent>
-                </Card>
+                <Card><CardContent className="px-3 py-2 text-center">
+                  <div className="text-base font-bold text-foreground">{(stats as any)?.totalSales ?? 0}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesCountLabel}</div>
+                </CardContent></Card>
+                <Card><CardContent className="px-3 py-2 text-center">
+                  <div className="text-base font-bold text-foreground">{(stats as any)?.totalVolume ?? 0} USDT</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesVolumeLabel}</div>
+                </CardContent></Card>
+                <Card><CardContent className="px-3 py-2 text-center">
+                  <div className="text-base font-bold text-foreground">{(stats as any)?.activeListings ?? 0}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.activeListingsLabel}</div>
+                </CardContent></Card>
               </div>
             </div>
           )}
@@ -178,7 +182,7 @@ export default function Marketplace() {
           </div>
 
           <div className="flex gap-2 overflow-x-auto pb-1">
-            <Button size="sm" variant={kind===""?"default":"outline"} className={chipCls(kind==="")} onClick={() => { clearAll(); }}>
+            <Button size="sm" variant={kind===""?"default":"outline"} className={chipCls(kind==="")} onClick={clearAll}>
               {L.allTypes}
             </Button>
             <Button size="sm" variant={kind==="username"?"default":"outline"} className={chipCls(kind==="username")}
@@ -228,7 +232,7 @@ export default function Marketplace() {
                 <Button key={s} size="sm" variant={serviceType===s?"default":"outline"} className={chipCls(serviceType===s)}
                   onClick={()=> setServiceType(serviceType===s?"":s)}>
                   <span className="mr-1">{ICON[s]}</span>
-                  {{followers:"Followers Service",members:"Subscribers Service",boost_channel:"Boost Channel",boost_group:"Boost Group"}[s]}
+                  {{followers:L.serviceFollowers,members:L.serviceSubscribers,boost_channel:L.boostCh,boost_group:L.boostGp}[s]}
                 </Button>
               ))}
             </div>
