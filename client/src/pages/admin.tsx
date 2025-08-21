@@ -93,9 +93,7 @@ export default function AdminPage() {
   const loadOrders = async () => {
     setLoadingOrders(true);
     try {
-      const res = await fetch("/api/admin/orders");
-      if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as AdminOrder[];
+      const data = (await apiRequest("GET", "/api/admin/orders")) as AdminOrder[];
       setOrders(data ?? []);
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "Failed to load orders", variant: "destructive" });
@@ -107,9 +105,7 @@ export default function AdminPage() {
   const loadPayouts = async () => {
     setLoadingPayouts(true);
     try {
-      const res = await fetch("/api/admin/payouts");
-      if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as AdminPayout[];
+      const data = (await apiRequest("GET", "/api/admin/payouts")) as AdminPayout[];
       setPayouts(data ?? []);
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "Failed to load payouts", variant: "destructive" });
@@ -384,14 +380,10 @@ function RealDisputeChat({ paymentId }: { paymentId: string }) {
   const load = async () => {
     setLoading(true);
     try {
-      const dRes = await fetch(`/api/disputes/by-payment/${paymentId}`);
-      if (!dRes.ok) throw new Error(await dRes.text());
-      const d = await dRes.json();
+      const d = await apiRequest("GET", `/api/disputes/by-payment/${paymentId}`);
       setDisputeId(d.id);
 
-      const r = await fetch(`/api/disputes/${d.id}/messages`);
-      if (!r.ok) throw new Error(await r.text());
-      const data = (await r.json()) as DisputeMsg[];
+      const data = (await apiRequest("GET", `/api/disputes/${d.id}/messages`)) as DisputeMsg[];
       setMsgs(data ?? []);
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "Failed to load dispute", variant: "destructive" });
