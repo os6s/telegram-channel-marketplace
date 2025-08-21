@@ -1,5 +1,5 @@
 // client/src/components/ListingCard.tsx
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,37 +10,49 @@ import { useLanguage } from "@/contexts/language-context";
 
 interface ListingCardProps {
   listing: Channel & {
+    seller?: { id: string; username?: string | null; name?: string | null }; // يجي من API
+    sellerUsername?: string | null; // بديل لو API يرجع نص فقط
     gifts?: { statueOfLiberty?: number; torchOfFreedom?: number };
   };
   onViewDetails: (l: Channel) => void;
   onBuyNow: (l: Channel) => void;
-  currentUser?: { username?: string };
+  currentUser?: { id?: string; username?: string; role?: "user" | "admin" };
 }
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
-const initialFrom = (v: unknown) => {
-  const s = S(v);
-  return s ? s[0].toUpperCase() : "?";
-};
 const N = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
+const initialFrom = (v: unknown) => { const s = S(v); return s ? s[0].toUpperCase() : "?"; };
 const formatNumber = (num: number): string =>
   num >= 1_000_000 ? (num / 1_000_000).toFixed(1) + "M" :
-  num >= 1_000 ? (num / 1_000).toFixed(1) + "K" :
-  String(Math.trunc(num));
+  num >= 1_000 ? (num / 1_000).toFixed(1) + "K" : String(Math.trunc(num));
 
 export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: ListingCardProps) {
+  const { t } = useLanguage();
   const [showInfo, setShowInfo] = useState(false);
   const [showBuyConfirm, setShowBuyConfirm] = useState(false);
-  const { t } = useLanguage();
 
   const title = S(listing.title) || S(listing.username) || `${S(listing.platform) || "item"}:${S(listing.kind) || "listing"}`;
   const uname = S(listing.username);
   const desc  = S(listing.description);
-  const kind  = S(listing.kind);        // username | account | channel | service
-  const plat  = S(listing.platform);    // telegram | twitter | ...
+  const kind  = S(listing.kind);
+  const plat  = S(listing.platform);
   const currency = S(listing.currency) || "TON";
   const priceNum = Number(String(listing.price || "0").replace(",", "."));
-  const usd = currency === "TON" ? priceNum * 5.1 : priceNum; // تبسيط: إذا USDT اعتبره ≈ USD
+  const usd = currency === "TON" ? priceNum * 5.1 : priceNum; // تقدير بسيط
+
+  // seller label
+  const sellerLabel = useMemo(() => {
+    const u = listing.seller?.username || listing.sellerUsername;
+    const name = listing.seller?.name;
+    if (u) return `@${u}`;
+    if (name) return name;
+    if ((listing as any).sellerId) return `seller:${(listing as any).sellerId}`;
+    return "";
+  }, [listing]);
+
+  // تحكم الأزرار
+  const isAdmin = currentUser?.role === "admin";
+  const isOwner = currentUser?.id && (listing as any).sellerId === currentUser.id;
 
   const showSubs = kind === "channel";
   const subsCount = N((listing as any).subscribersCount);
@@ -70,33 +82,37 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
                 </Badge>
               </div>
 
+              {/* بائع الإعلان */}
+              {sellerLabel ? (
+                <div className="text-[12px] text-gray-500 mb-1">
+                  {t("market.seller") || "seller"}: <span className="font-medium text-gray-700">{sellerLabel}</span>
+                </div>
+              ) : null}
+
               {uname ? <p className="text-sm text-gray-600 mb-2">@{uname}</p> : null}
               {desc ? <p className="text-sm text-gray-500 line-clamp-2">{desc}</p> : null}
             </div>
           </div>
 
-          {/* Metrics حسب النوع */}
+          {/* Metrics */}
           <div className="grid grid-cols-3 gap-4 mt-4 py-3 bg-gray-50 rounded-lg">
             {showSubs ? (
               <>
                 <div className="text-center">
                   <div className="flex items-center justify-center gap-1 text-lg font-semibold text-gray-900">
-                    <Users className="w-4 h-4" />
-                    <span>{formatNumber(subsCount)}</span>
+                    <Users className="w-4 h-4" /><span>{formatNumber(subsCount)}</span>
                   </div>
                   <div className="text-xs text-gray-500">{t("channel.subscribers")}</div>
                 </div>
                 <div className="text-center">
                   <div className="flex items-center justify-center gap-1 text-lg font-semibold">
-                    <Zap className="w-4 h-4" />
-                    <span>{giftKind ? giftKind : "-"}</span>
+                    <Zap className="w-4 h-4" /><span>{giftKind || "-"}</span>
                   </div>
                   <div className="text-xs text-gray-500">{t("gift.kind") || "gift kind"}</div>
                 </div>
                 <div className="text-center">
                   <div className="flex items-center justify-center gap-1 text-lg font-semibold">
-                    <Zap className="w-4 h-4" />
-                    <span>{formatNumber(giftsCount)}</span>
+                    <Zap className="w-4 h-4" /><span>{formatNumber(giftsCount)}</span>
                   </div>
                   <div className="text-xs text-gray-500">{t("gift.count") || "gifts"}</div>
                 </div>
@@ -105,8 +121,7 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
               <>
                 <div className="text-center">
                   <div className="flex items-center justify-center gap-1 text-lg font-semibold">
-                    <Users className="w-4 h-4" />
-                    <span>{formatNumber(followers)}</span>
+                    <Users className="w-4 h-4" /><span>{formatNumber(followers)}</span>
                   </div>
                   <div className="text-xs text-gray-500">{t("account.followers") || "followers"}</div>
                 </div>
@@ -131,7 +146,6 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
                 </div>
               </>
             ) : (
-              // username
               <>
                 <div className="text-center col-span-3">
                   <div className="text-lg font-semibold">{S((listing as any).tgUserType) || "—"}</div>
@@ -149,20 +163,23 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
               </div>
               <div className="text-sm text-gray-500">≈ ${usd.toLocaleString()} USD</div>
             </div>
+
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setShowInfo(true)} className="text-gray-700">
-                <Eye className="w-4 h-4 mr-1" />
-                {t("channel.info")}
+                <Eye className="w-4 h-4 mr-1" /> {t("channel.info")}
               </Button>
-              <Button size="sm" onClick={() => setShowBuyConfirm(true)} className="bg-telegram-500 hover:bg-telegram-600 text-white">
-                <ShoppingCart className="w-4 h-4 mr-1" />
-                {t("channel.buyNow")}
-              </Button>
+
+              {/* زر الشراء: يظهر للجميع ما عدا صاحب الإعلان */}
+              {!isOwner && (
+                <Button size="sm" onClick={() => setShowBuyConfirm(true)} className="bg-telegram-500 hover:bg-telegram-600 text-white">
+                  <ShoppingCart className="w-4 h-4 mr-1" /> {t("channel.buyNow")}
+                </Button>
+              )}
             </div>
           </div>
 
-          {/* Admin */}
-          <AdminControls channel={listing as any} currentUser={currentUser} />
+          {/* أدوات الإدارة: تظهر للإدمن فقط */}
+          {isAdmin ? <AdminControls channel={listing as any} currentUser={currentUser} /> : null}
         </CardContent>
       </Card>
 
@@ -206,8 +223,8 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
         </div>
       )}
 
-      {/* Buy Confirmation Modal */}
-      {showBuyConfirm && (
+      {/* Buy Confirmation */}
+      {showBuyConfirm && !isOwner && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
           <div className="bg-white rounded-lg max-w-md w-full p-6 relative shadow-lg">
             <button onClick={() => setShowBuyConfirm(false)} className="absolute top-3 right-3 text-gray-500 hover:text-gray-800" aria-label="Close">
@@ -231,7 +248,10 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
               <Button variant="outline" onClick={() => setShowBuyConfirm(false)}>
                 {t("common.cancel")}
               </Button>
-              <Button onClick={() => { setShowBuyConfirm(false); onBuyNow(listing); }} className="bg-telegram-500 hover:bg-telegram-600 text-white">
+              <Button
+                onClick={() => { setShowBuyConfirm(false); onBuyNow(listing); }}
+                className="bg-telegram-500 hover:bg-telegram-600 text-white"
+              >
                 {t("common.confirm")}
               </Button>
             </div>
