@@ -28,7 +28,11 @@ export const users = pgTable(
     tonWallet: varchar("ton_wallet", { length: 128 }), // legacy
     walletAddress: varchar("wallet_address", { length: 128 }), // linked withdrawal addr
     role: varchar("role", { length: 32 }).notNull().default("user"), // user | admin
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    isVerified: boolean("is_verified").default(false),
+    isBanned: boolean("is_banned").default(false),
+    bannedAt: timestamp("banned_at", { withTimezone: false }),
+    banReason: text("ban_reason"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
   },
   (t) => ({
     usersTelegramIdx: index("users_telegram_idx").on(t.telegramId),
@@ -41,13 +45,11 @@ export const users = pgTable(
 /* =========================
    listings
 ========================= */
+// تعتمد الآن على usernames وليس seller_id
 export const listings = pgTable(
   "listings",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    sellerId: uuid("seller_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
 
     // Common
     kind: varchar("kind", { length: 16 }).notNull(), // username | account | channel | service
@@ -57,9 +59,13 @@ export const listings = pgTable(
     description: text("description"),
     price: numeric("price", { precision: 30, scale: 9 }).notNull(),
     currency: varchar("currency", { length: 8 }).notNull().default("TON"),
-    isVerified: boolean("is_verified").notNull().default(false),
     isActive: boolean("is_active").notNull().default(true),
-    avatarUrl: text("avatar_url"),
+
+    // لإظهار مالك الإعلان والمشتري بالاسم
+    sellerUsername: varchar("seller_username", { length: 64 }),
+    buyerUsername: varchar("buyer_username", { length: 64 }),
+
+    // حذفتم is_verified و avatar_url من الجدول حسب سكربتكم
 
     // Channel
     channelMode: varchar("channel_mode", { length: 16 }),
@@ -79,13 +85,18 @@ export const listings = pgTable(
     target: varchar("target", { length: 16 }),
     serviceCount: integer("service_count"),
 
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // إدارة الحذف
+    removedByAdmin: boolean("removed_by_admin").default(false),
+    removedReason: text("removed_reason"),
+
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
   },
   (t) => ({
-    listingsSellerIdx: index("listings_seller_idx").on(t.sellerId),
     listingsActiveIdx: index("listings_active_idx").on(t.isActive),
     listingsPlatformIdx: index("listings_platform_idx").on(t.platform),
     listingsUsernameIdx: index("listings_username_idx").on(t.username),
+    listingsSellerUnameIdx: index("listings_seller_username_idx").on(t.sellerUsername),
+    listingsBuyerUnameIdx: index("listings_buyer_username_idx").on(t.buyerUsername),
     listingsCreatedIdx: index("listings_created_idx").on(t.createdAt),
   })
 );
@@ -97,19 +108,29 @@ export const payments = pgTable(
   "payments",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+
     // deposit => listingId NULL, order => listingId NOT NULL
     listingId: uuid("listing_id").references(() => listings.id),
+
+    // ما زال عندك buyer_id بالـDB
     buyerId: uuid("buyer_id").notNull().references(() => users.id),
+
+    // user-names للأطراف
+    sellerUsername: varchar("seller_username", { length: 64 }),
+    buyerUsername: varchar("buyer_username", { length: 64 }),
 
     kind: varchar("kind", { length: 16 }).notNull().default("order"), // deposit | order
     locked: boolean("locked").notNull().default(false), // reserved balance for orders
 
     amount: numeric("amount", { precision: 30, scale: 9 }).notNull(),
     currency: varchar("currency", { length: 8 }).notNull().default("TON"),
-    feePercent: numeric("fee_percent", { precision: 5, scale: 2 }).notNull().default("5.00"),
-    feeAmount: numeric("fee_amount", { precision: 30, scale: 9 }).notNull(),
-    sellerAmount: numeric("seller_amount", { precision: 30, scale: 9 }).notNull(),
-    escrowAddress: varchar("escrow_address", { length: 128 }).notNull(),
+
+    // أضفتها كسطور جديدة في DB بدون NOT NULL، فخليها اختيارية هنا
+    feePercent: numeric("fee_percent", { precision: 5, scale: 2 }).default("5.00"),
+    feeAmount: numeric("fee_amount", { precision: 30, scale: 9 }),
+    sellerAmount: numeric("seller_amount", { precision: 30, scale: 9 }),
+
+    escrowAddress: varchar("escrow_address", { length: 128 }),
     txHash: varchar("tx_hash", { length: 128 }),
 
     // confirmations (manual)
@@ -125,8 +146,8 @@ export const payments = pgTable(
     // none | refund | payout
 
     comment: text("comment"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: false }),
   },
   (t) => ({
     paymentsBuyerIdx: index("payments_buyer_idx").on(t.buyerId, t.createdAt),
@@ -134,6 +155,8 @@ export const payments = pgTable(
     paymentsKindIdx: index("payments_kind_idx").on(t.kind),
     paymentsStatusIdx: index("payments_status_idx").on(t.status),
     paymentsTxIdx: index("payments_tx_idx").on(t.txHash),
+    paymentsBuyerUnameIdx: index("payments_buyer_username_idx").on(t.buyerUsername),
+    paymentsSellerUnameIdx: index("payments_seller_username_idx").on(t.sellerUsername),
     paymentsCreatedIdx: index("payments_created_idx").on(t.createdAt),
   })
 );
@@ -145,7 +168,6 @@ export const payouts = pgTable(
   "payouts",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    // user-requested withdrawals may not tie to a specific payment
     paymentId: uuid("payment_id").references(() => payments.id),
     sellerId: uuid("seller_id").notNull().references(() => users.id),
     toAddress: varchar("to_address", { length: 128 }).notNull(),
@@ -156,9 +178,9 @@ export const payouts = pgTable(
     note: text("note"),
     adminChecked: boolean("admin_checked").notNull().default(false),
     checklist: text("checklist"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    sentAt: timestamp("sent_at", { withTimezone: true }),
-    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: false }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: false }),
   },
   (t) => ({
     payoutsSellerIdx: index("payouts_seller_idx").on(t.sellerId),
@@ -176,17 +198,24 @@ export const activities = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     listingId: uuid("listing_id").references(() => listings.id, { onDelete: "cascade" }),
+
+    // بقيت العلاقات المعرفية بالـIDs
     buyerId: uuid("buyer_id").notNull().references(() => users.id),
     sellerId: uuid("seller_id").notNull().references(() => users.id),
     paymentId: uuid("payment_id").references(() => payments.id),
+
+    // وأضفت أعمدة usernames للعرض السريع
+    buyerUsername: varchar("buyer_username", { length: 64 }),
+    sellerUsername: varchar("seller_username", { length: 64 }),
+
     type: varchar("type", { length: 24 }).notNull(),
-    // buy | buyer_confirm | seller_confirm | admin_release | admin_refund | cancel | dispute_open | dispute_resolve
+    // buy | buyer_confirm | seller_confirm | admin_release | admin_refund | cancel | dispute_open | dispute_resolve | removed
     status: varchar("status", { length: 16 }).notNull().default("completed"),
     amount: numeric("amount", { precision: 30, scale: 9 }),
     currency: varchar("currency", { length: 8 }),
     txHash: varchar("tx_hash", { length: 128 }),
     note: text("note"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
   },
   (t) => ({
     actsListingIdx: index("activities_listing_idx").on(t.listingId),
@@ -210,8 +239,8 @@ export const disputes = pgTable(
     reason: text("reason"),
     status: varchar("status", { length: 16 }).notNull().default("open"), // open | reviewing | resolved | cancelled
     evidence: text("evidence"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: false }),
   },
   (t) => ({
     disputesPaymentIdx: index("disputes_payment_idx").on(t.paymentId),
@@ -232,7 +261,7 @@ export const messages = pgTable(
     disputeId: uuid("dispute_id").notNull().references(() => disputes.id, { onDelete: "cascade" }),
     senderId: uuid("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     content: text("content").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
   },
   (t) => ({
     messagesDisputeIdx: index("messages_dispute_idx").on(t.disputeId),
@@ -244,16 +273,16 @@ export const messages = pgTable(
 /* =========================
    relations (optional)
 ========================= */
+// لا يوجد foreign key من listings إلى users الآن، فاحذف هذه العلاقة
 export const usersRelations = relations(users, ({ many }) => ({
-  listings: many(listings),
   buys: many(activities),
   sells: many(activities),
   payouts: many(payouts),
   messages: many(messages),
 }));
 
-export const listingsRelations = relations(listings, ({ one, many }) => ({
-  seller: one(users, { fields: [listings.sellerId], references: [users.id] }),
+// لا علاقة seller->user بعد حذف seller_id
+export const listingsRelations = relations(listings, ({ many }) => ({
   acts: many(activities),
 }));
 
@@ -286,7 +315,7 @@ export type Message = InferSelectModel<typeof messages>;
 export type InsertMessage = InferInsertModel<typeof messages>;
 
 /* =========================
-   Zod schemas
+   Zod schemas (موافِقة للـDB)
 ========================= */
 const priceRe = /^\d+(\.\d{1,9})?$/;
 const yyyyMmRe = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -302,21 +331,18 @@ export const insertUserSchema = z.object({
 });
 
 export const insertListingSchema = z.object({
-  sellerId: z.string().uuid().optional(),
-  telegramId: z.string().optional().nullable(),
+  // لم يعد هناك sellerId — سنرسل seller_username
+  sellerUsername: z.string().min(1),
+  buyerUsername: z.string().optional().nullable(),
 
   kind: z.enum(["username", "account", "channel", "service"]),
-  platform: z
-    .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
-    .optional()
-    .nullable(),
+  platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional().nullable(),
 
   username: z.string().optional().nullable(),
   title: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   price: z.string().regex(priceRe),
   currency: z.enum(["TON", "USDT"]).default("TON"),
-  isVerified: z.boolean().optional(),
   isActive: z.boolean().optional(),
 
   channelMode: z.enum(["subscribers", "gifts"]).optional().nullable(),
@@ -329,38 +355,34 @@ export const insertListingSchema = z.object({
   followersCount: z.coerce.number().int().min(0).optional().nullable(),
   accountCreatedAt: z.string().regex(yyyyMmRe).optional().nullable(),
 
-  serviceType: z
-    .enum(["followers", "members", "boost_channel", "boost_group"])
-    .optional()
-    .nullable(),
-  target: z
-    .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
-    .optional()
-    .nullable(),
+  serviceType: z.enum(["followers","members","boost_channel","boost_group"]).optional().nullable(),
+  target: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).optional().nullable(),
   serviceCount: z.coerce.number().int().min(0).optional().nullable(),
 });
 
 export const insertPaymentSchema = z.object({
   listingId: z.string().uuid().optional().nullable(), // null for deposit
-  buyerId: z.string().uuid(),
+  buyerId: z.string().uuid(), // ما زال موجود
   kind: z.enum(["deposit", "order"]).default("order"),
   locked: z.boolean().optional().default(false),
+
+  // usernames للطرفين
+  sellerUsername: z.string().optional().nullable(),
+  buyerUsername: z.string().optional().nullable(),
 
   amount: z.string().regex(priceRe),
   currency: z.enum(["TON", "USDT"]).default("TON"),
   feePercent: z.string().regex(/^\d+(\.\d{1,2})?$/).default("5.00"),
-  feeAmount: z.string().regex(priceRe),
-  sellerAmount: z.string().regex(priceRe),
-  escrowAddress: z.string().min(3),
+  feeAmount: z.string().regex(priceRe).optional().nullable(),
+  sellerAmount: z.string().regex(priceRe).optional().nullable(),
+  escrowAddress: z.string().min(3).optional().nullable(),
   comment: z.string().optional().nullable(),
   txHash: z.string().optional().nullable(),
 
   buyerConfirmed: z.boolean().optional().default(false),
   sellerConfirmed: z.boolean().optional().default(false),
-  status: z
-    .enum(["pending", "waiting", "paid", "completed", "disputed", "refunded", "cancelled"])
-    .default("pending"),
-  adminAction: z.enum(["none", "refund", "payout"]).default("none"),
+  status: z.enum(["pending","waiting","paid","completed","disputed","refunded","cancelled"]).default("pending"),
+  adminAction: z.enum(["none","refund","payout"]).default("none"),
 });
 
 export const insertPayoutSchema = z.object({
@@ -369,7 +391,7 @@ export const insertPayoutSchema = z.object({
   toAddress: z.string().min(3),
   amount: z.string().regex(priceRe),
   currency: z.enum(["TON", "USDT"]).default("TON"),
-  status: z.enum(["queued", "sent", "confirmed", "failed", "rejected"]).default("queued"),
+  status: z.enum(["queued","sent","confirmed","failed","rejected"]).default("queued"),
   note: z.string().optional().nullable(),
   txHash: z.string().optional().nullable(),
 });
@@ -379,6 +401,8 @@ export const insertActivitySchema = z.object({
   buyerId: z.string().uuid(),
   sellerId: z.string().uuid(),
   paymentId: z.string().uuid().optional().nullable(),
+  buyerUsername: z.string().optional().nullable(),
+  sellerUsername: z.string().optional().nullable(),
   type: z.enum([
     "buy",
     "buyer_confirm",
@@ -388,10 +412,11 @@ export const insertActivitySchema = z.object({
     "cancel",
     "dispute_open",
     "dispute_resolve",
+    "removed",
   ]),
-  status: z.enum(["pending", "completed", "cancelled"]).optional().default("completed"),
+  status: z.enum(["pending","completed","cancelled"]).optional().default("completed"),
   amount: z.string().regex(priceRe).optional().nullable(),
-  currency: z.enum(["TON", "USDT"]).optional().nullable(),
+  currency: z.enum(["TON","USDT"]).optional().nullable(),
   txHash: z.string().optional().nullable(),
   note: z.string().optional().nullable(),
 });
@@ -402,7 +427,7 @@ export const insertDisputeSchema = z.object({
   sellerId: z.string().uuid(),
   reason: z.string().optional().nullable(),
   evidence: z.string().optional().nullable(),
-  status: z.enum(["open", "reviewing", "resolved", "cancelled"]).optional().default("open"),
+  status: z.enum(["open","reviewing","resolved","cancelled"]).optional().default("open"),
 });
 
 export const insertMessageSchema = z.object({
