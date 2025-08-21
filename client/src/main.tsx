@@ -4,9 +4,13 @@ import App from "./App";
 import "./index.css";
 import { ErrorBoundary } from "./ErrorBoundary";
 import "./bootstrap";
+import { installTgFetchShim } from "@/lib/tg-fetch-shim";
+
+// ثبّت الشِم قبل أي fetch يصير
+installTgFetchShim();
 
 // اطبع أي أخطاء عامة بدل ما تبقى الشاشة فاضية
-window.addEventListener("error", (e) => console.log("GlobalError:", e.error || e.message));
+window.addEventListener("error", (e) => console.log("GlobalError:", (e as any).error || (e as any).message));
 window.addEventListener("unhandledrejection", (e) => console.log("Unhandled:", (e as any).reason));
 
 // تهيئة Telegram WebApp مبكراً
