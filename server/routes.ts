@@ -6,7 +6,6 @@ import { registerBotRoutes } from "./telegram-bot";
 import { mountWebhook } from "./routers/webhook";
 import { mountUsers } from "./routers/users";
 import { mountListings } from "./routers/listings";
-import { mountChannels } from "./routers/channels";
 import { mountActivities } from "./routers/activities";
 import { mountPayments } from "./routers/payments";
 import { mountDisputes } from "./routers/disputes";
@@ -91,7 +90,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // 3) REST APIs
   mountUsers(app);
   mountListings(app);
-  mountChannels(app);
   mountActivities(app);
 
   // Wallet / Profile / Balance / Payouts
