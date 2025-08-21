@@ -48,14 +48,33 @@ async function getApiBase(): Promise<string> {
   return API_BASE_LOADING!;
 }
 
+/* ------------ Telegram initData helper ------------ */
+function getInitData(): string | null {
+  try {
+    // متاح فقط داخل Telegram WebApp
+    // @ts-ignore
+    const raw = typeof window !== "undefined" ? window?.Telegram?.WebApp?.initData : null;
+    if (!raw || typeof raw !== "string" || raw.length === 0) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
 /* ------------ helpers ------------ */
 async function fetchJson(method: string, url: string, data?: unknown) {
   const base = await getApiBase();
   const fullUrl = joinBase(base, url);
 
+  const headers: Record<string, string> = {};
+  if (data) headers["Content-Type"] = "application/json";
+
+  const initData = getInitData();
+  if (initData) headers["x-telegram-init-data"] = initData;
+
   const res = await fetch(fullUrl, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -103,7 +122,15 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
   async ({ queryKey }) => {
     const base = await getApiBase();
     const url = joinBase(base, queryKey.join("/") as string);
-    const res = await fetch(url, { credentials: "include" });
+
+    const initData = getInitData();
+    const headers: Record<string, string> = {};
+    if (initData) headers["x-telegram-init-data"] = initData;
+
+    const res = await fetch(url, {
+      credentials: "include",
+      headers,
+    });
 
     let payload: any = null;
     try {
