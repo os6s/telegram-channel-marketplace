@@ -53,7 +53,7 @@ export default function SellPage() {
       type: kind || undefined,
       platform: platform || "",
       // common
-      price: "", currency: "TON", description: "",
+      price: "", currency: "TON", description: "", title: "",
       // username
       username: "", tgUserType: "",
       // account
@@ -63,7 +63,6 @@ export default function SellPage() {
       subscribersCount: "", giftsCount: "", giftKind: "regular",
       // service
       serviceType: "followers", target: "instagram", count: "",
-      title: "",
     },
   });
 
@@ -82,13 +81,13 @@ export default function SellPage() {
   };
 
   const submit = async (data: any) => {
-    const sellerId = localStorage.getItem("sellerId") || undefined;
-    const tgId = telegramWebApp?.user?.id ? String(telegramWebApp.user.id) : undefined;
+    // ✅ نستخدم يوزرنيم صاحب الحساب من تيليجرام كبائع
+    const sellerUsername = (telegramWebApp?.user?.username || "").trim().toLowerCase();
 
-    if (!sellerId && !tgId) {
+    if (!sellerUsername) {
       toast({
         title: t("toast.error") || "Error",
-        description: "افتح الميني-أب من داخل تيليجرام حتى نحدد حسابك تلقائيًا",
+        description: "لازم تفتح الميني-أب من داخل تيليجرام وبحساب بيه username حتى نربط الإعلان",
         variant: "destructive",
       });
       return;
@@ -100,7 +99,7 @@ export default function SellPage() {
       return;
     }
 
-    // توحيد اليوزرنيم
+    // توحيد اليوزرنيم المُعلن عنه
     let username = data.username;
     if (data.type === "channel") {
       username = normUsername(data.channelUsername || data.link || data.username || "");
@@ -108,43 +107,52 @@ export default function SellPage() {
       username = normUsername(username || "");
     }
 
+    const titleFallback =
+      (data.title && String(data.title).trim()) ||
+      (data.type === "channel"
+        ? (username ? `@${username}` : "Channel")
+        : data.type === "username"
+        ? (username || "Username")
+        : data.type === "account"
+        ? `${data.platform || platform || ""} account`.trim()
+        : `${data.serviceType || "service"} ${data.target || ""}`.trim());
+
+    // ✅ payload يُرسل sellerUsername بدل أي IDs
     const basePayload: any = {
-      sellerId,
-      telegramId: tgId,
+      sellerUsername,                           // <— المهم
       kind: data.type || kind || "channel",
       platform: data.platform || platform || "telegram",
       channelMode: data.channelMode || "subscribers",
       username,
-      title: data.title,
+      title: titleFallback,
       price: priceStr,
       currency: data.currency || "TON",
       description: data.description || "",
-      isVerified: false,
+      isActive: true,
     };
 
     // إضافات حسب النوع
     if (basePayload.kind === "channel") {
-      basePayload.subscribersCount = data.subscribersCount ? Number(data.subscribersCount) : undefined; // ✅ الاسم الصحيح
+      basePayload.subscribersCount = data.subscribersCount ? Number(data.subscribersCount) : undefined;
       basePayload.giftsCount  = data.giftsCount ? Number(data.giftsCount) : undefined;
       basePayload.giftKind    = data.giftKind || "regular";
     }
     if (basePayload.kind === "account") {
       basePayload.followersCount = data.followersCount ? Number(data.followersCount) : undefined;
-      basePayload.createdAt = data.createdAt || undefined;
+      basePayload.createdAt = data.createdAt || undefined; // السيرفر يحولها لـ accountCreatedAt
       basePayload.tgUserType = data.tgUserType || undefined;
     }
     if (basePayload.kind === "service") {
       basePayload.serviceType = data.serviceType || "followers";
       basePayload.target = data.target || "instagram";
-      basePayload.count = data.count ? Number(data.count) : undefined;
+      basePayload.count = data.count ? Number(data.count) : undefined; // السيرفر يحولها لـ serviceCount
     }
     if (basePayload.kind === "username") {
       basePayload.tgUserType = data.tgUserType || undefined;
     }
 
-    const url = "/api/listings";
     try {
-      await apiRequest("POST", url, basePayload);
+      await apiRequest("POST", "/api/listings", basePayload);
       toast({ title: "OK", description: t("sell.sent") || "Sent" });
       form.reset();
       setKind(null);
