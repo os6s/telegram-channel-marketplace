@@ -2,10 +2,9 @@
 import type { Express } from "express";
 import { and, desc, eq, or } from "drizzle-orm";
 import { z } from "zod";
-import { storage } from "../storage";
+import { db } from "../db";
 import {
   disputes,
-  users,
   insertDisputeSchema,
   type Dispute,
 } from "@shared/schema";
@@ -21,13 +20,11 @@ const createDisputeBody = insertDisputeSchema.pick({
 const listQuery = z.object({
   userId: z.string().uuid().optional(),
   paymentId: z.string().uuid().optional(),
-  status: z
-    .enum(["open", "reviewing", "resolved", "cancelled"])
-    .optional(),
+  status: z.enum(["open", "reviewing", "resolved", "cancelled"]).optional(),
 });
 
 const updateDisputeBody = z.object({
-  actorId: z.string().uuid(), // من ينفّذ العملية
+  actorId: z.string().uuid(),
   status: z.enum(["open", "reviewing", "resolved", "cancelled"]).optional(),
   reason: z.string().optional(),
   resolvedAt: z.string().datetime().optional(),
@@ -45,7 +42,7 @@ export function mountDisputes(app: Express) {
   app.post("/api/disputes", async (req, res) => {
     try {
       const body = createDisputeBody.parse(req.body);
-      const row = await storage.db
+      const row = await db
         .insert(disputes)
         .values({
           paymentId: body.paymentId,
@@ -61,20 +58,18 @@ export function mountDisputes(app: Express) {
     }
   });
 
-  // استعلام النزاعات (حسب userId أو paymentId)
+  // استعلام النزاعات
   app.get("/api/disputes", async (req, res) => {
     try {
       const q = listQuery.parse(req.query);
       const conds: any[] = [];
-      if (q.userId)
-        conds.push(or(eq(disputes.buyerId, q.userId), eq(disputes.sellerId, q.userId)));
+      if (q.userId) conds.push(or(eq(disputes.buyerId, q.userId), eq(disputes.sellerId, q.userId)));
       if (q.paymentId) conds.push(eq(disputes.paymentId, q.paymentId));
       if (q.status) conds.push(eq(disputes.status, q.status));
 
-      const where =
-        conds.length > 1 ? and(...conds) : conds.length === 1 ? conds[0] : undefined;
+      const where = conds.length ? (conds.length > 1 ? and(...conds) : conds[0]) : undefined;
 
-      const rows = await storage.db
+      const rows = await db
         .select()
         .from(disputes)
         .where(where as any)
@@ -88,11 +83,7 @@ export function mountDisputes(app: Express) {
   // نزاع واحد
   app.get("/api/disputes/:id", async (req, res) => {
     try {
-      const [row] = await storage.db
-        .select()
-        .from(disputes)
-        .where(eq(disputes.id, req.params.id))
-        .limit(1);
+      const [row] = await db.select().from(disputes).where(eq(disputes.id, req.params.id)).limit(1);
       if (!row) return res.status(404).json({ error: "Dispute not found" });
       res.json(row);
     } catch (e: any) {
@@ -100,11 +91,13 @@ export function mountDisputes(app: Express) {
     }
   });
 
-  // تحديث نزاع (إغلاق/تحديث) — فقط الإدمن
+  // تحديث نزاع — فقط الإدمن
   app.patch("/api/disputes/:id", async (req, res) => {
     try {
       const body = updateDisputeBody.parse(req.body);
-      const actor = await storage.getUser(body.actorId);
+
+      // ملاحظة: التحقق من صلاحيات الإدمن يتطلب جلب المستخدم من DB عندك
+      const actor = await (await import("../storage")).storage.getUser(body.actorId);
       if (!isAdmin(actor)) return res.status(403).json({ error: "Forbidden" });
 
       const updates: any = {};
@@ -112,11 +105,7 @@ export function mountDisputes(app: Express) {
       if (body.reason !== undefined) updates.reason = body.reason;
       if (body.resolvedAt) updates.resolvedAt = new Date(body.resolvedAt) as any;
 
-      const row = await storage.db
-        .update(disputes)
-        .set(updates)
-        .where(eq(disputes.id, req.params.id))
-        .returning();
+      const row = await db.update(disputes).set(updates).where(eq(disputes.id, req.params.id)).returning();
       if (!row[0]) return res.status(404).json({ error: "Dispute not found" });
       res.json(row[0]);
     } catch (e: any) {
