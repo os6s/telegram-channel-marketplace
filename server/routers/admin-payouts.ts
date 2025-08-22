@@ -1,6 +1,7 @@
 // server/routers/admin-payouts.ts
 import type { Express, Request } from "express";
 import { desc, eq, and } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "../db";
 import { payouts, type Payout } from "@shared/schema";
 import { storage } from "../storage";
@@ -26,33 +27,42 @@ function isAdmin(u?: { role?: string; telegramId?: string | null; username?: str
   return byTg || (u.username || "").toLowerCase() === "os6s7";
 }
 
+/* --- Schemas --- */
+const listQuery = z.object({
+  sellerId: z.string().uuid().optional(),
+  status: z.enum(["queued", "sent", "confirmed", "failed", "rejected"]).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+const approveBody = z.object({
+  txHash: z.string().min(16),
+  checklist: z.string().optional(),
+});
+
+const rejectBody = z.object({
+  reason: z.string().min(1).default("rejected"),
+});
+
 export function mountAdminPayouts(app: Express) {
   /**
    * GET /api/admin/payouts?sellerId=&status=&limit=&offset=
-   * - إذا وُجد sellerId نستخدم storage.listPayoutsBySeller
-   * - إذا لم يوجد، نجلب كل الـ payouts من DB مع فلترة status (إن وُجد)
    */
   app.get("/api/admin/payouts", tgAuth, async (req, res) => {
     try {
       const actor = await resolveActor(req);
       if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
-      const sellerId = req.query.sellerId ? String(req.query.sellerId) : undefined;
-      const status = req.query.status ? String(req.query.status) : undefined;
-
-      const limit = Math.max(1, Math.min(200, Number(req.query.limit ?? 50)));
-      const offset = Math.max(0, Number(req.query.offset ?? 0));
-
-      let rows: Payout[] = [];
+      const { sellerId, status, limit, offset } = listQuery.parse(req.query);
 
       if (sellerId) {
-        rows = await storage.listPayoutsBySeller(sellerId);
+        let rows = await storage.listPayoutsBySeller(sellerId);
         if (status) rows = rows.filter((p) => p.status === status);
         rows.sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime());
         return res.json(rows.slice(offset, offset + limit));
       }
 
-      const conds = [];
+      const conds: any[] = [];
       if (status) conds.push(eq(payouts.status, status));
       const where = conds.length ? and(...conds) : undefined;
 
@@ -66,7 +76,7 @@ export function mountAdminPayouts(app: Express) {
 
       return res.json(all as Payout[]);
     } catch (e: any) {
-      return res.status(500).json({ error: e?.message || "Failed to load payouts" });
+      return res.status(400).json({ error: e?.message || "Invalid query" });
     }
   });
 
@@ -76,24 +86,26 @@ export function mountAdminPayouts(app: Express) {
       const actor = await resolveActor(req);
       if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
-      const id = req.params.id;
-      const txHash = String(req.body?.txHash || "");
-      const checklist = String(req.body?.checklist || "manual-checked");
-      if (txHash.length < 16) return res.status(400).json({ error: "tx_hash_required" });
+      const { txHash, checklist } = approveBody.parse(req.body);
 
-      const cur = await storage.getPayout(id);
+      const cur = await storage.getPayout(req.params.id);
       if (!cur) return res.status(404).json({ error: "not_found" });
-      if (cur.status !== "queued") return res.status(409).json({ error: `invalid_state_${cur.status}` });
 
-      const up = await storage.updatePayout(id, {
+      if (cur.status !== "queued") {
+        return res.status(409).json({ error: `invalid_state_${cur.status}` });
+      }
+
+      const up = await storage.updatePayout(req.params.id, {
         status: "sent",
         adminChecked: true,
         txHash,
-        checklist,
+        checklist: checklist || "manual-checked",
         sentAt: new Date() as any,
       });
+
       return res.json(up);
     } catch (e: any) {
+      if (e?.issues) return res.status(400).json({ error: "Invalid payload", issues: e.issues });
       return res.status(500).json({ error: e?.message || "Approve failed" });
     }
   });
@@ -104,20 +116,21 @@ export function mountAdminPayouts(app: Express) {
       const actor = await resolveActor(req);
       if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
-      const id = req.params.id;
-      const reason = String(req.body?.reason || "rejected");
+      const { reason } = rejectBody.parse(req.body);
 
-      const cur = await storage.getPayout(id);
+      const cur = await storage.getPayout(req.params.id);
       if (!cur) return res.status(404).json({ error: "not_found" });
       if (cur.status !== "queued") return res.status(409).json({ error: `invalid_state_${cur.status}` });
 
-      const up = await storage.updatePayout(id, {
+      const up = await storage.updatePayout(req.params.id, {
         status: "rejected",
         adminChecked: true,
         checklist: reason,
       });
+
       return res.json(up);
     } catch (e: any) {
+      if (e?.issues) return res.status(400).json({ error: "Invalid payload", issues: e.issues });
       return res.status(500).json({ error: e?.message || "Reject failed" });
     }
   });
