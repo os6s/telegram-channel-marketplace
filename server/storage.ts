@@ -61,7 +61,7 @@ export interface IStorage {
 
   // payouts
   getPayout(id: string): Promise<Payout | undefined>;
-  listPayoutsBySeller(sellerId: string): Promise<Payout[]>;
+  listPayoutsBySellerUsername(sellerUsername: string): Promise<Payout[]>;
   createPayout(data: InsertPayout): Promise<Payout>;
   updatePayout(id: string, updates: Partial<Payout>): Promise<Payout | undefined>;
 
@@ -237,11 +237,12 @@ class PostgreSQLStorage implements IStorage {
     const rows = await db.select().from(payouts).where(eq(payouts.id, id)).limit(1);
     return rows[0];
   }
-  async listPayoutsBySeller(sellerId: string) {
+  async listPayoutsBySellerUsername(sellerUsername: string) {
+    const u = sellerUsername.toLowerCase();
     const rows = await db
       .select()
       .from(payouts)
-      .where(eq(payouts.sellerId, sellerId))
+      .where(eq(sql`lower(${payouts.sellerUsername})`, u))
       .orderBy(desc(payouts.createdAt));
     return rows;
   }
