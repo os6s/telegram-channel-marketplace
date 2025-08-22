@@ -25,9 +25,7 @@ function sum(rows: Payment[], pred: (p: Payment) => boolean) {
 }
 
 export function mountWallet(app: Express) {
-  /**
-   * 1) Start deposit: create a waiting row tied to the user + unique comment code
-   */
+  /** 1) بدء إيداع */
   app.post("/api/wallet/deposit/initiate", tgAuth, async (req, res) => {
     const escrow = (process.env.ESCROW_WALLET || "").trim();
     if (!escrow) return res.status(500).json({ error: "ESCROW_WALLET not set" });
@@ -46,7 +44,6 @@ export function mountWallet(app: Express) {
     const amountNano = toNano(amountTon);
     const text = encodeURIComponent(code);
 
-    // Reserve a "waiting" deposit row for this user+code
     await storage.createPayment({
       listingId: null,
       buyerId: me.id,
@@ -58,7 +55,7 @@ export function mountWallet(app: Express) {
       feeAmount: "0",
       sellerAmount: "0",
       escrowAddress: escrow,
-      comment: code, // will be matched on-chain
+      comment: code,
       txHash: null,
       buyerConfirmed: false,
       sellerConfirmed: false,
@@ -80,9 +77,7 @@ export function mountWallet(app: Express) {
     });
   });
 
-  /**
-   * 2) Check deposit status by code (POST to avoid leaking code in logs)
-   */
+  /** 2) التحقق من الإيداع عبر الكود */
   app.post("/api/wallet/deposit/status", tgAuth, async (req, res) => {
     const tgUser = (req as any).telegramUser as TgUser | undefined;
     if (!tgUser) return res.status(401).json({ error: "unauthorized" });
@@ -95,14 +90,12 @@ export function mountWallet(app: Express) {
     const minTon = Number(req.body?.minTon || "0");
     if (!escrow || !code) return res.status(400).json({ error: "bad_request" });
 
-    // Find my "waiting" deposit with this code
     const myPays = await storage.listPaymentsByBuyer(user.id);
     const waiting = myPays.find(
       (p) => p.kind === "deposit" && p.status === "waiting" && (p.comment || "") === code
     );
     if (!waiting) return res.status(404).json({ status: "not_found" });
 
-    // Verify on-chain by comment (and optional min amount)
     const v = await verifyTonDepositByComment({
       escrow,
       code,
@@ -111,7 +104,6 @@ export function mountWallet(app: Express) {
 
     if (!v.ok) return res.json({ status: "pending" });
 
-    // Prevent duplicate claim: if a paid row already has this txHash for me
     const already = myPays.find(
       (p) => p.kind === "deposit" && p.txHash && v.txHash && p.txHash === v.txHash
     );
@@ -119,7 +111,6 @@ export function mountWallet(app: Express) {
       return res.json({ status: "paid", amount: Number(already.amount), txHash: already.txHash });
     }
 
-    // Update the reserved row to PAID
     const updated = await storage.updatePayment(waiting.id, {
       amount: String(v.amountTon),
       txHash: v.txHash ?? null,
@@ -130,9 +121,7 @@ export function mountWallet(app: Express) {
     res.json({ status: "paid", amount: v.amountTon, txHash: v.txHash, id: updated?.id });
   });
 
-  /**
-   * 3) Internal balance summary
-   */
+  /** 3) رصيد داخلي */
   app.get("/api/wallet/balance", tgAuth, async (req, res) => {
     const tgUser = (req as any).telegramUser as TgUser | undefined;
     if (!tgUser) return res.status(401).json({ error: "unauthorized" });
@@ -141,7 +130,7 @@ export function mountWallet(app: Express) {
     if (!me) return res.status(404).json({ error: "user_not_found" });
 
     const pays = await storage.listPaymentsByBuyer(me.id);
-    const deposits = sum(pays, (p) => p.kind === "deposit" && p.status === "paid"));
+    const deposits = sum(pays, (p) => p.kind === "deposit" && p.status === "paid");
     const locked = sum(
       pays,
       (p) => p.kind === "order" && !!p.locked && (p.status === "pending" || p.status === "paid")
