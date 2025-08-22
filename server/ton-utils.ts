@@ -11,11 +11,15 @@ const TIMEOUT_MS = 7000;
 function ntToTON(nanotons: string | number): number {
   const n = typeof nanotons === "string" ? Number(nanotons) : nanotons;
   if (!Number.isFinite(n)) return 0;
-  return Math.floor(n) / 1e9;
+  return n / 1e9;
 }
 
 /** fetch مع مهلة */
-async function fetchJsonWithTimeout<T = any>(url: string, init?: RequestInit, timeoutMs = TIMEOUT_MS): Promise<T> {
+async function fetchJsonWithTimeout<T = any>(
+  url: string,
+  init?: RequestInit,
+  timeoutMs = TIMEOUT_MS
+): Promise<T> {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
