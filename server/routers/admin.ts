@@ -8,15 +8,15 @@ import {
   users,
   type User,
 } from "@shared/schema";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { tgAuth } from "../middleware/tgAuth";
 import { storage } from "../storage";
 
-/* --- auth صار عبر tgAuth + لائحة الإدمن من ENV --- */
+/* ---------- admin auth (via Telegram) ---------- */
 const ADMIN_TG = new Set(
   (process.env.ADMIN_TG_IDS || "")
     .split(",")
-    .map(s => s.trim())
+    .map((s) => s.trim())
     .filter(Boolean)
 );
 
@@ -29,11 +29,10 @@ function isAdmin(u?: Pick<User, "role" | "telegramId" | "username">) {
   if (!u) return false;
   if (u.role === "admin") return true;
   const ok = u.telegramId ? ADMIN_TG.has(u.telegramId) : false;
-  // خيار بديل احتياطي لاسم واحد محدد
   return ok || (u.username || "").toLowerCase() === "os6s7";
 }
 
-/* --- Telegram notify helper --- */
+/* ---------- Telegram notify helper ---------- */
 async function notify(telegramId: string | null | undefined, text: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
@@ -45,11 +44,16 @@ async function notify(telegramId: string | null | undefined, text: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
     });
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 export function mountAdmin(app: Express) {
-  // ✅ جميع الطلبات (kind='order' فقط)
+  /* =========================
+     GET /api/admin/orders
+     (kind = 'order' only)
+  ========================= */
   app.get("/api/admin/orders", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
@@ -72,20 +76,17 @@ export function mountAdmin(app: Express) {
       .where(eq(payments.kind, "order"))
       .orderBy(desc(payments.createdAt));
 
-    if (rows.length === 0) return res.json([]);
+    if (!rows.length) return res.json([]);
 
-    // جلب بيانات المشترين والبائعين
-    const ids = Array.from(new Set(rows.flatMap(r => [r.buyerId, r.sellerId])));
-    const U = new Map(
-      (await Promise.all(ids.map(async id => (await db.select().from(users).where(eq(users.id, id)).limit(1))[0])))
-        .filter(Boolean)
-        .map(u => [u.id, u])
-    );
+    const ids = Array.from(new Set(rows.flatMap((r) => [r.buyerId, r.sellerId].filter(Boolean) as string[])));
+    const us = ids.length
+      ? await db.select().from(users).where(inArray(users.id, ids))
+      : [];
+    const U = new Map(us.map((u) => [u.id, u]));
 
-    const out = rows.map(r => {
+    const out = rows.map((r) => {
       const buyer = U.get(r.buyerId);
       const seller = U.get(r.sellerId);
-
       const status:
         | "held"
         | "awaiting_buyer_confirm"
@@ -93,11 +94,15 @@ export function mountAdmin(app: Express) {
         | "released"
         | "refunded"
         | "cancelled" =
-        r.status === "disputed" ? "disputed"
-        : r.status === "refunded" ? "refunded"
-        : r.status === "cancelled" ? "cancelled"
-        : (r.status === "completed" && r.adminAction === "payout") ? "released"
-        : "held";
+        r.status === "disputed"
+          ? "disputed"
+          : r.status === "refunded"
+          ? "refunded"
+          : r.status === "cancelled"
+          ? "cancelled"
+          : r.status === "completed" && r.adminAction === "payout"
+          ? "released"
+          : "held";
 
       return {
         id: r.id,
@@ -108,15 +113,17 @@ export function mountAdmin(app: Express) {
         status,
         buyer: { id: r.buyerId, username: buyer?.username ?? null, name: buyer?.firstName ?? null },
         seller: { id: r.sellerId, username: seller?.username ?? null, name: seller?.firstName ?? null },
-        unlockAt: null,
-        thread: [] as unknown[],
+        escrowAddress: r.escrowAddress,
       };
     });
 
     res.json(out);
   });
 
-  // ✅ Release: تحويل الحالة فقط، بدون إرسال فعلي
+  /* =========================
+     POST /api/admin/payments/:id/release
+     (mark completed + adminAction=payout)
+  ========================= */
   app.post("/api/admin/payments/:id/release", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
@@ -162,7 +169,10 @@ export function mountAdmin(app: Express) {
     res.json({ ok: true });
   });
 
-  // ✅ Refund
+  /* =========================
+     POST /api/admin/payments/:id/refund
+     (mark refunded + activity)
+  ========================= */
   app.post("/api/admin/payments/:id/refund", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
@@ -174,9 +184,7 @@ export function mountAdmin(app: Express) {
     if (pay.status === "completed" && pay.adminAction === "payout") {
       return res.status(409).json({ error: "Already released" });
     }
-    if (pay.status === "refunded") {
-      return res.status(409).json({ error: "Already refunded" });
-    }
+    if (pay.status === "refunded") return res.status(409).json({ error: "Already refunded" });
 
     await db
       .update(payments)
