@@ -36,13 +36,26 @@ export function mountPayments(app: Express) {
           firstName: tgUser.first_name ?? null,
           lastName: null,
           tonWallet: null,
+          walletAddress: null,
           role: "user",
         });
       }
 
+      // منع الشراء بدون username
+      if (!buyer.username) {
+        return res.status(400).json({ error: "buyer_username_required" });
+      }
+
       const listingId = String(req.body?.listingId || "");
       const listing = await storage.getChannel(listingId);
-      if (!listing || !listing.isActive) return res.status(400).json({ error: "Listing not found or inactive" });
+      if (!listing || !listing.isActive) {
+        return res.status(400).json({ error: "Listing not found or inactive" });
+      }
+
+      const seller = await storage.getUser(listing.sellerId);
+      if (!seller || !seller.username) {
+        return res.status(400).json({ error: "seller_username_required" });
+      }
 
       const expected = num(listing.price);
 
@@ -82,6 +95,7 @@ export function mountPayments(app: Express) {
 
       const payment = await storage.createPayment(draft);
 
+      // نشاط "buy" مع حالة pending
       await storage.createActivity({
         listingId: listing.id,
         buyerId: buyer.id,
@@ -95,8 +109,8 @@ export function mountPayments(app: Express) {
         note: draft.comment ?? null,
       });
 
-      const seller = await storage.getUser(listing.sellerId);
-      if (seller?.telegramId) {
+      // إخطار البائع
+      if (seller.telegramId) {
         const text =
           `🛒 <b>Order opened</b>\n` +
           `Listing: ${listing.title || listing.username || listing.id}\n` +
@@ -138,12 +152,13 @@ export function mountPayments(app: Express) {
       });
       if (!updated) return res.status(500).json({ error: "Failed to update payment" });
 
+      // نشاط "buyer_confirm" متوافق مع الـ schema
       await storage.createActivity({
         listingId,
         buyerId: payment.buyerId,
         sellerId: listing.sellerId,
         paymentId: payment.id,
-        type: "confirm",
+        type: "buyer_confirm",
         status: "completed",
         amount: String(payment.amount),
         currency: payment.currency,
