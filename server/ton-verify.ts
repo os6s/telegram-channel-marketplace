@@ -1,12 +1,52 @@
 // server/ton-verify.ts
-import fetch from "node-fetch";
 
 const TON_API_BASE = process.env.TON_API_BASE || "https://toncenter.com/api/v2";
 const TON_API_KEY = process.env.TON_API_KEY || "";
 
-/**
- * التحقق من دفع معيّن بالـ txHash
- */
+type FetchJson = <T=any>(url: string, opts?: { timeoutMs?: number }) => Promise<T>;
+
+const fetchJson: FetchJson = async (url, { timeoutMs = 8000 } = {}) => {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: {
+        ...(TON_API_KEY ? { "X-API-Key": TON_API_KEY } : {}),
+        "Accept": "application/json",
+      },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    }
+    return (await res.json()) as any;
+  } finally {
+    clearTimeout(t);
+  }
+};
+
+function toTon(nano: unknown): number {
+  const v = Number(nano ?? 0);
+  return Number.isFinite(v) ? v / 1e9 : 0;
+}
+function norm(s: unknown) {
+  return String(s ?? "").trim();
+}
+function decodeComment(obj: any): string {
+  // toncenter variants: msg_data.text OR base64 in msg_data.body with "@type":"msg.dataText"
+  const md = obj?.msg_data ?? obj?.message?.msg_data;
+  if (!md) return "";
+  if (typeof md.text === "string") return md.text;
+  if (typeof md.body === "string") {
+    try {
+      const txt = Buffer.from(md.body, "base64").toString("utf8");
+      return txt;
+    } catch {}
+  }
+  return "";
+}
+
+/** التحقق من دفع معيّن بالـ txHash */
 export async function verifyTonPayment(opts: {
   escrow: string;
   expected: number;
@@ -14,50 +54,62 @@ export async function verifyTonPayment(opts: {
   currency: "TON";
 }): Promise<boolean> {
   if (!opts.txHash) return false;
-  const url = `${TON_API_BASE}/getTransaction?hash=${opts.txHash}&address=${opts.escrow}`;
-  const r = await fetch(url, {
-    headers: TON_API_KEY ? { "X-API-Key": TON_API_KEY } : {},
-  });
-  if (!r.ok) {
-    console.error("verifyTonPayment fetch failed", await r.text());
+  const addr = norm(opts.escrow);
+  const hash = norm(opts.txHash);
+  if (!addr || !hash) return false;
+
+  try {
+    const url = `${TON_API_BASE}/getTransaction?hash=${encodeURIComponent(hash)}&address=${encodeURIComponent(addr)}`;
+    const data = await fetchJson<any>(url);
+
+    const inMsg = data?.result?.in_msg;
+    const amountTon = toTon(inMsg?.value);
+    return amountTon >= Number(opts.expected || 0);
+  } catch (e) {
+    console.error("[verifyTonPayment] failed:", (e as any)?.message || e);
     return false;
   }
-  const data = await r.json();
-  // تحقق من المبلغ
-  const amountNano = Number(data?.result?.in_msg?.value || 0);
-  const amountTon = amountNano / 1e9;
-  return amountTon >= opts.expected;
 }
 
 /**
  * التحقق من إيداع بالاعتماد على تعليق comment (كود الإيداع).
- * يبحث في آخر 20 معاملة لعنوان الـ escrow.
+ * يبحث في آخر 20–40 معاملة لعنوان الـ escrow.
  */
 export async function verifyTonDepositByComment(opts: {
   escrow: string;
   code: string;
   minAmountTon?: number;
 }): Promise<{ ok: boolean; amountTon: number; txHash?: string }> {
-  const url = `${TON_API_BASE}/getTransactions?address=${opts.escrow}&limit=20`;
-  const r = await fetch(url, {
-    headers: TON_API_KEY ? { "X-API-Key": TON_API_KEY } : {},
-  });
-  if (!r.ok) {
-    console.error("verifyTonDepositByComment fetch failed", await r.text());
-    return { ok: false, amountTon: 0 };
-  }
-  const data = await r.json();
-  const txs: any[] = data?.result || [];
+  const addr = norm(opts.escrow);
+  const code = norm(opts.code);
+  if (!addr || !code) return { ok: false, amountTon: 0 };
 
-  for (const tx of txs) {
-    const inMsg = tx.in_msg;
-    if (!inMsg) continue;
-    const comment = inMsg.msg_data?.text || "";
-    if (comment.trim() === opts.code.trim()) {
-      const amountNano = Number(inMsg.value || 0);
-      const amountTon = amountNano / 1e9;
-      if (opts.minAmountTon && amountTon < opts.minAmountTon) continue;
-      return { ok: true, amountTon, txHash: tx.transaction_id?.hash };
+  // حاول على دفعتين لزيادة التغطية بدون إسراف
+  const limits = [20, 40];
+  for (const limit of limits) {
+    try {
+      const url = `${TON_API_BASE}/getTransactions?address=${encodeURIComponent(addr)}&limit=${limit}`;
+      const data = await fetchJson<any>(url);
+      const txs: any[] = Array.isArray(data?.result) ? data.result : [];
+
+      for (const tx of txs) {
+        const inMsg = tx?.in_msg;
+        if (!inMsg) continue;
+
+        const comment = decodeComment(inMsg);
+        if (norm(comment) !== code) continue;
+
+        const amountTon = toTon(inMsg.value);
+        if (opts.minAmountTon && amountTon < opts.minAmountTon) continue;
+
+        const txHash: string | undefined =
+          tx?.transaction_id?.hash || tx?.transaction_id?.lt ? tx?.transaction_id?.hash : undefined;
+
+        return { ok: true, amountTon, txHash };
+      }
+    } catch (e) {
+      console.error("[verifyTonDepositByComment] fetch failed:", (e as any)?.message || e);
+      // جرّب الدفعة التالية (limit الأكبر) أو أعد false
     }
   }
 
