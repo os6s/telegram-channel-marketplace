@@ -12,12 +12,16 @@ function normUsername(v: unknown) {
     .replace(/^t\.me\//i, "")
     .toLowerCase();
 }
+function normSellerUsername(v: unknown) {
+  return String(v ?? "").trim().replace(/^@/, "").toLowerCase();
+}
 
 const zStrOrNum = z.union([z.string(), z.number()]).optional();
 
 const createListingSchema = z
   .object({
-    sellerId: z.string().uuid().optional(),
+    // الهوية بالبـ"يوزرنيم" فقط
+    sellerUsername: z.string().optional(),
     telegramId: z.union([z.string(), z.number()])
       .transform((v) => (v == null ? undefined : String(v)))
       .optional(),
@@ -29,7 +33,6 @@ const createListingSchema = z
     price: z.string().min(1),
     currency: z.enum(["TON", "USDT"]).default("TON"),
     description: z.string().optional(),
-    isVerified: z.boolean().optional(),
 
     // channel
     channelMode: z.enum(["subscribers", "gifts"]).optional(),
@@ -109,19 +112,22 @@ export function mountListings(app: Express) {
         username: unifiedUsername,
       });
 
-      // البائع: sellerId أو via telegramId
-      let sellerId = parsed.sellerId;
-      if (!sellerId && parsed.telegramId) {
+      // حسم sellerUsername:
+      // - لو واصل بالحقل نستعمله بعد التطبيع
+      // - وإلا إذا واصل telegramId نجيب المستخدم ونأخذ username
+      let sellerUsername = parsed.sellerUsername ? normSellerUsername(parsed.sellerUsername) : "";
+      if (!sellerUsername && parsed.telegramId) {
         const u = await storage.getUserByTelegramId(String(parsed.telegramId));
-        if (!u)
+        if (!u) {
           return res
             .status(400)
             .json({ error: "User not found. Open app from Telegram first." });
-        sellerId = u.id;
+        }
+        sellerUsername = normSellerUsername(u.username || "");
       }
-      if (!sellerId) return res.status(400).json({ error: "Missing sellerId" });
+      if (!sellerUsername) return res.status(400).json({ error: "Missing sellerUsername" });
 
-      // منع التكرار على username إن وجد
+      // منع التكرار على username (للعنصر المعروض) إن وجد
       if (unifiedUsername) {
         const dupe = await storage.getChannelByUsername(unifiedUsername);
         if (dupe) return res.status(400).json({ error: "Username already exists" });
@@ -162,9 +168,9 @@ export function mountListings(app: Express) {
           ? `${parsed.platform || ""} account`.trim()
           : `${parsed.serviceType || "service"} ${target || ""}`.trim());
 
-      // payload لسكيما Drizzle الحالية
+      // payload لسكيما Drizzle الحالية (بدون sellerId/isVerified/avatarUrl)
       const payload = {
-        sellerId,
+        sellerUsername,
         kind: parsed.kind,
         platform: parsed.platform ?? "telegram",
         username: unifiedUsername || null,
@@ -172,9 +178,7 @@ export function mountListings(app: Express) {
         description: parsed.description || "",
         price: parsed.price,
         currency: parsed.currency,
-        isVerified: !!parsed.isVerified,
         isActive: true,
-        avatarUrl: null,
 
         // channel
         channelMode: parsed.channelMode,
@@ -212,26 +216,35 @@ export function mountListings(app: Express) {
   app.get("/api/listings", async (req, res) => {
     try {
       const search = (req.query.search as string) || undefined;
-      const sellerId = (req.query.sellerId as string) || undefined;
 
-      // نجلب من storage أولاً
-      const list = await storage.getChannels({ search, sellerId });
+      const kind = (req.query.type as string) || undefined;
+      const platform = (req.query.platform as string) || undefined;
+      const channelMode = (req.query.channelMode as string) || undefined;
+      const serviceType = (req.query.serviceType as string) || undefined;
 
-      // فلاتر إضافية مطلوبة من الفرونت
-      const type = (req.query.type as string) || "";
-      const platform = (req.query.platform as string) || "";
-      const channelMode = (req.query.channelMode as string) || "";
-      const serviceType = (req.query.serviceType as string) || "";
+      const sellerUsername =
+        req.query.sellerUsername ? normSellerUsername(req.query.sellerUsername as string) : undefined;
 
-      const filtered = list.filter((it: any) => {
-        if (type && (it.kind || "channel") !== type) return false;
-        if (platform && (it.platform || "telegram") !== platform) return false;
-        if (channelMode && (it.channelMode || "") !== channelMode) return false;
-        if (serviceType && (it.serviceType || "") !== serviceType) return false;
-        return true;
+      const minSubscribers = req.query.minSubscribers != null
+        ? Number(req.query.minSubscribers)
+        : undefined;
+
+      const maxPrice = req.query.maxPrice != null
+        ? Number(req.query.maxPrice)
+        : undefined;
+
+      const list = await storage.getChannels({
+        search,
+        kind: kind as any,
+        platform: platform as any,
+        channelMode: channelMode as any,
+        serviceType: serviceType as any,
+        sellerUsername,
+        minSubscribers,
+        maxPrice,
       });
 
-      res.json(filtered);
+      res.json(list);
     } catch (e: any) {
       console.error("❌ /api/listings error:", e?.message || e);
       res.status(500).json({ error: e?.message || "Unknown error" });
@@ -258,7 +271,9 @@ export function mountListings(app: Express) {
       const actor = await resolveActor(req);
       if (!actor) return res.status(401).json({ error: "Unauthorized" });
 
-      const canDelete = isAdmin(actor) || listing.sellerId === actor.id;
+      const actorU = (actor.username || "").toLowerCase();
+      const canDelete =
+        isAdmin(actor) || (!!actorU && actorU === (listing.sellerUsername || "").toLowerCase());
       if (!canDelete) return res.status(403).json({ error: "Forbidden" });
 
       const ok = await storage.deleteChannel(req.params.id);
