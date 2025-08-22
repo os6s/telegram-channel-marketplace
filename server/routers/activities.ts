@@ -1,5 +1,6 @@
 // server/routers/activities.ts
 import type { Express } from "express";
+import { z } from "zod";
 import { storage } from "../storage";
 import { insertActivitySchema } from "@shared/schema";
 import { ensureBuyerHasFunds } from "../ton-utils";
@@ -10,7 +11,7 @@ async function sendTelegramMessage(
   text: string,
   replyMarkup?: any
 ) {
-  const token = process.env.TELEGRAM_BOT_TOKEN; // يجب ضبطه في Render
+  const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     console.warn("[notify] TELEGRAM_BOT_TOKEN missing – skipping telegram notify");
     return;
@@ -20,7 +21,6 @@ async function sendTelegramMessage(
     console.warn("[notify] invalid telegramId, skipping");
     return;
   }
-
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
@@ -39,6 +39,12 @@ async function sendTelegramMessage(
   }
 }
 
+/* ========= helpers ========= */
+const listQuery = z.object({
+  userId: z.string().uuid().optional(),
+  listingId: z.string().uuid().optional(),
+});
+
 /**
  * Endpoints:
  * GET   /api/activities?userId=... | listingId=...
@@ -52,13 +58,14 @@ export function mountActivities(app: Express) {
   // List activities by user or listing
   app.get("/api/activities", async (req, res) => {
     try {
-      const userId = (req.query.userId as string) || "";
-      const listingId = (req.query.listingId as string) || "";
+      const q = listQuery.safeParse(req.query);
+      if (!q.success || (!q.data.userId && !q.data.listingId)) {
+        return res.status(400).json({ error: "userId or listingId required" });
+      }
 
       let rows;
-      if (userId) rows = await storage.getActivitiesByUser(userId);
-      else if (listingId) rows = await storage.getActivitiesByChannel(listingId);
-      else return res.status(400).json({ error: "userId or listingId required" });
+      if (q.data.userId) rows = await storage.getActivitiesByUser(q.data.userId);
+      else rows = await storage.getActivitiesByChannel(q.data.listingId!);
 
       res.json(rows);
     } catch (error: any) {
@@ -82,22 +89,28 @@ export function mountActivities(app: Express) {
     try {
       const incoming = { ...(req.body || {}) };
 
-      // لازم listingId موجود
+      // required: listingId + buyerId
       if (!incoming.listingId) return res.status(400).json({ error: "listingId required" });
+      if (!incoming.buyerId) return res.status(400).json({ error: "buyerId required" });
 
-      // جيب الـ listing وتأكد نشط
-      const listing = await storage.getChannel(incoming.listingId);
+      // load listing
+      const listing = await storage.getChannel(String(incoming.listingId));
       if (!listing || !listing.isActive) {
         return res.status(400).json({ error: "Listing not found or inactive" });
       }
 
-      // حقول افتراضية من الـ listing
+      // default fields inherited from listing
       if (!incoming.sellerId) incoming.sellerId = listing.sellerId;
-      if (!incoming.amount)   incoming.amount   = String(listing.price);
-      if (!incoming.currency) incoming.currency = (listing as any).currency || "TON";
-      if (!incoming.type)     incoming.type     = "buy"; // افتراضيًا إذا ما تحدد النوع
+      if (!incoming.amount) incoming.amount = String(listing.price);
+      if (!incoming.currency) incoming.currency = (listing as any).currency ?? "TON";
+      if (!incoming.type) incoming.type = "buy";
 
-      // تحقق من تطابق السعر إذا أُرسل
+      // prevent self-purchase
+      if (String(incoming.buyerId) === String(incoming.sellerId)) {
+        return res.status(400).json({ error: "Seller cannot buy own listing" });
+      }
+
+      // price match (if provided)
       if (incoming.amount != null) {
         const a = parseFloat(String(incoming.amount).replace(",", "."));
         const p = parseFloat(String(listing.price).replace(",", "."));
@@ -106,9 +119,9 @@ export function mountActivities(app: Express) {
         }
       }
 
-      // 🔒 منع الشراء بدون رصيد كافٍ (TON فقط حالياً)
+      // funds check for buy (TON for now)
       if (incoming.type === "buy") {
-        const buyer = await storage.getUser(incoming.buyerId);
+        const buyer = await storage.getUser(String(incoming.buyerId));
         if (!buyer?.tonWallet) {
           return res.status(400).json({ error: "Buyer wallet not set" });
         }
@@ -117,38 +130,33 @@ export function mountActivities(app: Express) {
           await ensureBuyerHasFunds({ userTonAddress: buyer.tonWallet, amountTON: priceTON });
         } catch (err: any) {
           if (err?.code === "INSUFFICIENT_FUNDS") {
-            return res.status(402).json({ error: err.message, details: err.details }); // 402 Payment Required
+            return res.status(402).json({ error: err.message, details: err.details });
           }
           return res.status(400).json({ error: err?.message || "Balance check failed" });
         }
       }
 
-      // تحقق نهائي عبر الـ schema
+      // validate payload
       const activityData = insertActivitySchema.parse(incoming);
 
-      // أنشئ الـ Activity (التحقق الإضافي موجود داخل storage.createActivity أيضًا)
+      // create
       const activity = await storage.createActivity(activityData);
 
-      // إذا كانت عملية شراء "buy" وعلى نوع غير "service" → عطّل الإعلان حتى لا يُشترى مرتين
+      // deactivate non-service listing once bought
       let listingUpdated: any = null;
-      if (activity.type === "buy" && (listing.kind || "") !== "service") {
-        if (listing.isActive) {
-          listingUpdated = await storage.updateChannel(listing.id, { isActive: false });
-        }
+      if (activity.type === "buy" && (listing.kind || "") !== "service" && listing.isActive) {
+        listingUpdated = await storage.updateChannel(listing.id, { isActive: false });
       }
 
-      // إشعار تلغرام للبائع والمشتري
+      // notifications
       const buyer = await storage.getUser(activity.buyerId);
       const seller = await storage.getUser(activity.sellerId);
-
       const humanTitle =
         listing.title ||
         (listing.username ? `@${listing.username}` : `${listing.platform || ""} ${listing.kind || ""}`.trim());
-
       const priceStr = String(activity.amount ?? listing.price);
       const ccy = String(activity.currency ?? (listing as any).currency ?? "TON");
 
-      // للمشتري
       if (buyer?.telegramId) {
         await sendTelegramMessage(
           buyer.telegramId,
@@ -163,8 +171,6 @@ export function mountActivities(app: Express) {
           ].join("\n")
         );
       }
-
-      // للبائع
       if (seller?.telegramId) {
         await sendTelegramMessage(
           seller.telegramId,
@@ -188,11 +194,7 @@ export function mountActivities(app: Express) {
     }
   });
 
-  /* ========= Buyer confirms receipt =========
-     Body: { listingId, buyerId, sellerId, [paymentId] }
-     Creates an activity(type='confirm', note='buyer_confirm') and NOTIFIES both sides.
-     لا يوجد أي إطلاق أموال تلقائي — قرار الأدمن لاحقاً.
-  ========================================== */
+  // Buyer confirms receipt
   app.post("/api/activities/confirm/buyer", async (req, res) => {
     try {
       const { listingId, buyerId, sellerId, paymentId } = req.body || {};
@@ -207,7 +209,7 @@ export function mountActivities(app: Express) {
         buyerId: String(buyerId),
         sellerId: String(sellerId),
         paymentId: paymentId ? String(paymentId) : null,
-        type: "confirm",
+        type: "buyer_confirm",
         status: "completed",
         amount: String(listing.price),
         currency: (listing as any).currency ?? "TON",
@@ -223,7 +225,6 @@ export function mountActivities(app: Express) {
       const priceStr = String(listing.price);
       const ccy = String((listing as any).currency ?? "TON");
 
-      // إشعار
       if (seller?.telegramId) {
         await sendTelegramMessage(
           seller.telegramId,
@@ -256,10 +257,7 @@ export function mountActivities(app: Express) {
     }
   });
 
-  /* ========= Seller confirms delivery =========
-     Body: { listingId, buyerId, sellerId, [paymentId] }
-     Creates an activity(type='confirm', note='seller_confirm') and NOTIFIES both sides.
-  ============================================ */
+  // Seller confirms delivery
   app.post("/api/activities/confirm/seller", async (req, res) => {
     try {
       const { listingId, buyerId, sellerId, paymentId } = req.body || {};
@@ -274,7 +272,7 @@ export function mountActivities(app: Express) {
         buyerId: String(buyerId),
         sellerId: String(sellerId),
         paymentId: paymentId ? String(paymentId) : null,
-        type: "confirm",
+        type: "seller_confirm",
         status: "completed",
         amount: String(listing.price),
         currency: (listing as any).currency ?? "TON",
@@ -290,7 +288,6 @@ export function mountActivities(app: Express) {
       const priceStr = String(listing.price);
       const ccy = String((listing as any).currency ?? "TON");
 
-      // إشعار
       if (buyer?.telegramId) {
         await sendTelegramMessage(
           buyer.telegramId,
