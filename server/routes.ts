@@ -18,6 +18,7 @@ import { mountAdmin } from "./routers/admin";
 import { mountAdminPayouts } from "./routers/admin-payouts";
 import { mountStats } from "./routers/stats";
 import { mountMisc } from "./routers/misc";
+import { mountMarketActivity } from "./routers/market-activity";
 
 /* ---------- env & helpers ---------- */
 const WEBAPP_URL = process.env.WEBAPP_URL!; // مطلوب في Render
@@ -38,14 +39,11 @@ async function ensureWebhook(): Promise<void> {
   const needUrl = webhookUrl();
   const needSecret = WEBHOOK_SECRET || undefined;
 
-  // 1) getWebhookInfo
   try {
     const infoRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo`);
     const info = await infoRes.json().catch(() => ({}));
     const curUrl = info?.result?.url as string | undefined;
-    const pending = info?.result?.pending_update_count;
 
-    // 2) If different/missing -> setWebhook
     if (curUrl !== needUrl) {
       const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
         method: "POST",
@@ -61,7 +59,6 @@ async function ensureWebhook(): Promise<void> {
       return;
     }
 
-    // 3) If URL same, optionally refresh to set secret (harmless idempotent)
     if (needSecret) {
       await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
         method: "POST",
@@ -70,7 +67,7 @@ async function ensureWebhook(): Promise<void> {
       }).catch(() => {});
     }
 
-    console.log(`🔗 Webhook already set (${curUrl})${typeof pending === "number" ? `, pending=${pending}` : ""}`);
+    console.log(`🔗 Webhook already set (${curUrl})`);
   } catch (e) {
     console.error("❌ ensureWebhook error:", e);
   }
@@ -98,7 +95,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   mountBalance(app);
   mountPayouts(app);
 
-  // Payments (escrow from internal balance)
+  // Payments (escrow)
   mountPayments(app);
 
   // Disputes & messages
@@ -112,6 +109,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Stats & misc
   mountStats(app);
   mountMisc(app);
+
+  // Market activity timeline
+  mountMarketActivity(app);
 
   // Try to (re)register webhook on boot
   ensureWebhook().catch(() => {});
