@@ -1,14 +1,8 @@
 // server/routers/admin.ts
 import type { Express, Request } from "express";
 import { db } from "../db";
-import {
-  activities,
-  listings,
-  payments,
-  users,
-  type User,
-} from "@shared/schema";
-import { desc, eq, inArray } from "drizzle-orm";
+import { activities, listings, payments, users, type User } from "@shared/schema";
+import { desc, eq } from "drizzle-orm";
 import { tgAuth } from "../middleware/tgAuth";
 import { storage } from "../storage";
 
@@ -44,9 +38,7 @@ async function notify(telegramId: string | null | undefined, text: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
     });
-  } catch {
-    /* ignore */
-  }
+  } catch { /* ignore */ }
 }
 
 export function mountAdmin(app: Express) {
@@ -58,6 +50,7 @@ export function mountAdmin(app: Express) {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
+    // نعتمد على payments فقط (usernames داخل الجدول)
     const rows = await db
       .select({
         id: payments.id,
@@ -68,25 +61,37 @@ export function mountAdmin(app: Express) {
         status: payments.status,
         adminAction: payments.adminAction,
         buyerId: payments.buyerId,
+        buyerUsername: payments.buyerUsername,
+        sellerUsername: payments.sellerUsername,
         escrowAddress: payments.escrowAddress,
-        sellerId: listings.sellerId,
       })
       .from(payments)
-      .innerJoin(listings, eq(listings.id, payments.listingId))
       .where(eq(payments.kind, "order"))
       .orderBy(desc(payments.createdAt));
 
     if (!rows.length) return res.json([]);
 
-    const ids = Array.from(new Set(rows.flatMap((r) => [r.buyerId, r.sellerId].filter(Boolean) as string[])));
-    const us = ids.length
-      ? await db.select().from(users).where(inArray(users.id, ids))
+    // نجلب بيانات المستخدمين اختيارياً (للتلغرام)
+    const buyerIds = Array.from(new Set(rows.map(r => r.buyerId).filter(Boolean) as string[]));
+    const buyers = buyerIds.length
+      ? await db.select().from(users).where(eq(users.id, buyerIds[0])).execute()
       : [];
-    const U = new Map(us.map((u) => [u.id, u]));
+    const buyersMap = new Map(buyers.map(u => [u.id, u]));
 
-    const out = rows.map((r) => {
-      const buyer = U.get(r.buyerId);
-      const seller = U.get(r.sellerId);
+    // seller via username (قد لا نحتاج ID هنا)
+    // نجلب بعض معلومات اللستنج لعرض أفضل إن لزم
+    const out = await Promise.all(rows.map(async (r) => {
+      let listingTitle: string | null = null;
+      let listingUsername: string | null = null;
+      if (r.listingId) {
+        const l = (await db.select().from(listings).where(eq(listings.id, r.listingId)).limit(1))[0];
+        if (l) {
+          listingTitle = l.title ?? null;
+          listingUsername = l.username ?? null;
+        }
+      }
+
+      const buyer = buyersMap.get(r.buyerId);
       const status:
         | "held"
         | "awaiting_buyer_confirm"
@@ -94,28 +99,32 @@ export function mountAdmin(app: Express) {
         | "released"
         | "refunded"
         | "cancelled" =
-        r.status === "disputed"
-          ? "disputed"
-          : r.status === "refunded"
-          ? "refunded"
-          : r.status === "cancelled"
-          ? "cancelled"
-          : r.status === "completed" && r.adminAction === "payout"
-          ? "released"
-          : "held";
+        r.status === "disputed" ? "disputed"
+        : r.status === "refunded" ? "refunded"
+        : r.status === "cancelled" ? "cancelled"
+        : (r.status === "completed" && r.adminAction === "payout") ? "released"
+        : "held";
 
       return {
         id: r.id,
         listingId: r.listingId,
+        listingTitle,
+        listingUsername,
         createdAt: r.createdAt as unknown as string,
         amount: String(r.amount),
         currency: (r.currency as string) || "TON",
         status,
-        buyer: { id: r.buyerId, username: buyer?.username ?? null, name: buyer?.firstName ?? null },
-        seller: { id: r.sellerId, username: seller?.username ?? null, name: seller?.firstName ?? null },
-        escrowAddress: r.escrowAddress,
+        buyer: {
+          id: r.buyerId,
+          username: r.buyerUsername ?? buyer?.username ?? null,
+          name: buyer?.firstName ?? null,
+        },
+        seller: {
+          username: r.sellerUsername ?? null,
+        },
+        escrowAddress: r.escrowAddress ?? null,
       };
-    });
+    }));
 
     res.json(out);
   });
@@ -142,16 +151,26 @@ export function mountAdmin(app: Express) {
       .set({ status: "completed", adminAction: "payout", confirmedAt: new Date() })
       .where(eq(payments.id, pid));
 
+    // جلب listing (اختياري لكتابة activity)
     const listing = pay.listingId
       ? (await db.select().from(listings).where(eq(listings.id, pay.listingId)).limit(1))[0]
       : undefined;
 
-    if (listing) {
+    // تحديد seller عبر username
+    let sellerUserId: string | undefined;
+    if (pay.sellerUsername) {
+      const seller = (await db.select().from(users).where(eq(users.username, pay.sellerUsername)).limit(1))[0];
+      sellerUserId = seller?.id;
+    }
+
+    if (listing && sellerUserId) {
       await db.insert(activities).values({
         listingId: listing.id,
         buyerId: pay.buyerId,
-        sellerId: listing.sellerId,
+        sellerId: sellerUserId,
         paymentId: pay.id,
+        buyerUsername: pay.buyerUsername ?? null,
+        sellerUsername: pay.sellerUsername ?? null,
         type: "admin_release",
         status: "completed",
         amount: pay.amount,
@@ -161,7 +180,10 @@ export function mountAdmin(app: Express) {
     }
 
     const buyer = (await db.select().from(users).where(eq(users.id, pay.buyerId)).limit(1))[0];
-    const seller = listing ? (await db.select().from(users).where(eq(users.id, listing.sellerId)).limit(1))[0] : undefined;
+    const seller =
+      pay.sellerUsername
+        ? (await db.select().from(users).where(eq(users.username, pay.sellerUsername)).limit(1))[0]
+        : undefined;
 
     await notify(buyer?.telegramId, `✅ <b>Order Released</b>\nYour payment was released to the seller.`);
     await notify(seller?.telegramId, `✅ <b>Payout Approved</b>\nAdmin has released the funds to your wallet.`);
@@ -184,7 +206,9 @@ export function mountAdmin(app: Express) {
     if (pay.status === "completed" && pay.adminAction === "payout") {
       return res.status(409).json({ error: "Already released" });
     }
-    if (pay.status === "refunded") return res.status(409).json({ error: "Already refunded" });
+    if (pay.status === "refunded") {
+      return res.status(409).json({ error: "Already refunded" });
+    }
 
     await db
       .update(payments)
@@ -195,12 +219,20 @@ export function mountAdmin(app: Express) {
       ? (await db.select().from(listings).where(eq(listings.id, pay.listingId)).limit(1))[0]
       : undefined;
 
-    if (listing) {
+    let sellerUserId: string | undefined;
+    if (pay.sellerUsername) {
+      const seller = (await db.select().from(users).where(eq(users.username, pay.sellerUsername)).limit(1))[0];
+      sellerUserId = seller?.id;
+    }
+
+    if (listing && sellerUserId) {
       await db.insert(activities).values({
         listingId: listing.id,
         buyerId: pay.buyerId,
-        sellerId: listing.sellerId,
+        sellerId: sellerUserId,
         paymentId: pay.id,
+        buyerUsername: pay.buyerUsername ?? null,
+        sellerUsername: pay.sellerUsername ?? null,
         type: "admin_refund",
         status: "completed",
         amount: pay.amount,
@@ -210,7 +242,10 @@ export function mountAdmin(app: Express) {
     }
 
     const buyer = (await db.select().from(users).where(eq(users.id, pay.buyerId)).limit(1))[0];
-    const seller = listing ? (await db.select().from(users).where(eq(users.id, listing.sellerId)).limit(1))[0] : undefined;
+    const seller =
+      pay.sellerUsername
+        ? (await db.select().from(users).where(eq(users.username, pay.sellerUsername)).limit(1))[0]
+        : undefined;
 
     await notify(buyer?.telegramId, `↩️ <b>Refund Approved</b>\nAdmin has refunded your payment.`);
     await notify(seller?.telegramId, `⚠️ <b>Order Refunded</b>\nAdmin refunded the buyer for this order.`);
