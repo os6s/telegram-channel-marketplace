@@ -83,11 +83,7 @@ class PostgreSQLStorage implements IStorage {
   async getUserByUsername(username: string) {
     if (!username) return undefined;
     const u = username.toLowerCase();
-    const rows = await db
-      .select()
-      .from(users)
-      .where(eq(sql`lower(${users.username})`, u))
-      .limit(1);
+    const rows = await db.select().from(users).where(eq(sql`lower(${users.username})`, u)).limit(1);
     return rows[0];
   }
   async createUser(data: InsertUser) {
@@ -157,7 +153,6 @@ class PostgreSQLStorage implements IStorage {
     return rows;
   }
   async createChannel(data: InsertListing) {
-    // يفترض أن data تحوي sellerUsername صالح. قيود DB و التريغرز تتكفّل بالباقي.
     const rows = await db.insert(listings).values(data as any).returning();
     return rows[0];
   }
@@ -229,7 +224,6 @@ class PostgreSQLStorage implements IStorage {
     return rows;
   }
   async createPayment(data: InsertPayment) {
-    // التريغر trg_payments_fees يحسب الرسوم تلقائياً
     const rows = await db.insert(payments).values(data as any).returning();
     return rows[0];
   }
@@ -244,7 +238,6 @@ class PostgreSQLStorage implements IStorage {
     return rows[0];
   }
   async listPayoutsBySeller(sellerId: string) {
-    // ملاحظة: payouts ما زالت مرتبطة بـ sellerId حسب سكيمتك الحالية
     const rows = await db
       .select()
       .from(payouts)
