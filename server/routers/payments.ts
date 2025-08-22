@@ -11,7 +11,7 @@ function num(v: unknown): number {
   return Number(String(v).replace(",", "."));
 }
 function feeCalc(amount: number, feePercent: number) {
-  const fee = +(amount * feePercent / 100).toFixed(9);
+  const fee = +((amount * feePercent) / 100).toFixed(9);
   const sellerAmount = +(amount - fee).toFixed(9);
   return { fee, sellerAmount };
 }
@@ -27,6 +27,7 @@ export function mountPayments(app: Express) {
       if (!escrowAddress) return res.status(500).json({ error: "ESCROW_WALLET not set" });
       const feePercent = Number(process.env.FEE_PERCENT || "5");
 
+      // المشتري من تيليجرام
       const tgUser = (req as unknown as { telegramUser: TgUser }).telegramUser;
       let buyer = await storage.getUserByTelegramId(String(tgUser.id));
       if (!buyer) {
@@ -40,43 +41,55 @@ export function mountPayments(app: Express) {
           role: "user",
         });
       }
-
-      // منع الشراء بدون username
       if (!buyer.username) {
         return res.status(400).json({ error: "buyer_username_required" });
       }
+      const buyerUsername = buyer.username.toLowerCase();
 
+      // الإعلان
       const listingId = String(req.body?.listingId || "");
       const listing = await storage.getChannel(listingId);
       if (!listing || !listing.isActive) {
         return res.status(400).json({ error: "Listing not found or inactive" });
       }
 
-      const seller = await storage.getUser(listing.sellerId);
-      if (!seller || !seller.username) {
+      // ضروري نعرف البائع باليوزرنيم من الإعلان
+      const sellerUsername = (listing as any).sellerUsername as string | null | undefined;
+      if (!sellerUsername) {
         return res.status(400).json({ error: "seller_username_required" });
+      }
+      // حاول نجلب user للبائع حتى نقدر نكتب activity (FKs)
+      const sellerUser = await storage.getUserByUsername(sellerUsername);
+      if (!sellerUser) {
+        return res.status(400).json({ error: "seller_user_not_found" });
       }
 
       const expected = num(listing.price);
 
       // رصيد المشتري المتاح = إيداعات مدفوعة - طلبات محجوزة (pending/paid)
-      const pays = await storage.listPaymentsByBuyer(buyer.id);
-      const deposits = sum(pays, p => p.kind === "deposit" && p.status === "paid");
-      const locked   = sum(pays, p => p.kind === "order"   && p.locked && (p.status === "pending" || p.status === "paid"));
-      const balance  = +(deposits - locked).toFixed(9);
+      const pays = await storage.listPaymentsByBuyerUsername(buyerUsername);
+      const deposits = sum(pays, (p) => p.kind === "deposit" && p.status === "paid");
+      const locked = sum(
+        pays,
+        (p) => p.kind === "order" && p.locked && (p.status === "pending" || p.status === "paid"),
+      );
+      const balance = +(deposits - locked).toFixed(9);
       if (balance < expected) {
         return res.status(402).json({ error: "insufficient_balance", balance, required: expected });
       }
 
       // منع تكرار: إن وجد pending لنفس الإعلان والمشتري رجّعه
-      const dup = pays.find(p => p.kind === "order" && p.listingId === listing.id && p.status === "pending");
+      const dup = pays.find((p) => p.kind === "order" && p.listingId === listing.id && p.status === "pending");
       if (dup) return res.status(200).json(dup);
 
       const { fee, sellerAmount } = feeCalc(expected, feePercent);
 
+      // نكتب السجل مع buyerUsername/sellerUsername
       const draft = insertPaymentSchema.parse({
         listingId: listing.id,
-        buyerId: buyer.id,
+        buyerId: buyer.id,                 // موجود بالسكيمة/الـDB
+        buyerUsername: buyerUsername,      // جديد: نعبيه
+        sellerUsername: sellerUsername.toLowerCase(),
         kind: "order",
         locked: true,
         amount: String(expected),
@@ -95,12 +108,14 @@ export function mountPayments(app: Express) {
 
       const payment = await storage.createPayment(draft);
 
-      // نشاط "buy" مع حالة pending
+      // نشاط "buy" مع حالة pending — نحط IDs + usernames
       await storage.createActivity({
         listingId: listing.id,
         buyerId: buyer.id,
-        sellerId: listing.sellerId,
+        sellerId: sellerUser.id,
         paymentId: payment.id,
+        buyerUsername: buyerUsername,
+        sellerUsername: sellerUsername.toLowerCase(),
         type: "buy",
         status: "pending",
         amount: String(expected),
@@ -110,17 +125,17 @@ export function mountPayments(app: Express) {
       });
 
       // إخطار البائع
-      if (seller.telegramId) {
+      if (sellerUser.telegramId) {
         const text =
           `🛒 <b>Order opened</b>\n` +
           `Listing: ${listing.title || listing.username || listing.id}\n` +
           `Amount: ${expected} ${payment.currency}\n` +
           `Please follow up in the app.`;
-        await tgSendMessage(seller.telegramId, text, {
+        await tgSendMessage(sellerUser.telegramId, text, {
           inline_keyboard: [[{ text: "Open Marketplace", web_app: { url: process.env.WEBAPP_URL || "" } }]],
         });
       } else {
-        await notifyAdmin(`Seller has no telegramId. listingId=${listing.id}`);
+        await notifyAdmin(`Seller has no telegramId. listingId=${listing.id}, seller=@${sellerUsername}`);
       }
 
       res.status(201).json(payment);
@@ -146,18 +161,31 @@ export function mountPayments(app: Express) {
       const listing = await storage.getChannel(listingId);
       if (!listing) return res.status(404).json({ error: "Listing not found" });
 
-      const updated = await storage.updatePayment(id, {
+      const up = await storage.updatePayment(id, {
         status: "paid",
         confirmedAt: new Date(),
       });
-      if (!updated) return res.status(500).json({ error: "Failed to update payment" });
+      if (!up) return res.status(500).json({ error: "Failed to update payment" });
 
-      // نشاط "buyer_confirm" متوافق مع الـ schema
+      // نحتاج sellerId من الـ username
+      const sellerUsername = (payment.sellerUsername ||
+        (listing as any).sellerUsername ||
+        "").toString();
+      const sellerUser = sellerUsername
+        ? await storage.getUserByUsername(sellerUsername)
+        : undefined;
+      if (!sellerUser) {
+        return res.status(400).json({ error: "seller_user_not_found" });
+      }
+
+      // نشاط "buyer_confirm"
       await storage.createActivity({
         listingId,
         buyerId: payment.buyerId,
-        sellerId: listing.sellerId,
+        sellerId: sellerUser.id,
         paymentId: payment.id,
+        buyerUsername: (payment.buyerUsername || "").toString() || undefined,
+        sellerUsername: sellerUsername || undefined,
         type: "buyer_confirm",
         status: "completed",
         amount: String(payment.amount),
@@ -166,13 +194,13 @@ export function mountPayments(app: Express) {
         note: null,
       });
 
+      // إشعارات
       const buyer = await storage.getUser(payment.buyerId);
-      const seller = await storage.getUser(listing.sellerId);
       const msg = `✅ <b>Payment confirmed</b>\nAmount: ${payment.amount} ${payment.currency}`;
       if (buyer?.telegramId) await tgSendMessage(buyer.telegramId, msg);
-      if (seller?.telegramId) await tgSendMessage(seller.telegramId, msg);
+      if (sellerUser?.telegramId) await tgSendMessage(sellerUser.telegramId, msg);
 
-      res.json(updated);
+      res.json(up);
     } catch (e) {
       console.error("❌ /api/payments/:id/confirm error:", e);
       res.status(500).json({ error: "Unknown error" });
