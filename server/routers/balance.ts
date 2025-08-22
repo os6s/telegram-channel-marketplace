@@ -4,38 +4,22 @@ import { tgAuth } from "../middleware/tgAuth";
 import { storage } from "../storage";
 import type { Payment } from "@shared/schema";
 
-/** Sum helper with 9-decimal precision */
 function sum(rows: Payment[], pred: (p: Payment) => boolean) {
-  return +rows
-    .filter(pred)
-    .reduce((s, p) => s + Number(p.amount || 0), 0)
-    .toFixed(9);
+  return +rows.filter(pred).reduce((s, p) => s + Number(p.amount || 0), 0).toFixed(9);
 }
 
 export function mountBalance(app: Express) {
-  // User TON balance derived from payments:
-  // - deposits: kind=deposit & status=paid
-  // - locked:   kind=order   & locked=true & status in (pending, paid)
-  // Balance = deposits - locked
   app.get("/api/me/balance", tgAuth, async (req, res) => {
     const me = await storage.getUserByTelegramId(String((req as any).telegramUser.id));
     if (!me) return res.status(404).json({ error: "user_not_found" });
+    if (!me.username) return res.status(400).json({ error: "username_required" });
 
-    const pays = await storage.listPaymentsByBuyer(me.id);
+    const pays = await storage.listPaymentsByBuyerUsername(me.username);
 
-    const deposits = sum(pays, (p) => p.kind === "deposit" && p.status === "paid");
-    const locked   = sum(
-      pays,
-      (p) => p.kind === "order" && !!p.locked && (p.status === "pending" || p.status === "paid")
-    );
+    const deposits = sum(pays, p => p.kind === "deposit" && p.status === "paid");
+    const locked   = sum(pays, p => p.kind === "order" && !!p.locked && (p.status === "pending" || p.status === "paid"));
+    const balance  = +(deposits - locked).toFixed(9);
 
-    const balance = +(deposits - locked).toFixed(9);
-
-    res.json({
-      currency: "TON",
-      deposits,
-      locked,
-      balance,
-    });
+    res.json({ currency: "TON", deposits, locked, balance });
   });
 }
