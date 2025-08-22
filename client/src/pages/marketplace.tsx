@@ -5,14 +5,36 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Filter, AtSign, Hash, Sparkles, User2, Users, Gift, Megaphone, Rocket } from "lucide-react";
+import {
+  Search,
+  Filter,
+  AtSign,
+  Hash,
+  Sparkles,
+  User2,
+  Users,
+  Gift,
+  Megaphone,
+  Rocket,
+} from "lucide-react";
 import { ListingCard } from "@/components/ListingCard";
 import { useLanguage } from "@/contexts/language-context";
-import { onListingsChange, listLocalListings, type AnyListing } from "@/store/listings";
+import {
+  onListingsChange,
+  listLocalListings,
+  type AnyListing,
+} from "@/store/listings";
 import { apiRequest } from "@/lib/queryClient";
 
 type Kind = "username" | "account" | "channel" | "service" | "";
-type Platform = "telegram" | "twitter" | "instagram" | "discord" | "snapchat" | "tiktok" | "";
+type Platform =
+  | "telegram"
+  | "twitter"
+  | "instagram"
+  | "discord"
+  | "snapchat"
+  | "tiktok"
+  | "";
 type ChannelMode = "subscribers" | "gifts" | "";
 type ServiceType = "followers" | "members" | "boost_channel" | "boost_group" | "";
 
@@ -74,7 +96,7 @@ export default function Marketplace() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Stats من الباك الحالي
+  // Stats
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["/api/stats"],
     queryFn: async () => (await apiRequest("GET", "/api/stats")) ?? {},
@@ -82,14 +104,14 @@ export default function Marketplace() {
     retry: false,
   });
 
-  // Listings مع بارامترات متطابقة للباك
+  // Listings (match backend params)
   const qk = ["/api/listings", { search, kind, platform, channelMode, serviceType }] as const;
   const { data: serverListings = [], isLoading: listingsLoading } = useQuery({
     queryKey: qk,
     queryFn: async () => {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
-      if (kind) params.set("type", kind);                 // يتطابق مع الباك
+      if (kind) params.set("type", kind);
       if (platform) params.set("platform", platform);
       if (channelMode) params.set("channelMode", channelMode);
       if (serviceType) params.set("serviceType", serviceType);
@@ -101,8 +123,10 @@ export default function Marketplace() {
     retry: false,
   });
 
-  // دمج المحلي مع السيرفر
-  const [localListings, setLocalListings] = useState<AnyListing[]>(() => listLocalListings());
+  // Local + server merge
+  const [localListings, setLocalListings] = useState<AnyListing[]>(() =>
+    listLocalListings()
+  );
   useEffect(() => {
     setLocalListings(listLocalListings());
     return onListingsChange(() => setLocalListings(listLocalListings()));
@@ -115,7 +139,7 @@ export default function Marketplace() {
     return Array.from(map.values());
   }, [localListings, serverListings]);
 
-  // فلترة متوافقة مع السكيمة
+  // Client-side filtering (aligned with schema)
   const filtered = merged.filter((it) => {
     if (kind && (it.kind || "channel") !== kind) return false;
     if (platform && (it.platform || "telegram") !== platform) return false;
@@ -129,15 +153,42 @@ export default function Marketplace() {
     return true;
   });
 
-  const usernamePlatforms: Platform[] = ["telegram","twitter","instagram","discord","snapchat","tiktok"];
-  const accountPlatforms: Platform[] = ["telegram","twitter","instagram","discord","snapchat","tiktok"];
-  const channelModes: ChannelMode[] = ["subscribers","gifts"];
-  const serviceTypes: ServiceType[] = ["followers","members","boost_channel","boost_group"];
+  const usernamePlatforms: Platform[] = [
+    "telegram",
+    "twitter",
+    "instagram",
+    "discord",
+    "snapchat",
+    "tiktok",
+  ];
+  const accountPlatforms: Platform[] = [
+    "telegram",
+    "twitter",
+    "instagram",
+    "discord",
+    "snapchat",
+    "tiktok",
+  ];
+  const channelModes: ChannelMode[] = ["subscribers", "gifts"];
+  const serviceTypes: ServiceType[] = [
+    "followers",
+    "members",
+    "boost_channel",
+    "boost_group",
+  ];
 
   const chipCls = (active: boolean) =>
-    `whitespace-nowrap border ${active ? "bg-telegram-500 text-white hover:bg-telegram-600" : "bg-card hover:bg-accent"}`;
+    `whitespace-nowrap border ${
+      active ? "bg-telegram-500 text-white hover:bg-telegram-600" : "bg-card hover:bg-accent"
+    }`;
 
-  const clearAll = () => { setKind(""); setPlatform(""); setChannelMode(""); setServiceType(""); setSearch(""); };
+  const clearAll = () => {
+    setKind("");
+    setPlatform("");
+    setChannelMode("");
+    setServiceType("");
+    setSearch("");
+  };
 
   return (
     <div className={containerCls}>
@@ -151,23 +202,43 @@ export default function Marketplace() {
           </div>
 
           {!statsLoading && (
-            <div className={[
-              "transition-all duration-300 overflow-hidden",
-              showStats ? "max-h-24 opacity-100 mt-2" : "max-h-0 opacity-0 mt-0 pointer-events-none"
-            ].join(" ")}>
+            <div
+              className={[
+                "transition-all duration-300 overflow-hidden",
+                showStats ? "max-h-24 opacity-100 mt-2" : "max-h-0 opacity-0 mt-0 pointer-events-none",
+              ].join(" ")}
+            >
               <div className="grid grid-cols-3 gap-2">
-                <Card><CardContent className="px-3 py-2 text-center">
-                  <div className="text-base font-bold text-foreground">{(stats as any)?.totalSales ?? 0}</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesCountLabel}</div>
-                </CardContent></Card>
-                <Card><CardContent className="px-3 py-2 text-center">
-                  <div className="text-base font-bold text-foreground">{(stats as any)?.totalVolume ?? 0} USDT</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesVolumeLabel}</div>
-                </CardContent></Card>
-                <Card><CardContent className="px-3 py-2 text-center">
-                  <div className="text-base font-bold text-foreground">{(stats as any)?.activeListings ?? 0}</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.activeListingsLabel}</div>
-                </CardContent></Card>
+                <Card>
+                  <CardContent className="px-3 py-2 text-center">
+                    <div className="text-base font-bold text-foreground">
+                      {(stats as any)?.totalSales ?? 0}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {L.salesCountLabel}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="px-3 py-2 text-center">
+                    <div className="text-base font-bold text-foreground">
+                      {(stats as any)?.totalVolume ?? 0} TON
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {L.salesVolumeLabel}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="px-3 py-2 text-center">
+                    <div className="text-base font-bold text-foreground">
+                      {(stats as any)?.activeListings ?? 0}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {L.activeListingsLabel}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </div>
           )}
@@ -177,62 +248,132 @@ export default function Marketplace() {
       <div className="bg-card px-4 py-3 border-b border-border">
         <div className="space-y-3">
           <div className="relative">
-            <Input placeholder={L.searchPlaceholder} value={search} onChange={(e)=>setSearch(e.target.value)} className="pl-10 pr-4"/>
+            <Input
+              placeholder={L.searchPlaceholder}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10 pr-4"
+            />
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
           </div>
 
           <div className="flex gap-2 overflow-x-auto pb-1">
-            <Button size="sm" variant={kind===""?"default":"outline"} className={chipCls(kind==="")} onClick={clearAll}>
+            <Button
+              size="sm"
+              variant={kind === "" ? "default" : "outline"}
+              className={chipCls(kind === "")}
+              onClick={clearAll}
+            >
               {L.allTypes}
             </Button>
-            <Button size="sm" variant={kind==="username"?"default":"outline"} className={chipCls(kind==="username")}
-              onClick={() => { setKind("username"); setPlatform(""); setChannelMode(""); setServiceType(""); }}>
+            <Button
+              size="sm"
+              variant={kind === "username" ? "default" : "outline"}
+              className={chipCls(kind === "username")}
+              onClick={() => {
+                setKind("username");
+                setPlatform("");
+                setChannelMode("");
+                setServiceType("");
+              }}
+            >
               {L.username}
             </Button>
-            <Button size="sm" variant={kind==="account"?"default":"outline"} className={chipCls(kind==="account")}
-              onClick={() => { setKind("account"); setPlatform(""); setChannelMode(""); setServiceType(""); }}>
+            <Button
+              size="sm"
+              variant={kind === "account" ? "default" : "outline"}
+              className={chipCls(kind === "account")}
+              onClick={() => {
+                setKind("account");
+                setPlatform("");
+                setChannelMode("");
+                setServiceType("");
+              }}
+            >
               {L.account}
             </Button>
-            <Button size="sm" variant={kind==="channel"?"default":"outline"} className={chipCls(kind==="channel")}
-              onClick={() => { setKind("channel"); setPlatform("telegram"); setChannelMode(""); setServiceType(""); }}>
+            <Button
+              size="sm"
+              variant={kind === "channel" ? "default" : "outline"}
+              className={chipCls(kind === "channel")}
+              onClick={() => {
+                setKind("channel");
+                setPlatform("telegram");
+                setChannelMode("");
+                setServiceType("");
+              }}
+            >
               {L.channel}
             </Button>
-            <Button size="sm" variant={kind==="service"?"default":"outline"} className={chipCls(kind==="service")}
-              onClick={() => { setKind("service"); setPlatform(""); setChannelMode(""); setServiceType(""); }}>
+            <Button
+              size="sm"
+              variant={kind === "service" ? "default" : "outline"}
+              className={chipCls(kind === "service")}
+              onClick={() => {
+                setKind("service");
+                setPlatform("");
+                setChannelMode("");
+                setServiceType("");
+              }}
+            >
               {L.service}
             </Button>
-            <Button size="sm" variant="outline" onClick={clearAll}>Reset</Button>
+            <Button size="sm" variant="outline" onClick={clearAll}>
+              Reset
+            </Button>
           </div>
 
-          {(kind==="username" || kind==="account") && (
+          {(kind === "username" || kind === "account") && (
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {(kind==="username"?usernamePlatforms:accountPlatforms).map(p=>(
-                <Button key={p} size="sm" variant={platform===p?"default":"outline"} className={chipCls(platform===p)}
-                  onClick={()=> setPlatform(platform===p?"":p)}>
-                  <span className="mr-1">{ICON[p]}</span>{p}
+              {(kind === "username" ? usernamePlatforms : accountPlatforms).map((p) => (
+                <Button
+                  key={p}
+                  size="sm"
+                  variant={platform === p ? "default" : "outline"}
+                  className={chipCls(platform === p)}
+                  onClick={() => setPlatform(platform === p ? "" : p)}
+                >
+                  <span className="mr-1">{ICON[p]}</span>
+                  {p}
                 </Button>
               ))}
             </div>
           )}
 
-          {kind==="channel" && (
+          {kind === "channel" && (
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {channelModes.map(m=>(
-                <Button key={m} size="sm" variant={channelMode===m?"default":"outline"} className={chipCls(channelMode===m)}
-                  onClick={()=> setChannelMode(channelMode===m?"":m)}>
-                  <span className="mr-1">{ICON[m]}</span>{m==="subscribers"?L.modeSubscribers:L.modeGifts}
+              {channelModes.map((m) => (
+                <Button
+                  key={m}
+                  size="sm"
+                  variant={channelMode === m ? "default" : "outline"}
+                  className={chipCls(channelMode === m)}
+                  onClick={() => setChannelMode(channelMode === m ? "" : m)}
+                >
+                  <span className="mr-1">{ICON[m]}</span>
+                  {m === "subscribers" ? L.modeSubscribers : L.modeGifts}
                 </Button>
               ))}
             </div>
           )}
 
-          {kind==="service" && (
+          {kind === "service" && (
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {serviceTypes.map(s=>(
-                <Button key={s} size="sm" variant={serviceType===s?"default":"outline"} className={chipCls(serviceType===s)}
-                  onClick={()=> setServiceType(serviceType===s?"":s)}>
+              {serviceTypes.map((s) => (
+                <Button
+                  key={s}
+                  size="sm"
+                  variant={serviceType === s ? "default" : "outline"}
+                  className={chipCls(serviceType === s)}
+                  onClick={() => setServiceType(serviceType === s ? "" : s)}
+                >
                   <span className="mr-1">{ICON[s]}</span>
-                  {{followers:L.serviceFollowers,members:L.serviceSubscribers,boost_channel:L.boostCh,boost_group:L.boostGp}[s]}
+                  {{
+                    followers: L.serviceFollowers,
+                    members: L.serviceSubscribers,
+                    boost_channel: L.boostCh,
+                    boost_group: L.boostGp,
+                  }[s]}
                 </Button>
               ))}
             </div>
@@ -243,27 +384,38 @@ export default function Marketplace() {
       <div className="px-4 py-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-foreground">{L.title}</h2>
-          <Button variant="outline" size="sm"><Filter className="w-4 h-4 mr-1"/>{L.sortByPrice}</Button>
+          <Button variant="outline" size="sm">
+            <Filter className="w-4 h-4 mr-1" />
+            {L.sortByPrice}
+          </Button>
         </div>
 
         {listingsLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[...Array(6)].map((_,i)=>(
-              <Card key={i}><CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <Skeleton className="w-12 h-12 rounded-full"/><div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-1/3"/><Skeleton className="h-3 w-1/2"/><Skeleton className="h-3 w-full"/><Skeleton className="h-8 w-24"/>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Card key={i}>
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <Skeleton className="w-12 h-12 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-1/3" />
+                      <Skeleton className="h-3 w-1/2" />
+                      <Skeleton className="h-3 w-full" />
+                      <Skeleton className="h-8 w-24" />
+                    </div>
                   </div>
-                </div>
-              </CardContent></Card>
+                </CardContent>
+              </Card>
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <Card><CardContent className="p-8 text-center">
-            <div className="opacity-60 text-lg mb-2">📭</div>
-            <h3 className="font-medium mb-1">{L.noFound}</h3>
-            <p className="text-sm text-muted-foreground">{L.tryFilters}</p>
-          </CardContent></Card>
+          <Card>
+            <CardContent className="p-8 text-center">
+              <div className="opacity-60 text-lg mb-2">📭</div>
+              <h3 className="font-medium mb-1">{L.noFound}</h3>
+              <p className="text-sm text-muted-foreground">{L.tryFilters}</p>
+            </CardContent>
+          </Card>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((listing) => (
@@ -278,7 +430,11 @@ export default function Marketplace() {
         )}
 
         {!listingsLoading && filtered.length > 0 && (
-          <div className="text-center mt-6"><Button variant="outline" className="px-6">{L.loadMore}</Button></div>
+          <div className="text-center mt-6">
+            <Button variant="outline" className="px-6">
+              {L.loadMore}
+            </Button>
+          </div>
         )}
       </div>
     </div>
