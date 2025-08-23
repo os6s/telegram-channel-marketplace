@@ -1,4 +1,3 @@
-// client/src/pages/disputes/[id].tsx
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +18,7 @@ import { telegramWebApp } from "@/lib/telegram";
 
 type Dispute = {
   id: string;
-  orderId?: string;
+  orderId?: string;                 // == paymentId
   listingTitle?: string;
   status: "open" | "pending" | "resolved" | "cancelled";
   createdAt?: string;
@@ -91,7 +90,7 @@ export default function DisputeDetailsPage({ params }: { params: { id: string } 
     mutationFn: async () => await apiRequest("POST", `/api/disputes/${id}/resolve`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/disputes", id] });
-      toast({ title: "Dispute resolved" });
+      toast({ title: "تم حسم النزاع" });
     },
     onError: (e: any) => toast({ title: t("toast.error") || "Error", description: e?.message || "Failed", variant: "destructive" }),
   });
@@ -100,9 +99,38 @@ export default function DisputeDetailsPage({ params }: { params: { id: string } 
     mutationFn: async () => await apiRequest("POST", `/api/disputes/${id}/cancel`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/disputes", id] });
-      toast({ title: "Dispute cancelled" });
+      toast({ title: "تم إلغاء النزاع" });
     },
     onError: (e: any) => toast({ title: t("toast.error") || "Error", description: e?.message || "Failed", variant: "destructive" }),
+  });
+
+  // ===== Confirm receipt (buyer only) =====
+  const isBuyer = useMemo(() => {
+    const me = meUsername?.toLowerCase() || "";
+    const by = dispute?.buyer?.username?.toLowerCase() || "";
+    return !!me && !!by && me === by;
+  }, [meUsername, dispute?.buyer?.username]);
+
+  const canConfirmReceipt = useMemo(() => {
+    if (!dispute) return false;
+    if (!isBuyer) return false;
+    if (["resolved", "cancelled"].includes(dispute.status)) return false;
+    return !!dispute.orderId; // نحتاج paymentId
+  }, [dispute, isBuyer]);
+
+  const confirmReceipt = useMutation({
+    mutationFn: async () => {
+      const pid = dispute?.orderId as string;
+      return await apiRequest("PATCH", `/api/payments/${pid}/confirm`);
+    },
+    onSuccess: () => {
+      toast({ title: "تم تأكيد الاستلام" });
+      // اختياري: نحسم النزاع تلقائياً
+      try { resolveMutation.mutate(); } catch {}
+    },
+    onError: (e: any) => {
+      toast({ title: "تعذر التأكيد", description: e?.message || "فشل الإجراء", variant: "destructive" });
+    },
   });
 
   const headerBadge = useMemo(() => {
@@ -140,6 +168,17 @@ export default function DisputeDetailsPage({ params }: { params: { id: string } 
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Buyer: Confirm receipt */}
+            <Button
+              size="sm"
+              className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={!canConfirmReceipt || confirmReceipt.isPending}
+              onClick={() => confirmReceipt.mutate()}
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              تأكيد الاستلام
+            </Button>
+
             {/* Resolve */}
             <AlertDialog>
               <AlertDialogTrigger asChild>
