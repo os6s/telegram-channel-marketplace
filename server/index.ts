@@ -9,12 +9,13 @@ import { setupVite, serveStatic, log } from "./vite";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Routers إضافية
-import { registerDisputesRoutes } from "./routers/disputes.js";
+// Routers
+import { mountUsers } from "./routers/users.js";
 import { mountListings } from "./routers/listings.js";
 import { mountPayments } from "./routers/payments.js";
+import { registerDisputesRoutes } from "./routers/disputes.js";
 
-// ✨ توثيق تيليگرام الخفيف
+// Telegram auth (optional injector)
 import { tgOptionalAuth } from "./middleware/tgAuth.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -61,7 +62,7 @@ const allowed = (process.env.WEBAPP_URL || process.env.WEBAPP_URLS || "")
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin) return cb(null, true); // WebView داخل Telegram
+      if (!origin) return cb(null, true); // Telegram WebView
       if (allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
       if (allowRenderWildcard) {
         try {
@@ -88,7 +89,7 @@ app.use(
 app.use(express.json({ limit: "200kb" }));
 app.use(express.urlencoded({ extended: false, limit: "200kb" }));
 
-// ✨ يقرأ initData ويحقن req.telegramUser إن توفّر
+// Inject Telegram user if initData present
 app.use(tgOptionalAuth);
 
 // Rate limit
@@ -122,10 +123,11 @@ app.use((req, res, next) => {
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.WEBAPP_URL || "";
   if (!publicBaseUrl) throw new Error("PUBLIC_BASE_URL or WEBAPP_URL must be set");
 
-  // الراوترات الأساسية
+  // Core routes (auth/session, config, webhook, etc.)
   const server = await registerRoutes(app, { publicBaseUrl });
 
-  // راوترات التطبيق
+  // App routers (IDs-based, show usernames via JOIN)
+  mountUsers(app);
   mountListings(app);
   mountPayments(app);
   registerDisputesRoutes(app);
