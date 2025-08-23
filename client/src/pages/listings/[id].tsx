@@ -1,4 +1,4 @@
-// client/src/pages/listing/[id].tsx  ← عدّل المسار حسب مشروعك
+// client/src/pages/listing/[id].tsx
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
