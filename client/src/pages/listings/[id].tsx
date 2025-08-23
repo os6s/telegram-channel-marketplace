@@ -16,14 +16,16 @@ type Listing = {
   id: string;
   kind?: string;
   platform?: string|null;
-  username?: string|null;          // حساب المعروض
-  sellerUsername?: string|null;    // البائع
+  username?: string|null;
+  sellerUsername?: string|null;
   title?: string|null;
   description?: string|null;
   price: string;
-  currency?: string|null;          // "TON"
+  currency?: string|null;
   isActive?: boolean;
   createdAt?: string;
+  /** اختياري من الباك لتمكين الأدمن أو سياسات خاصة */
+  canDelete?: boolean;
 };
 
 export default function ListingDetailsPage({ params }: { params: { id: string } }) {
@@ -33,10 +35,10 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
   const qc = useQueryClient();
 
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => { ensureTelegramReady(); }, []);
 
-  // فتح نافذة التأكيد تلقائياً إذا وصل action=buy
   useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
@@ -44,7 +46,6 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
     } catch {}
   }, []);
 
-  // جلب تفاصيل المنتج
   const { data: listing, isLoading } = useQuery({
     enabled: !!id,
     queryKey: ["/api/listings", id],
@@ -54,7 +55,6 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
 
   const fmt = useMemo(() => new Intl.NumberFormat(undefined, { maximumFractionDigits: 9 }), []);
 
-  // إنشاء الدفع ثم فتح غرفة التسليم (نزاع) وتحويل للنزاعات
   const buyMutation = useMutation({
     mutationFn: async () => {
       const pay = await apiRequest("POST", "/api/payments", { listingId: id });
@@ -78,6 +78,18 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async () => await apiRequest("DELETE", `/api/listings/${id}`),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["/api/listings"] });
+      toast({ title: "تم حذف الإعلان" });
+      navigate("/market");
+    },
+    onError: (e: any) => {
+      toast({ title: "خطأ", description: e?.message || "تعذر الحذف", variant: "destructive" });
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="p-4">
@@ -98,6 +110,9 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
   }
 
   const currency = listing.currency || "TON";
+  const me = telegramWebApp.username?.toLowerCase() || "";
+  const seller = listing.sellerUsername?.toLowerCase() || listing.username?.toLowerCase() || "";
+  const canDelete = listing.canDelete === true || (seller && me && seller === me);
 
   return (
     <div className="p-4 space-y-3">
@@ -126,7 +141,7 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
             السعر: {fmt.format(Number(listing.price))} {currency}
           </div>
 
-          <div className="pt-2 flex gap-2">
+          <div className="pt-2 flex flex-wrap gap-2">
             <Button
               className="bg-telegram-500 hover:bg-telegram-600 text-white"
               disabled={buyMutation.isPending || listing.isActive === false}
@@ -134,6 +149,16 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
             >
               {buyMutation.isPending ? "جارٍ المعالجة…" : "شراء الآن"}
             </Button>
+
+            {canDelete && (
+              <Button
+                variant="destructive"
+                disabled={deleteMutation.isPending}
+                onClick={() => setDeleteOpen(true)}
+              >
+                {deleteMutation.isPending ? "جارٍ الحذف…" : "حذف الإعلان"}
+              </Button>
+            )}
 
             <Link href="/market">
               <Button variant="secondary">رجوع</Button>
@@ -158,6 +183,27 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
               onClick={() => buyMutation.mutate()}
             >
               تأكيد
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* تأكيد الحذف */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف الإعلان؟</AlertDialogTitle>
+            <AlertDialogDescription>
+              سيتم حذف هذا الإعلان نهائياً. لا يمكن التراجع.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate()}
+            >
+              تأكيد الحذف
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
