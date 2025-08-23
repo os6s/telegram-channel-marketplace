@@ -16,17 +16,20 @@ function joinBase(base: string, path: string) {
 async function getApiBase(): Promise<string> {
   if (API_BASE_CACHE !== null) return API_BASE_CACHE;
 
+  // 1) Vite env
   const viteBase = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined;
   if (viteBase !== undefined) {
     API_BASE_CACHE = viteBase || "";
     return API_BASE_CACHE;
   }
 
+  // 2) window-injected
   if (typeof window !== "undefined" && (window as any).__API_BASE__) {
     API_BASE_CACHE = String((window as any).__API_BASE__ || "");
     return API_BASE_CACHE;
   }
 
+  // 3) /api/config مرة واحدة
   if (!API_BASE_LOADING) {
     API_BASE_LOADING = (async () => {
       try {
@@ -35,7 +38,7 @@ async function getApiBase(): Promise<string> {
         const j = await res.json();
         API_BASE_CACHE = j?.API_BASE_URL || "";
       } catch {
-        API_BASE_CACHE = "";
+        API_BASE_CACHE = ""; // نفس الأصل
       } finally {
         API_BASE_LOADING = null;
       }
@@ -116,7 +119,7 @@ async function fetchJson(method: string, url: string, data?: unknown, signal?: A
 /* ------------ public API ------------ */
 export async function apiRequest(method: string, url: string, data?: unknown): Promise<any> {
   const ac = new AbortController();
-  // اختياري: ألغِ الطلب بعد 20s
+  // ألغِ الطلب بعد 20s (حماية UI)
   const t = setTimeout(() => ac.abort(), 20_000);
   try {
     return await fetchJson(method, url, data, ac.signal);
@@ -131,9 +134,9 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
   async ({ queryKey, signal }) => {
     const base = await getApiBase();
 
-    // دعم أن يكون أول عنصر بالـ queryKey مسارًا جاهزًا
-    const first = queryKey[0];
-    let path = Array.isArray(queryKey) ? queryKey.join("/") : String(queryKey);
+    // السماح بأن يكون العنصر الأول مساراً كاملاً
+    const first = (queryKey as any)[0];
+    let path = Array.isArray(queryKey) ? (queryKey as any[]).join("/") : String(queryKey);
     if (typeof first === "string" && (first.startsWith("/") || /^https?:\/\//i.test(first))) {
       path = first;
     }
