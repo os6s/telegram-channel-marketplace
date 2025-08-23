@@ -1,7 +1,7 @@
 // server/routers/misc.ts
 import type { Express, Request } from "express";
 
-/* Small helper to compute a public base URL */
+/* Compute a public base URL */
 function computeBaseUrl(req: Request) {
   const setUrl = process.env.WEBAPP_URL;
   if (setUrl) return setUrl.replace(/\/+$/, "");
@@ -11,22 +11,10 @@ function computeBaseUrl(req: Request) {
 }
 
 export function mountMisc(app: Express) {
-  // behind proxies (Render/Heroku/NGINX)
-  app.set("trust proxy", 1);
-
-  // Liveness/health
-  app.get("/healthz", (_req, res) => {
-    res.status(200).json({
-      status: "ok",
-      ts: new Date().toISOString(),
-      uptime: process.uptime(),
-      env: process.env.NODE_ENV || "development",
-    });
-  });
-
-  // Simple redirect to the bot
+  // Simple redirect to the bot (configurable)
   app.get("/redirect-to-bot", (_req, res) => {
-    res.redirect(302, "https://t.me/giftspremarketbot");
+    const botUser = process.env.BOT_USERNAME || "giftspremarketbot";
+    res.redirect(302, `https://t.me/${botUser}`);
   });
 
   // Secure webhook (re)configuration endpoint
@@ -35,7 +23,7 @@ export function mountMisc(app: Express) {
       const token = process.env.TELEGRAM_BOT_TOKEN;
       if (!token) return res.status(400).json({ error: "TELEGRAM_BOT_TOKEN not set" });
 
-      const expectedSecret = process.env.WEBHOOK_SECRET || process.env.SESSION_SECRET;
+      const expectedSecret = process.env.WEBHOOK_SECRET || process.env.SESSION_SECRET || "";
       const provided = req.get("x-setup-key");
       if (!expectedSecret || provided !== expectedSecret) {
         return res.status(403).json({ error: "forbidden" });
