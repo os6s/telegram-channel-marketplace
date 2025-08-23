@@ -25,7 +25,7 @@ type Listing = {
   currency?: string|null;
   isActive?: boolean;
   createdAt?: string;
-  canDelete?: boolean;
+  canDelete?: boolean; // اختياري من الباك
 };
 
 export default function ListingDetailsPage({ params }: { params: { id: string } }) {
@@ -54,11 +54,14 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
 
   const fmt = useMemo(() => new Intl.NumberFormat(undefined, { maximumFractionDigits: 9 }), []);
 
+  // شراء: ينشئ Payment ثم Dispute
   const buyMutation = useMutation({
     mutationFn: async () => {
       const pay = await apiRequest("POST", "/api/payments", { listingId: id });
       const paymentId: string | undefined = pay?.id;
-      if (paymentId) { try { await apiRequest("POST", "/api/disputes", { paymentId }); } catch {} }
+      if (paymentId) {
+        try { await apiRequest("POST", "/api/disputes", { paymentId }); } catch {}
+      }
       return { paymentId };
     },
     onSuccess: async () => {
@@ -76,10 +79,11 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
     },
   });
 
+  // حذف: يعتمد على username
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const tgId = telegramWebApp.user?.id ? String(telegramWebApp.user.id) : "";
-      const q = tgId ? `?telegramId=${encodeURIComponent(tgId)}` : "";
+      const uname = (telegramWebApp.user?.username || "").toLowerCase();
+      const q = uname ? `?username=${encodeURIComponent(uname)}` : "";
       return await apiRequest("DELETE", `/api/listings/${id}${q}`);
     },
     onSuccess: async () => {
@@ -172,6 +176,7 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
         </CardContent>
       </Card>
 
+      {/* تأكيد الشراء */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -192,6 +197,7 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* تأكيد الحذف */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
