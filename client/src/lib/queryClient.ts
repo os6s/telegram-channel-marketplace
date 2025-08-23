@@ -16,20 +16,17 @@ function joinBase(base: string, path: string) {
 async function getApiBase(): Promise<string> {
   if (API_BASE_CACHE !== null) return API_BASE_CACHE;
 
-  // 1) Vite env
   const viteBase = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined;
   if (viteBase !== undefined) {
     API_BASE_CACHE = viteBase || "";
     return API_BASE_CACHE;
   }
 
-  // 2) window-injected
   if (typeof window !== "undefined" && (window as any).__API_BASE__) {
     API_BASE_CACHE = String((window as any).__API_BASE__ || "");
     return API_BASE_CACHE;
   }
 
-  // 3) /api/config مرة واحدة
   if (!API_BASE_LOADING) {
     API_BASE_LOADING = (async () => {
       try {
@@ -38,7 +35,7 @@ async function getApiBase(): Promise<string> {
         const j = await res.json();
         API_BASE_CACHE = j?.API_BASE_URL || "";
       } catch {
-        API_BASE_CACHE = ""; // نفس الأصل
+        API_BASE_CACHE = "";
       } finally {
         API_BASE_LOADING = null;
       }
@@ -48,10 +45,9 @@ async function getApiBase(): Promise<string> {
   return API_BASE_LOADING!;
 }
 
-/* ------------ Telegram initData helper ------------ */
+/* ------------ Telegram helpers ------------ */
 function getInitData(): string | null {
   try {
-    // متاح فقط داخل Telegram WebApp
     // @ts-ignore
     const raw = typeof window !== "undefined" ? window?.Telegram?.WebApp?.initData : null;
     if (!raw || typeof raw !== "string" || raw.length === 0) return null;
@@ -61,87 +57,103 @@ function getInitData(): string | null {
   }
 }
 
-/* ------------ helpers ------------ */
-async function fetchJson(method: string, url: string, data?: unknown) {
+function getTGUsername(): string | null {
+  try {
+    // @ts-ignore
+    const u = typeof window !== "undefined" ? window?.Telegram?.WebApp?.user?.username : null;
+    return typeof u === "string" && u ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+/* ------------ fetch helper ------------ */
+async function fetchJson(method: string, url: string, data?: unknown, signal?: AbortSignal) {
   const base = await getApiBase();
   const fullUrl = joinBase(base, url);
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { Accept: "application/json" };
   if (data) headers["Content-Type"] = "application/json";
 
   const initData = getInitData();
   if (initData) headers["x-telegram-init-data"] = initData;
+
+  const uname = getTGUsername();
+  if (uname) headers["x-telegram-username"] = uname;
 
   const res = await fetch(fullUrl, {
     method,
     headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
+    signal,
   });
 
-  // حاول قراءة JSON دائمًا
   let payload: any = null;
+  const text = await res.text();
   try {
-    payload = await res.json();
+    payload = text ? JSON.parse(text) : null;
   } catch {
-    // ليس JSON
+    payload = { raw: text };
   }
 
   if (!res.ok) {
-    // ابنِ رسالة خطأ تشمل issues إن وجدت
     let msg =
       (payload && (payload.error || payload.message)) ||
       res.statusText ||
       `HTTP ${res.status}`;
     if (payload?.issues) {
-      try {
-        msg += ` :: ${JSON.stringify(payload.issues)}`;
-      } catch {}
+      try { msg += ` :: ${JSON.stringify(payload.issues)}`; } catch {}
     }
     const err: any = new Error(`${res.status}: ${msg}`);
     if (payload?.issues) err.issues = payload.issues;
     throw err;
   }
 
-  // نجاح
   return payload ?? {};
 }
 
 /* ------------ public API ------------ */
-export async function apiRequest(
-  method: string,
-  url: string,
-  data?: unknown
-): Promise<any> {
-  return fetchJson(method, url, data);
+export async function apiRequest(method: string, url: string, data?: unknown): Promise<any> {
+  const ac = new AbortController();
+  // اختياري: ألغِ الطلب بعد 20s
+  const t = setTimeout(() => ac.abort(), 20_000);
+  try {
+    return await fetchJson(method, url, data, ac.signal);
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+  ({ on401 }) =>
+  async ({ queryKey, signal }) => {
     const base = await getApiBase();
-    const url = joinBase(base, queryKey.join("/") as string);
 
+    // دعم أن يكون أول عنصر بالـ queryKey مسارًا جاهزًا
+    const first = queryKey[0];
+    let path = Array.isArray(queryKey) ? queryKey.join("/") : String(queryKey);
+    if (typeof first === "string" && (first.startsWith("/") || /^https?:\/\//i.test(first))) {
+      path = first;
+    }
+
+    const url = joinBase(base, path);
+
+    const headers: Record<string, string> = { Accept: "application/json" };
     const initData = getInitData();
-    const headers: Record<string, string> = {};
     if (initData) headers["x-telegram-init-data"] = initData;
 
-    const res = await fetch(url, {
-      credentials: "include",
-      headers,
-    });
+    const uname = getTGUsername();
+    if (uname) headers["x-telegram-username"] = uname;
+
+    const res = await fetch(url, { credentials: "include", headers, signal });
 
     let payload: any = null;
-    try {
-      payload = await res.json();
-    } catch {
-      // ignore
-    }
+    const text = await res.text();
+    try { payload = text ? JSON.parse(text) : null; } catch { payload = { raw: text }; }
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null as T;
-    }
+    if (on401 === "returnNull" && res.status === 401) return null as T;
 
     if (!res.ok) {
       let msg =
@@ -149,9 +161,7 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
         res.statusText ||
         `HTTP ${res.status}`;
       if (payload?.issues) {
-        try {
-          msg += ` :: ${JSON.stringify(payload.issues)}`;
-        } catch {}
+        try { msg += ` :: ${JSON.stringify(payload.issues)}`; } catch {}
       }
       throw new Error(`${res.status}: ${msg}`);
     }
