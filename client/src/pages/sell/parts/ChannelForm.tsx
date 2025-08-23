@@ -40,7 +40,7 @@ export default function ChannelForm({ form }: { form: any }) {
         )}
       />
 
-      {/* نخلي بس لينك */}
+      {/* فقط لينك القناة */}
       <FormField
         name="link"
         control={form.control}
@@ -71,7 +71,13 @@ export default function ChannelForm({ form }: { form: any }) {
             <FormItem>
               <FormLabel>{t("sell.subsCount")}</FormLabel>
               <FormControl>
-                <Input type="number" min={1} {...field} className="bg-background" placeholder="1000" />
+                <Input
+                  type="number"
+                  min={1}
+                  {...field}
+                  className="bg-background"
+                  placeholder="1000"
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -86,7 +92,13 @@ export default function ChannelForm({ form }: { form: any }) {
               <FormItem>
                 <FormLabel>{t("sell.giftsCount")}</FormLabel>
                 <FormControl>
-                  <Input type="number" min={1} {...field} className="bg-background" placeholder="50" />
+                  <Input
+                    type="number"
+                    min={1}
+                    {...field}
+                    className="bg-background"
+                    placeholder="50"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
