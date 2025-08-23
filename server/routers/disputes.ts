@@ -1,115 +1,179 @@
 // server/routers/disputes.ts
-import type { Express } from "express";
-import { and, desc, eq, or } from "drizzle-orm";
+import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { db } from "../db";
+import { and, desc, eq } from "drizzle-orm";
+import { db } from "../db.js"; // يفترض موجود بالمشروع
 import {
   disputes,
-  insertDisputeSchema,
-  type Dispute,
+  messages,
+  payments,
+  listings,
+  // لو ما متاحة ببُكج @shared/schema عدّل المسار حسب مشروعك:
 } from "@shared/schema";
 
-/* ------------ Schemas ------------ */
-const createDisputeBody = insertDisputeSchema.pick({
-  paymentId: true,
-  buyerId: true,
-  sellerId: true,
-  reason: true,
-});
-
-const listQuery = z.object({
-  userId: z.string().uuid().optional(),
+const createDisputeSchema = z.object({
   paymentId: z.string().uuid().optional(),
-  status: z.enum(["open", "reviewing", "resolved", "cancelled"]).optional(),
+  listingId: z.string().uuid().optional(),
+  buyerUsername: z.string().min(1),
+  sellerUsername: z.string().min(1),
+  reason: z.string().min(1).optional(),
 });
 
-const updateDisputeBody = z.object({
-  actorId: z.string().uuid(),
-  status: z.enum(["open", "reviewing", "resolved", "cancelled"]).optional(),
-  reason: z.string().optional(),
-  resolvedAt: z.string().datetime().optional(),
-});
+const idParam = z.object({ id: z.string().uuid() });
 
-/* ------------ Helpers ------------ */
-function isAdmin(u: any | undefined) {
-  if (!u) return false;
-  return u.role === "admin" || (u.username ?? "").toLowerCase() === "os6s7";
+/** تطبيع إخراج النزاع كما تتوقعه صفحة الفرونت */
+function expandDisputeRow(row: any) {
+  return {
+    ...row,
+    buyer: row?.buyerUsername ? { username: row.buyerUsername } : null,
+    seller: row?.sellerUsername ? { username: row.sellerUsername } : null,
+    orderId: row?.paymentId ?? null,
+    listingTitle: row?.listingTitle ?? null,
+    lastUpdateAt: row?.resolvedAt ?? row?.updatedAt ?? row?.createdAt,
+  };
 }
 
-/* ------------ Routes ------------ */
-export function mountDisputes(app: Express) {
-  // إنشاء نزاع
-  app.post("/api/disputes", async (req, res) => {
+/** استنتاج اسم المستخدم من الهيدر/الكونتكست إذا متاح */
+function getReqUsername(req: Request): string | undefined {
+  // جرّب مصادر متعددة بدون كسر المشروع
+  // 1) هيدر مخصص إذا موجود
+  const fromHeader =
+    (req.headers["x-telegram-username"] as string) ||
+    (req.headers["x-user-username"] as string);
+  if (fromHeader && typeof fromHeader === "string") return fromHeader;
+
+  // 2) ميدلوير قد يضيف telegramUser
+  const tgUser = (req as any).telegramUser;
+  if (tgUser?.username) return tgUser.username as string;
+
+  // 3) بادي صريح
+  if (typeof (req.body?.senderUsername) === "string") return req.body.senderUsername;
+
+  return undefined;
+}
+
+export function registerDisputesRoutes(app: Express) {
+  /** إنشاء نزاع */
+  app.post("/api/disputes", async (req: Request, res: Response) => {
     try {
-      const body = createDisputeBody.parse(req.body);
+      const body = createDisputeSchema.parse(req.body ?? {});
       const row = await db
         .insert(disputes)
         .values({
-          paymentId: body.paymentId,
-          buyerId: body.buyerId,
-          sellerId: body.sellerId,
+          paymentId: body.paymentId ?? null,
+          listingId: body.listingId ?? null,
+          buyerUsername: body.buyerUsername,
+          sellerUsername: body.sellerUsername,
           reason: body.reason ?? null,
           status: "open",
         })
         .returning();
-      res.status(201).json(row[0]);
-    } catch (e: any) {
-      res.status(400).json({ error: e?.message || "Invalid payload" });
+      return res.json(expandDisputeRow(row[0]));
+    } catch (err: any) {
+      return res.status(400).json({ error: err?.message ?? "invalid_request" });
     }
   });
 
-  // استعلام النزاعات
-  app.get("/api/disputes", async (req, res) => {
+  /** قراءة نزاع مفرد + ضم عناوين مفيدة (listingTitle) إن توفرت */
+  app.get("/api/disputes/:id", async (req: Request, res: Response) => {
     try {
-      const q = listQuery.parse(req.query);
-      const conds: any[] = [];
-      if (q.userId) conds.push(or(eq(disputes.buyerId, q.userId), eq(disputes.sellerId, q.userId)));
-      if (q.paymentId) conds.push(eq(disputes.paymentId, q.paymentId));
-      if (q.status) conds.push(eq(disputes.status, q.status));
+      const { id } = idParam.parse(req.params);
 
-      const where = conds.length ? (conds.length > 1 ? and(...conds) : conds[0]) : undefined;
+      // اجلب النزاع
+      const rows = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+      const d = rows[0];
 
-      const rows = await db
+      // listingTitle اختياري
+      let listingTitle: string | null = null;
+      if (d.listingId) {
+        const l = await db.select({ title: listings.title }).from(listings).where(eq(listings.id, d.listingId)).limit(1);
+        if (l.length) listingTitle = l[0].title ?? null;
+      }
+
+      const expanded = expandDisputeRow({ ...d, listingTitle });
+      return res.json(expanded);
+    } catch (err: any) {
+      return res.status(400).json({ error: err?.message ?? "invalid_request" });
+    }
+  });
+
+  /** قائمة رسائل النزاع */
+  app.get("/api/disputes/:id/messages", async (req: Request, res: Response) => {
+    try {
+      const { id } = idParam.parse(req.params);
+      const list = await db
         .select()
-        .from(disputes)
-        .where(where as any)
-        .orderBy(desc(disputes.createdAt));
-      res.json(rows as Dispute[]);
-    } catch (e: any) {
-      res.status(400).json({ error: e?.message || "Invalid query" });
+        .from(messages)
+        .where(eq(messages.disputeId, id))
+        .orderBy(desc(messages.createdAt));
+      return res.json(list);
+    } catch (err: any) {
+      return res.status(400).json({ error: err?.message ?? "invalid_request" });
     }
   });
 
-  // نزاع واحد
-  app.get("/api/disputes/:id", async (req, res) => {
+  /** إنشاء رسالة نزاع: يقبل { text } كما يتوقع الفرونت */
+  app.post("/api/disputes/:id/messages", async (req: Request, res: Response) => {
     try {
-      const [row] = await db.select().from(disputes).where(eq(disputes.id, req.params.id)).limit(1);
-      if (!row) return res.status(404).json({ error: "Dispute not found" });
-      res.json(row);
-    } catch (e: any) {
-      res.status(500).json({ error: e?.message || "Unknown error" });
+      const { id } = idParam.parse(req.params);
+      const text = z.string().min(1).parse(req.body?.text);
+      const senderUsername = getReqUsername(req);
+      if (!senderUsername) return res.status(401).json({ error: "unauthorized" });
+
+      // تأكد النزاع موجود
+      const exists = await db.select({ id: disputes.id }).from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!exists.length) return res.status(404).json({ error: "dispute_not_found" });
+
+      const row = await db
+        .insert(messages)
+        .values({
+          disputeId: id,
+          content: text,
+          senderUsername,
+        })
+        .returning();
+
+      return res.status(201).json(row[0]);
+    } catch (err: any) {
+      return res.status(400).json({ error: err?.message ?? "invalid_request" });
     }
   });
 
-  // تحديث نزاع — فقط الإدمن
-  app.patch("/api/disputes/:id", async (req, res) => {
+  /** حسم النزاع */
+  app.post("/api/disputes/:id/resolve", async (req: Request, res: Response) => {
     try {
-      const body = updateDisputeBody.parse(req.body);
+      const { id } = idParam.parse(req.params);
 
-      // ملاحظة: التحقق من صلاحيات الإدمن يتطلب جلب المستخدم من DB عندك
-      const actor = await (await import("../storage")).storage.getUser(body.actorId);
-      if (!isAdmin(actor)) return res.status(403).json({ error: "Forbidden" });
+      // خيار إضافي: منو الفائز؟ buyer/seller؟ إن احتجته لاحقًا
+      const resolutionNote = typeof req.body?.note === "string" ? req.body.note : null;
 
-      const updates: any = {};
-      if (body.status) updates.status = body.status;
-      if (body.reason !== undefined) updates.reason = body.reason;
-      if (body.resolvedAt) updates.resolvedAt = new Date(body.resolvedAt) as any;
+      const row = await db
+        .update(disputes)
+        .set({ status: "resolved", resolvedAt: new Date(), resolutionNote })
+        .where(eq(disputes.id, id))
+        .returning();
 
-      const row = await db.update(disputes).set(updates).where(eq(disputes.id, req.params.id)).returning();
-      if (!row[0]) return res.status(404).json({ error: "Dispute not found" });
-      res.json(row[0]);
-    } catch (e: any) {
-      res.status(400).json({ error: e?.message || "Invalid payload" });
+      if (!row.length) return res.status(404).json({ error: "not_found" });
+      return res.json(expandDisputeRow(row[0]));
+    } catch (err: any) {
+      return res.status(400).json({ error: err?.message ?? "invalid_request" });
+    }
+  });
+
+  /** إلغاء/إغلاق النزاع */
+  app.post("/api/disputes/:id/cancel", async (req: Request, res: Response) => {
+    try {
+      const { id } = idParam.parse(req.params);
+      const row = await db
+        .update(disputes)
+        .set({ status: "cancelled" })
+        .where(eq(disputes.id, id))
+        .returning();
+      if (!row.length) return res.status(404).json({ error: "not_found" });
+      return res.json(expandDisputeRow(row[0]));
+    } catch (err: any) {
+      return res.status(400).json({ error: err?.message ?? "invalid_request" });
     }
   });
 }
