@@ -5,7 +5,14 @@ import { users, insertUserSchema } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { tgOptionalAuth, requireTelegramUser } from "../middleware/tgAuth.js";
 
-/** helper: upsert by telegram_id from req.telegramUser (no duplicates) */
+/* ---------------- helpers ---------------- */
+const normUsername = (v: unknown) =>
+  (typeof v === "string" ? v : "")
+    .trim()
+    .replace(/^@/, "")
+    .toLowerCase() || null;
+
+/** upsert by telegram_id from req.telegramUser (no duplicates) */
 async function getOrCreateCurrent(dbUserReq: Request) {
   const tg = dbUserReq.telegramUser!;
   const tgIdStr = String(tg.id);
@@ -19,20 +26,26 @@ async function getOrCreateCurrent(dbUserReq: Request) {
   // create
   const payload = insertUserSchema.parse({
     telegramId: tgIdStr,
-    username: tg.username || null,
+    username: normUsername(tg.username),
     tonWallet: null,
     walletAddress: null,
   });
-  const inserted = await db.insert(users).values({
-    telegramId: Number(payload.telegramId),
-    username: payload.username ?? null,
-    tonWallet: payload.tonWallet ?? null,
-    walletAddress: payload.walletAddress ?? null,
-    role: "user",
-  }).returning();
+
+  const inserted = await db
+    .insert(users)
+    .values({
+      telegramId: Number(payload.telegramId),
+      username: payload.username ?? null,
+      tonWallet: payload.tonWallet ?? null,
+      walletAddress: payload.walletAddress ?? null,
+      role: "user",
+    })
+    .returning();
+
   return inserted[0];
 }
 
+/* ---------------- router ---------------- */
 export function mountUsers(app: Express) {
   /** POST /api/users — upsert using Telegram initData (optional body fallback) */
   app.post("/api/users", tgOptionalAuth, async (req: Request, res: Response) => {
@@ -49,7 +62,6 @@ export function mountUsers(app: Express) {
   app.get("/api/me", requireTelegramUser, async (req: Request, res: Response) => {
     const me = await getOrCreateCurrent(req);
     return res.json(me);
-    // returns full row including { id, telegramId, username, role, ... }
   });
 
   /** GET /api/users/by-telegram/:telegramId */
@@ -76,13 +88,39 @@ export function mountUsers(app: Express) {
     if (!id) return res.status(400).json({ error: "id required" });
 
     const updates: Partial<typeof users.$inferInsert> = {};
-    if (typeof req.body?.username === "string") updates.username = req.body.username.trim() || null;
-    if (typeof req.body?.walletAddress === "string") updates.walletAddress = req.body.walletAddress.trim() || null;
-    if (typeof req.body?.tonWallet === "string") updates.tonWallet = req.body.tonWallet.trim() || null;
-    if ("role" in (req.body || {})) return res.status(403).json({ error: "role update not allowed" });
 
-    const updated = await db.update(users).set(updates).where(eq(users.id, id)).returning();
-    if (!updated.length) return res.status(404).json({ error: "not_found" });
-    res.json(updated[0]);
+    // (1) normalize username (lowercase, remove leading @)
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "username")) {
+      const n = normUsername(req.body?.username);
+      // (2) prevent setting empty username
+      if (n === null) {
+        return res.status(400).json({ error: "username must not be empty" });
+      }
+      updates.username = n;
+    }
+
+    if (typeof req.body?.walletAddress === "string") {
+      updates.walletAddress = req.body.walletAddress.trim() || null;
+    }
+    if (typeof req.body?.tonWallet === "string") {
+      updates.tonWallet = req.body.tonWallet.trim() || null;
+    }
+
+    if ("role" in (req.body || {})) {
+      return res.status(403).json({ error: "role update not allowed" });
+    }
+
+    try {
+      const updated = await db.update(users).set(updates).where(eq(users.id, id)).returning();
+      if (!updated.length) return res.status(404).json({ error: "not_found" });
+      res.json(updated[0]);
+    } catch (e: any) {
+      // unique constraint violations etc.
+      const msg = String(e?.message || "");
+      if (/duplicate key|unique/i.test(msg)) {
+        return res.status(409).json({ error: "conflict", message: msg });
+      }
+      return res.status(400).json({ error: "invalid_payload", message: msg });
+    }
   });
 }
