@@ -1,5 +1,5 @@
 // server/storage.ts
-import { and, ilike, eq, gte, desc, or, sql } from "drizzle-orm";
+import { and, ilike, eq, gte, desc, or, sql, inArray } from "drizzle-orm";
 import {
   users,
   listings,
@@ -37,7 +37,7 @@ export interface IStorage {
     platform?: Listing["platform"];
     channelMode?: Listing["channelMode"];
     serviceType?: Listing["serviceType"];
-    sellerUsername?: string;
+    sellerUsername?: string; // يُحوَّل داخليًا إلى sellerId
     minSubscribers?: number;
     maxPrice?: number;
   }): Promise<Listing[]>;
@@ -47,21 +47,23 @@ export interface IStorage {
 
   // activities
   getActivity(id: string): Promise<Activity | undefined>;
-  getActivitiesByUserUsername(username: string): Promise<Activity[]>;
+  getActivitiesByUserId(userId: string): Promise<Activity[]>;
+  getActivitiesByUserUsername(username: string): Promise<Activity[]>; // التفاف
   getActivitiesByListing(listingId: string): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   updateActivity(id: string, updates: Partial<Activity>): Promise<Activity | undefined>;
 
   // payments
   getPayment(id: string): Promise<Payment | undefined>;
-  listPaymentsByBuyerUsername(buyerUsername: string): Promise<Payment[]>;
+  listPaymentsByBuyerId(buyerId: string): Promise<Payment[]>;
+  listPaymentsByBuyerUsername(buyerUsername: string): Promise<Payment[]>; // التفاف
   listPaymentsByListing(listingId: string): Promise<Payment[]>;
   createPayment(data: InsertPayment): Promise<Payment>;
   updatePayment(id: string, updates: Partial<Payment>): Promise<Payment | undefined>;
 
   // payouts
   getPayout(id: string): Promise<Payout | undefined>;
-  listPayoutsBySellerUsername(sellerUsername: string): Promise<Payout[]>;
+  listPayoutsBySellerId(sellerId: string): Promise<Payout[]>;
   createPayout(data: InsertPayout): Promise<Payout>;
   updatePayout(id: string, updates: Partial<Payout>): Promise<Payout | undefined>;
 
@@ -77,13 +79,12 @@ class PostgreSQLStorage implements IStorage {
     return rows[0];
   }
   async getUserByTelegramId(telegramId: string) {
-    const rows = await db.select().from(users).where(eq(users.telegramId, String(telegramId))).limit(1);
+    const rows = await db.select().from(users).where(eq(users.telegramId, BigInt(telegramId))).limit(1);
     return rows[0];
   }
   async getUserByUsername(username: string) {
     if (!username) return undefined;
-    const u = username.toLowerCase();
-    const rows = await db.select().from(users).where(eq(sql`lower(${users.username})`, u)).limit(1);
+    const rows = await db.select().from(users).where(ilike(users.username, username)).limit(1);
     return rows[0];
   }
   async createUser(data: InsertUser) {
@@ -102,11 +103,11 @@ class PostgreSQLStorage implements IStorage {
   }
   async getChannelByUsername(username: string) {
     if (!username) return undefined;
-    const u = username.toLowerCase();
+    const handle = username.replace(/^@/, "");
     const rows = await db
       .select()
       .from(listings)
-      .where(and(eq(listings.isActive, true), eq(sql`lower(${listings.username})`, u)))
+      .where(and(eq(listings.isActive, true), ilike(listings.username, handle)))
       .limit(1);
     return rows[0];
   }
@@ -120,16 +121,19 @@ class PostgreSQLStorage implements IStorage {
     minSubscribers?: number;
     maxPrice?: number;
   } = {}) {
-    const conds: any[] = [eq(listings.isActive, true)];
+    const conds: any[] = [eq(listings.isActive, true), sql`${listings.deletedAt} IS NULL`];
 
     if (filters.kind) conds.push(eq(listings.kind, filters.kind));
     if (filters.platform) conds.push(eq(listings.platform, filters.platform));
     if (filters.channelMode) conds.push(eq(listings.channelMode, filters.channelMode));
     if (filters.serviceType) conds.push(eq(listings.serviceType, filters.serviceType));
+
     if (filters.sellerUsername) {
-      const u = filters.sellerUsername.toLowerCase();
-      conds.push(eq(sql`lower(${listings.sellerUsername})`, u));
+      const u = await this.getUserByUsername(filters.sellerUsername);
+      if (!u) return []; // لا يوجد بائع بهذا اليوزرنيم
+      conds.push(eq(listings.sellerId, u.id));
     }
+
     if (filters.search) {
       const s = `%${filters.search}%`;
       conds.push(
@@ -170,19 +174,18 @@ class PostgreSQLStorage implements IStorage {
     const rows = await db.select().from(activities).where(eq(activities.id, id)).limit(1);
     return rows[0];
   }
-  async getActivitiesByUserUsername(username: string) {
-    const u = username.toLowerCase();
+  async getActivitiesByUserId(userId: string) {
     const rows = await db
       .select()
       .from(activities)
-      .where(
-        or(
-          eq(sql`lower(${activities.buyerUsername})`, u),
-          eq(sql`lower(${activities.sellerUsername})`, u)
-        )
-      )
+      .where(or(eq(activities.buyerId, userId), eq(activities.sellerId, userId)))
       .orderBy(desc(activities.createdAt));
     return rows;
+  }
+  async getActivitiesByUserUsername(username: string) {
+    const u = await this.getUserByUsername(username);
+    if (!u) return [];
+    return this.getActivitiesByUserId(u.id);
   }
   async getActivitiesByListing(listingId: string) {
     const rows = await db
@@ -206,15 +209,19 @@ class PostgreSQLStorage implements IStorage {
     const rows = await db.select().from(payments).where(eq(payments.id, id)).limit(1);
     return rows[0];
   }
-  async listPaymentsByBuyerUsername(buyerUsername: string) {
-    const u = buyerUsername.toLowerCase();
+  async listPaymentsByBuyerId(buyerId: string) {
     const rows = await db
       .select()
       .from(payments)
-      .where(eq(sql`lower(${payments.buyerUsername})`, u))
+      .where(eq(payments.buyerId, buyerId))
       .orderBy(desc(payments.createdAt));
     return rows;
   }
+  async listPaymentsByBuyerUsername(buyerUsername: string) {
+    const u = await this.getUserByUsername(buyerUsername);
+    if (!u) return [];
+    return this.listPaymentsByBuyerId(u.id);
+    }
   async listPaymentsByListing(listingId: string) {
     const rows = await db
       .select()
@@ -237,12 +244,11 @@ class PostgreSQLStorage implements IStorage {
     const rows = await db.select().from(payouts).where(eq(payouts.id, id)).limit(1);
     return rows[0];
   }
-  async listPayoutsBySellerUsername(sellerUsername: string) {
-    const u = sellerUsername.toLowerCase();
+  async listPayoutsBySellerId(sellerId: string) {
     const rows = await db
       .select()
       .from(payouts)
-      .where(eq(sql`lower(${payouts.sellerUsername})`, u))
+      .where(eq(payouts.sellerId, sellerId))
       .orderBy(desc(payouts.createdAt));
     return rows;
   }
@@ -260,7 +266,7 @@ class PostgreSQLStorage implements IStorage {
     const active = await db
       .select({ id: listings.id })
       .from(listings)
-      .where(eq(listings.isActive, true));
+      .where(and(eq(listings.isActive, true), sql`${listings.deletedAt} IS NULL`));
 
     const sales = await db
       .select({ amount: activities.amount })
