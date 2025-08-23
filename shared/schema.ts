@@ -9,16 +9,19 @@ import {
   timestamp,
   numeric,
   index,
+  uniqueIndex,
   pgEnum,
   bigint,
   jsonb,
+  pgView,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
+import { customType } from "drizzle-orm/pg-core";
 
 /* =========================
-   Enums (match DB)
+   Enums
 ========================= */
 export const listingKindEnum   = pgEnum("listing_kind", ["channel","username","account","service"]);
 export const platformKindEnum  = pgEnum("platform_kind", ["telegram","twitter","instagram","discord","snapchat","tiktok"]);
@@ -32,6 +35,15 @@ export const activityStatusEnum = pgEnum("activity_status_enum", ["completed","p
 export const userRoleEnum       = pgEnum("user_role_enum", ["user","admin","moderator"]);
 
 /* =========================
+   Helpers: tsvector type
+========================= */
+const tsvector = customType<{ data: string; notNull: false; default: false }>({
+  dataType() {
+    return "tsvector";
+  },
+});
+
+/* =========================
    users
 ========================= */
 export const users = pgTable(
@@ -39,7 +51,7 @@ export const users = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     telegramId: bigint("telegram_id", { mode: "number" }).notNull().unique(),
-    username: varchar("username", { length: 64 }).unique(), // قد يكون NULL
+    username: varchar("username", { length: 64 }).unique(),
     walletAddress: varchar("wallet_address", { length: 128 }).unique(),
     tonWallet: varchar("ton_wallet", { length: 128 }),
     role: userRoleEnum("role").notNull().default("user"),
@@ -54,6 +66,10 @@ export const users = pgTable(
   (t) => ({
     usersUsernameIdx: index("idx_users_username").on(t.username),
     usersWalletIdx: index("idx_users_wallet").on(t.walletAddress),
+    // 1) case-insensitive unique on LOWER(username)
+    usersUsernameLowerUx: uniqueIndex("ux_users_username_lower").on(
+      sql`lower(${t.username})`
+    ),
   })
 );
 
@@ -71,7 +87,7 @@ export const listings = pgTable(
     kind: listingKindEnum("kind").notNull(),
     platform: platformKindEnum("platform").notNull().default("telegram"),
 
-    username: varchar("username", { length: 64 }), // الـ handle المعروض (قد يكون NULL للخدمات)
+    username: varchar("username", { length: 64 }),
     title: varchar("title", { length: 200 }),
     description: text("description"),
 
@@ -80,7 +96,7 @@ export const listings = pgTable(
 
     channelMode: varchar("channel_mode", { length: 32 }),
     subscribersCount: integer("subscribers_count"),
-    followersCount: integer("followers_count"), // ⬅️ مضاف لأن الراوتر يستخدمه
+    followersCount: integer("followers_count"),
     giftsCount: integer("gifts_count"),
     giftKind: varchar("gift_kind", { length: 64 }),
 
@@ -98,13 +114,50 @@ export const listings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+
+    // 2) tsvector column
+    searchVector: tsvector("search_vector"),
   },
   (t) => ({
     listingsSellerIdx: index("idx_listings_seller").on(t.sellerId),
     listingsPlatCreateIdx: index("idx_listings_platform_created").on(t.platform, t.createdAt),
     listingsActiveIdx: index("idx_listings_active").on(t.isActive),
+    // 4) composite index (platform, kind, is_active)
+    listingsPlatKindActiveIdx: index("idx_listings_platform_kind_active").on(
+      t.platform, t.kind, t.isActive
+    ),
   })
 );
+
+/* ====== DDL: function + trigger to keep search_vector updated ======
+   نفّذ هذه العبارات في المايغريشن:
+   - إنشاء الدالة + التريغر لتعبئة search_vector من (username, title, description)
+==================================================================== */
+export const ddlListingsTsvector = sql`
+CREATE OR REPLACE FUNCTION listings_tsvector_update()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.search_vector :=
+    to_tsvector('english',
+      coalesce(NEW.username,'') || ' ' ||
+      coalesce(NEW.title,'')    || ' ' ||
+      coalesce(NEW.description,'')
+    );
+  RETURN NEW;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_listings_tsv_update'
+  ) THEN
+    CREATE TRIGGER trg_listings_tsv_update
+    BEFORE INSERT OR UPDATE OF username, title, description
+    ON listings
+    FOR EACH ROW EXECUTE FUNCTION listings_tsvector_update();
+  END IF;
+END$$;
+`;
 
 /* =========================
    payments
@@ -178,7 +231,7 @@ export const disputes = pgTable(
 );
 
 /* =========================
-   dispute_messages  (التصدير باسم messages للتوافق)
+   dispute_messages  (exported as messages)
 ========================= */
 export const messages = pgTable(
   "dispute_messages",
@@ -186,7 +239,7 @@ export const messages = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     disputeId: uuid("dispute_id").notNull().references(() => disputes.id, { onDelete: "cascade" }),
     senderId: uuid("sender_id").references(() => users.id, { onDelete: "set null" }),
-    senderUsername: varchar("sender_username", { length: 64 }), // كاش اختياري للعرض
+    senderUsername: varchar("sender_username", { length: 64 }),
     content: text("content").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -215,6 +268,7 @@ export const activities = pgTable(
     currency: varchar("currency", { length: 8 }),
 
     txHash: varchar("tx_hash", { length: 128 }),
+    // 5) note jsonb
     note: jsonb("note").notNull().default(sql`'{}'::jsonb`),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -225,10 +279,21 @@ export const activities = pgTable(
     actsPaymentIdx: index("idx_activities_payment_created").on(t.paymentId, t.createdAt),
     actsListingIdx: index("idx_activities_listing_created").on(t.listingId, t.createdAt),
   })
+).addCheckConstraint(
+  // 6) CHECK constraint: presence of money fields for certain types
+  "activities_money_presence",
+  sql`
+    (
+      (type IN ('buy','sold','buyer_confirm','seller_confirm','admin_release','admin_refund')
+        AND amount IS NOT NULL AND currency IS NOT NULL)
+      OR
+      (type IN ('listed','updated','cancel') AND amount IS NULL AND currency IS NULL)
+    )
+  `
 );
 
 /* =========================
-   payouts  ⬅️ مضاف
+   payouts (اختياري حسب استخدامك)
 ========================= */
 export const payouts = pgTable(
   "payouts",
@@ -239,7 +304,7 @@ export const payouts = pgTable(
     toAddress: varchar("to_address", { length: 128 }).notNull(),
     amount: numeric("amount", { precision: 18, scale: 8 }).notNull(),
     currency: varchar("currency", { length: 8 }).notNull().default("TON"),
-    status: varchar("status", { length: 16 }).notNull().default("queued"), // queued/sent/confirmed/failed/rejected
+    status: varchar("status", { length: 16 }).notNull().default("queued"),
     txHash: varchar("tx_hash", { length: 128 }),
     note: text("note"),
     adminChecked: boolean("admin_checked").notNull().default(false),
@@ -255,19 +320,45 @@ export const payouts = pgTable(
 );
 
 /* =========================
-   relations (اختياري)
+   View: market_activity (7)
+========================= */
+export const marketActivity = pgView("market_activity").as(sql`
+  SELECT
+    a.id,
+    a.created_at,
+    CASE
+      WHEN a.type IN ('sold','buyer_confirm','seller_confirm') THEN 'sold'
+      WHEN a.type = 'listed' THEN 'listed'
+      WHEN a.type = 'updated' THEN 'updated'
+      WHEN a.type = 'cancel' THEN 'cancel'
+      ELSE 'other'
+    END AS kind,
+    l.title,
+    l.username,
+    COALESCE(a.amount, l.price) AS amount,
+    COALESCE(a.currency, l.currency) AS currency,
+    u_s.username AS seller,
+    u_b.username AS buyer
+  FROM activities a
+  LEFT JOIN listings l ON l.id = a.listing_id
+  LEFT JOIN users u_s ON u_s.id = a.seller_id
+  LEFT JOIN users u_b ON u_b.id = a.buyer_id
+  WHERE a.deleted_at IS NULL
+  ORDER BY a.created_at DESC
+`);
+
+/* =========================
+   relations
 ========================= */
 export const listingsRelations = relations(listings, ({ one }) => ({
   seller: one(users, { fields: [listings.sellerId], references: [users.id] }),
   buyer: one(users, { fields: [listings.buyerId], references: [users.id] }),
 }));
-
 export const paymentsRelations = relations(payments, ({ one }) => ({
   listing: one(listings, { fields: [payments.listingId], references: [listings.id] }),
   buyer: one(users, { fields: [payments.buyerId], references: [users.id] }),
   seller: one(users, { fields: [payments.sellerId], references: [users.id] }),
 }));
-
 export const disputesRelations = relations(disputes, ({ one }) => ({
   payment: one(payments, { fields: [disputes.paymentId], references: [payments.id] }),
   buyer: one(users, { fields: [disputes.buyerId], references: [users.id] }),
@@ -294,13 +385,13 @@ export type InsertActivity = InferInsertModel<typeof activities>;
 export type InsertPayout = InferInsertModel<typeof payouts>;
 
 /* =========================
-   Zod insert schemas (routers input)
+   Zod insert schemas
 ========================= */
 const RE_NUMERIC = /^[0-9]+(\.[0-9]+)?$/;
 
 export const insertUserSchema = z.object({
   telegramId: z.union([z.string(), z.number()]).transform((v) => String(v)),
-  username: z.string().optional(), // ممكن يكون null بالـ DB
+  username: z.string().optional(),
   walletAddress: z.string().optional(),
   tonWallet: z.string().optional(),
   role: z.enum(["user","admin","moderator"]).optional(),
@@ -317,18 +408,18 @@ export const insertListingSchema = z.object({
   currency: z.string().default("TON"),
   channelMode: z.string().optional(),
   subscribersCount: z.union([z.string(), z.number()]).optional(),
-  followersCount: z.union([z.string(), z.number()]).optional(), // ⬅️ مضاف
+  followersCount: z.union([z.string(), z.number()]).optional(),
   giftsCount: z.union([z.string(), z.number()]).optional(),
   giftKind: z.string().optional(),
   tgUserType: z.string().optional(),
-  accountCreatedAt: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(), // YYYY-MM
+  accountCreatedAt: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
   serviceType: z.string().optional(),
   target: z.string().optional(),
   serviceCount: z.union([z.string(), z.number()]).optional(),
 });
 
 export const insertPaymentSchema = z.object({
-  listingId: z.string().uuid().optional(), // SET NULL مسموح لاحقاً
+  listingId: z.string().uuid().optional(),
   buyerId: z.string().uuid(),
   sellerId: z.string().uuid(),
   amount: z.string().regex(RE_NUMERIC),
@@ -351,7 +442,7 @@ export const insertActivitySchema = z.object({
   amount: z.string().regex(RE_NUMERIC).optional(),
   currency: z.string().optional(),
   txHash: z.string().optional(),
-  note: z.any().optional(), // json
+  note: z.any().optional(),
 });
 
 export const insertDisputeSchema = z.object({
