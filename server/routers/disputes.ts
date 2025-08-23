@@ -3,7 +3,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { eq, desc, or } from "drizzle-orm";
 import { db } from "../db.js";
-import { disputes, messages, listings, payments } from "@shared/schema";
+import { disputes, messages, listings, payments, users } from "@shared/schema";
 import { tgOptionalAuth } from "../middleware/tgAuth.js";
 
 /* ========================= Schemas ========================= */
@@ -55,7 +55,6 @@ async function fetchListingTitleByPaymentId(paymentId: string): Promise<string |
   return l[0]?.title ?? null;
 }
 
-/** السماح فقط للمشتري/البائع بالدخول */
 function ensureParticipant(req: Request, d: { buyerUsername: string|null; sellerUsername: string|null }) {
   const me = getReqUsername(req) || "";
   const by = (d.buyerUsername || "").toLowerCase();
@@ -63,17 +62,41 @@ function ensureParticipant(req: Request, d: { buyerUsername: string|null; seller
   return !!me && (me === by || me === se);
 }
 
+async function getCurrentUser(req: Request) {
+  const tg = (req as any).telegramUser;
+  if (!tg?.id) return null;
+  const row = await db.query.users.findFirst({ where: eq(users.telegramId, BigInt(tg.id)) });
+  return row || null;
+}
+const isAdminUser = (u: any | null) => !!u && (u.role === "admin" || u.role === "moderator");
+async function canAccess(req: Request, d: { buyerUsername: string|null; sellerUsername: string|null }) {
+  const me = await getCurrentUser(req);
+  if (isAdminUser(me)) return true;
+  return ensureParticipant(req, d);
+}
+
 /* ========================= Routes ========================= */
 export function registerDisputesRoutes(app: Express) {
-  // فعّل التوثيق الاختياري لكل طلبات النزاعات
+  // تفعيل التوثيق الاختياري لكل طلبات النزاعات (يملأ req.telegramUser إذا موجود initData)
   app.use("/api/disputes", tgOptionalAuth);
 
-  /** فهرس نزاعات المستخدم */
+  /** فهرس النزاعات
+   *  - إذا المستخدم أدمن/مودريتر → يرجع كل النزاعات (مع ترتيب أحدث أولاً)
+   *  - غير ذلك: يحتاج ?me=1 ويُرجع نزاعات المستخدم الحالي فقط (حسب username)
+   */
   app.get("/api/disputes", async (req: Request, res: Response) => {
     try {
-      const me = req.query.me === "1" || req.query.me === "true";
+      const me = await getCurrentUser(req);
+      const amAdmin = isAdminUser(me);
+
+      if (amAdmin) {
+        const list = await db.select().from(disputes).orderBy(desc(disputes.createdAt));
+        return res.json(list.map(expandDisputeRow));
+      }
+
+      const onlyMe = req.query.me === "1" || req.query.me === "true";
       const inferred = getReqUsername(req);
-      if (!me || !inferred) {
+      if (!onlyMe || !inferred) {
         return res.status(403).json({ error: "forbidden" });
       }
 
@@ -89,7 +112,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** إنشاء نزاع */
+  /** إنشاء نزاع (أي طرف يقدر ينشئ؛ الأدمن أيضاً) */
   app.post("/api/disputes", async (req: Request, res: Response) => {
     try {
       const body = createDisputeSchema.parse(req.body ?? {});
@@ -105,8 +128,8 @@ export function registerDisputesRoutes(app: Express) {
         .limit(1);
       if (!payRow.length) return res.status(404).json({ error: "payment_not_found" });
 
-      const buyerU = body.buyerUsername ?? payRow[0].buyerUsername ?? null;
-      const sellerU = body.sellerUsername ?? payRow[0].sellerUsername ?? null;
+      const buyerU = (body.buyerUsername ?? payRow[0].buyerUsername ?? null)?.toLowerCase() ?? null;
+      const sellerU = (body.sellerUsername ?? payRow[0].sellerUsername ?? null)?.toLowerCase() ?? null;
 
       const inserted = await db
         .insert(disputes)
@@ -127,14 +150,15 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** قراءة نزاع مفرد */
+  /** قراءة نزاع مفرد (المشاركون أو الأدمن) */
   app.get("/api/disputes/:id", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
       const rows = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!rows.length) return res.status(404).json({ error: "not_found" });
       const d = rows[0];
-      if (!ensureParticipant(req, d)) return res.status(403).json({ error: "forbidden" });
+
+      if (!(await canAccess(req, d))) return res.status(403).json({ error: "forbidden" });
 
       const listingTitle = d.paymentId ? await fetchListingTitleByPaymentId(d.paymentId) : null;
       return res.json(expandDisputeRow({ ...d, listingTitle }));
@@ -143,16 +167,26 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** رسائل النزاع - قراءة */
+  /** رسائل النزاع - قراءة (المشاركون أو الأدمن) */
   app.get("/api/disputes/:id/messages", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
-      const dRows = await db.select({
-        buyerUsername: disputes.buyerUsername,
-        sellerUsername: disputes.sellerUsername,
-      }).from(disputes).where(eq(disputes.id, id)).limit(1);
+      const dRows = await db
+        .select({
+          buyerUsername: disputes.buyerUsername,
+          sellerUsername: disputes.sellerUsername,
+        })
+        .from(disputes)
+        .where(eq(disputes.id, id))
+        .limit(1);
       if (!dRows.length) return res.status(404).json({ error: "dispute_not_found" });
-      if (!ensureParticipant(req, dRows[0])) return res.status(403).json({ error: "forbidden" });
+
+      // السماح للأدمن أيضاً
+      const me = await getCurrentUser(req);
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin && !ensureParticipant(req, dRows[0])) {
+        return res.status(403).json({ error: "forbidden" });
+      }
 
       const list = await db
         .select()
@@ -165,21 +199,31 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** رسائل النزاع - إنشاء */
+  /** رسائل النزاع - إنشاء (المشاركون أو الأدمن) */
   app.post("/api/disputes/:id/messages", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
       const text = z.string().min(1).parse(req.body?.text);
-      const me = getReqUsername(req);
-      if (!me) return res.status(401).json({ error: "unauthorized" });
 
       const dRows = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!dRows.length) return res.status(404).json({ error: "dispute_not_found" });
-      if (!ensureParticipant(req, dRows[0])) return res.status(403).json({ error: "forbidden" });
+      const d = dRows[0];
+
+      const me = await getCurrentUser(req);
+      const amAdmin = isAdminUser(me);
+      const senderUsername =
+        amAdmin
+          ? (me?.username || "admin").toLowerCase()
+          : (getReqUsername(req) || "");
+
+      if (!amAdmin && !ensureParticipant(req, d)) {
+        return res.status(403).json({ error: "forbidden" });
+      }
+      if (!senderUsername) return res.status(401).json({ error: "unauthorized" });
 
       const row = await db
         .insert(messages)
-        .values({ disputeId: id, content: text, senderUsername: me })
+        .values({ disputeId: id, content: text, senderUsername })
         .returning();
 
       return res.status(201).json(row[0]);
@@ -188,13 +232,20 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** حسم النزاع */
+  /** حسم النزاع (المشاركون أو الأدمن) */
   app.post("/api/disputes/:id/resolve", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
+
       const dRows = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!dRows.length) return res.status(404).json({ error: "not_found" });
-      if (!ensureParticipant(req, dRows[0])) return res.status(403).json({ error: "forbidden" });
+      const d = dRows[0];
+
+      const me = await getCurrentUser(req);
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin && !ensureParticipant(req, d)) {
+        return res.status(403).json({ error: "forbidden" });
+      }
 
       const updated = await db
         .update(disputes)
@@ -202,21 +253,28 @@ export function registerDisputesRoutes(app: Express) {
         .where(eq(disputes.id, id))
         .returning();
 
-      const d = updated[0];
-      const listingTitle = d.paymentId ? await fetchListingTitleByPaymentId(d.paymentId) : null;
-      return res.json(expandDisputeRow({ ...d, listingTitle }));
+      const d2 = updated[0];
+      const listingTitle = d2.paymentId ? await fetchListingTitleByPaymentId(d2.paymentId) : null;
+      return res.json(expandDisputeRow({ ...d2, listingTitle }));
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 
-  /** إلغاء/إغلاق النزاع */
+  /** إلغاء/إغلاق النزاع (المشاركون أو الأدمن) */
   app.post("/api/disputes/:id/cancel", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
+
       const dRows = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!dRows.length) return res.status(404).json({ error: "not_found" });
-      if (!ensureParticipant(req, dRows[0])) return res.status(403).json({ error: "forbidden" });
+      const d = dRows[0];
+
+      const me = await getCurrentUser(req);
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin && !ensureParticipant(req, d)) {
+        return res.status(403).json({ error: "forbidden" });
+      }
 
       const updated = await db
         .update(disputes)
@@ -224,9 +282,9 @@ export function registerDisputesRoutes(app: Express) {
         .where(eq(disputes.id, id))
         .returning();
 
-      const d = updated[0];
-      const listingTitle = d.paymentId ? await fetchListingTitleByPaymentId(d.paymentId) : null;
-      return res.json(expandDisputeRow({ ...d, listingTitle }));
+      const d2 = updated[0];
+      const listingTitle = d2.paymentId ? await fetchListingTitleByPaymentId(d2.paymentId) : null;
+      return res.json(expandDisputeRow({ ...d2, listingTitle }));
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
