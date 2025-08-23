@@ -2,14 +2,16 @@
 import type { Express, Request, Response } from "express";
 import { db } from "../db.js";
 import { listings, users } from "@shared/schema";
-import { and, desc, eq, ilike, isNull, like, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { requireTelegramUser } from "../middleware/tgAuth.js";
 
 /* ===== Zod: create listing (sellerId from auth, not body) ===== */
 const createListingSchema = z.object({
-  kind: z.enum(["channel","username","account","service"]),
-  platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).default("telegram"),
+  kind: z.enum(["channel", "username", "account", "service"]),
+  platform: z
+    .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
+    .default("telegram"),
   username: z.string().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
@@ -39,7 +41,9 @@ const normHandle = (v?: string) =>
 
 async function currentUserRow(req: Request) {
   const meTg = req.telegramUser!;
-  const row = await db.query.users.findFirst({ where: eq(users.telegramId, Number(meTg.id)) });
+  const row = await db.query.users.findFirst({
+    where: eq(users.telegramId, Number(meTg.id)),
+  });
   return row!;
 }
 
@@ -52,48 +56,52 @@ function toNumberOrNull(v?: string | number | null) {
 /* ===== Routes ===== */
 export function mountListings(app: Express) {
   /** POST /api/listings — create (seller = current user) */
-  app.post("/api/listings", requireTelegramUser, async (req: Request, res: Response) => {
-    try {
-      const me = await currentUserRow(req);
-      if (!me?.id) return res.status(401).json({ error: "unauthorized" });
+  app.post(
+    "/api/listings",
+    requireTelegramUser,
+    async (req: Request, res: Response) => {
+      try {
+        const me = await currentUserRow(req);
+        if (!me?.id) return res.status(401).json({ error: "unauthorized" });
 
-      const parsed = createListingSchema.parse(req.body ?? {});
-      const unifiedUsername = parsed.kind === "service" ? undefined : normHandle(parsed.username);
+        const parsed = createListingSchema.parse(req.body ?? {});
+        const unifiedUsername =
+          parsed.kind === "service" ? undefined : normHandle(parsed.username);
 
-      const insert = {
-        sellerId: me.id,
-        buyerId: null,
-        kind: parsed.kind,
-        platform: parsed.platform,
-        username: unifiedUsername || null,
-        title:
-          (parsed.title && parsed.title.trim()) ||
-          (unifiedUsername ? `@${unifiedUsername}` : `${parsed.platform} ${parsed.kind}`),
-        description: parsed.description || null,
-        price: S(parsed.price),
-        currency: parsed.currency || "TON",
-        channelMode: parsed.channelMode || null,
-        subscribersCount: toNumberOrNull(parsed.subscribersCount) as any,
-        giftsCount: toNumberOrNull(parsed.giftsCount) as any,
-        giftKind: parsed.giftKind || null,
-        tgUserType: parsed.tgUserType || null,
-        followersCount: toNumberOrNull(parsed.followersCount) as any,
-        accountCreatedAt: parsed.accountCreatedAt || null,
-        serviceType: parsed.serviceType || null,
-        target: parsed.target || null,
-        serviceCount: toNumberOrNull(parsed.serviceCount) as any,
-        isActive: true,
-        removedByAdmin: false,
-        removedReason: null,
-      } satisfies typeof listings.$inferInsert;
+        const insert = {
+          sellerId: me.id,
+          buyerId: null,
+          kind: parsed.kind,
+          platform: parsed.platform,
+          username: unifiedUsername || null,
+          title:
+            (parsed.title && parsed.title.trim()) ||
+            (unifiedUsername ? `@${unifiedUsername}` : `${parsed.platform} ${parsed.kind}`),
+          description: parsed.description || null,
+          price: S(parsed.price),
+          currency: parsed.currency || "TON",
+          channelMode: parsed.channelMode || null,
+          subscribersCount: toNumberOrNull(parsed.subscribersCount) as any,
+          giftsCount: toNumberOrNull(parsed.giftsCount) as any,
+          giftKind: parsed.giftKind || null,
+          tgUserType: parsed.tgUserType || null,
+          followersCount: toNumberOrNull(parsed.followersCount) as any,
+          accountCreatedAt: parsed.accountCreatedAt || null,
+          serviceType: parsed.serviceType || null,
+          target: parsed.target || null,
+          serviceCount: toNumberOrNull(parsed.serviceCount) as any,
+          isActive: true,
+          removedByAdmin: false,
+          removedReason: null,
+        } satisfies typeof listings.$inferInsert;
 
-      // DB constraints (unique platform+username when not null) will protect dupes
-      const created = await db.insert(listings).values(insert).returning();
-      return res.status(201).json(created[0]);
-    } catch (e: any) {
-      return res.status(400).json({ error: e?.message || "invalid_payload" });
+        const created = await db.insert(listings).values(insert).returning();
+        return res.status(201).json(created[0]);
+      } catch (e: any) {
+        return res.status(400).json({ error: e?.message || "invalid_payload" });
+      }
     }
-  });
+  );
 
   /** GET /api/listings — list with filters & exposing seller username */
   app.get("/api/listings", async (req: Request, res: Response) => {
@@ -112,8 +120,8 @@ export function mountListings(app: Express) {
               ilike(listings.description, `%${search}%`)
             )
           : undefined,
-        kind ? eq(listings.kind, kind as any) : undefined,
-        platform ? eq(listings.platform, platform as any) : undefined,
+        kind ? (eq as any)(listings.kind, kind) : undefined,
+        platform ? (eq as any)(listings.platform, platform) : undefined,
         sellerId ? eq(listings.sellerId, sellerId) : undefined,
         onlyActive ? eq(listings.isActive, true) : undefined,
         isNull(listings.deletedAt),
@@ -132,8 +140,7 @@ export function mountListings(app: Express) {
           isActive: listings.isActive,
           createdAt: listings.createdAt,
           sellerId: listings.sellerId,
-          // seller username via join
-          sellerUsername: users.username,
+          sellerUsername: users.username, // via join
         })
         .from(listings)
         .leftJoin(users, eq(users.id, listings.sellerId))
@@ -175,20 +182,23 @@ export function mountListings(app: Express) {
   });
 
   /** DELETE /api/listings/:id — owner or admin/moderator */
-  app.delete("/api/listings/:id", requireTelegramUser, async (req: Request, res: Response) => {
-    const id = String(req.params.id || "");
-    if (!id) return res.status(400).json({ error: "id required" });
+  app.delete(
+    "/api/listings/:id",
+    requireTelegramUser,
+    async (req: Request, res: Response) => {
+      const id = String(req.params.id || "");
+      if (!id) return res.status(400).json({ error: "id required" });
 
-    const me = await currentUserRow(req);
-    const listing = await db.query.listings.findFirst({ where: eq(listings.id, id) });
-    if (!listing) return res.status(404).json({ error: "not_found" });
+      const me = await currentUserRow(req);
+      const listing = await db.query.listings.findFirst({ where: eq(listings.id, id) });
+      if (!listing) return res.status(404).json({ error: "not_found" });
 
-    const amOwner = listing.sellerId === me.id;
-    const amAdmin = me.role === "admin" || me.role === "moderator";
-    if (!amOwner && !amAdmin) return res.status(403).json({ error: "forbidden" });
+      const amOwner = listing.sellerId === me.id;
+      const amAdmin = me.role === "admin" || me.role === "moderator";
+      if (!amOwner && !amAdmin) return res.status(403).json({ error: "forbidden" });
 
-    // hard delete (DB will keep payments via SET NULL, per schema)
-    await db.delete(listings).where(eq(listings.id, id));
-    return res.json({ success: true, deletedId: id });
-  });
+      await db.delete(listings).where(eq(listings.id, id));
+      return res.json({ success: true, deletedId: id });
+    }
+  );
 }
