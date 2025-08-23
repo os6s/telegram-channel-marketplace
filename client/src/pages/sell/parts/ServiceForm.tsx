@@ -22,7 +22,8 @@ export default function ServiceForm({ form }: { form: any }) {
                 onChange={(e) => {
                   field.onChange(e);
                   const v = e.target.value;
-                  // تغيير الـ target تلقائياً حسب نوع الخدمة
+
+                  // اضبط target تلقائيًا حسب نوع الخدمة
                   if (v === "followers") {
                     form.setValue("target", "instagram", { shouldValidate: true, shouldDirty: true });
                   } else if (v === "members" || v === "boost_channel") {
@@ -30,6 +31,11 @@ export default function ServiceForm({ form }: { form: any }) {
                   } else if (v === "boost_group") {
                     form.setValue("target", "telegram_group", { shouldValidate: true, shouldDirty: true });
                   }
+
+                  // صفّر العدد لإعادة إدخاله بما يناسب النوع الجديد
+                  form.setValue("count", "", { shouldValidate: true, shouldDirty: true });
+
+                  // أعد التحقق
                   form.trigger();
                 }}
               >
@@ -83,7 +89,15 @@ export default function ServiceForm({ form }: { form: any }) {
           <FormItem>
             <FormLabel>{t("sell.count")}</FormLabel>
             <FormControl>
-              <Input type="number" min={1} {...field} className="bg-background" placeholder="1000" />
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                {...field}
+                className="bg-background"
+                placeholder="1000"
+              />
             </FormControl>
             <FormMessage />
           </FormItem>
