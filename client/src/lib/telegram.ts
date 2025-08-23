@@ -3,7 +3,6 @@ declare global {
   interface Window {
     Telegram?: {
       WebApp: {
-        // أساسيات
         ready?(): void;
         close?(): void;
         expand?(): void;
@@ -17,11 +16,7 @@ declare global {
         openTelegramLink?(url: string): void;
         openInvoice?(url: string, callback?: (status: string) => void): void;
         showPopup?(
-          params: {
-            title?: string;
-            message: string;
-            buttons?: Array<{ id?: string; type?: string; text: string }>;
-          },
+          params: { title?: string; message: string; buttons?: Array<{ id?: string; type?: string; text: string }> },
           callback?: (buttonId: string) => void
         ): void;
         showAlert?(message: string, callback?: () => void): void;
@@ -33,50 +28,29 @@ declare global {
         requestContact?(callback?: (granted: boolean) => void): void;
         invokeCustomMethod?(method: string, params: any, callback?: (error: any, result: any) => void): void;
 
-        // إضافات اختيارية يسبب غيابها كراش إذا ما فحصناها
         setHeaderColor?(color: string): void;
         setBackgroundColor?(color: string): void;
 
         initData?: string;
         initDataUnsafe?: {
+          auth_date: number;
+          hash: string;
           query_id?: string;
           user?: {
             id: number;
-            is_bot?: boolean;
             first_name: string;
             last_name?: string;
             username?: string;
             language_code?: string;
             is_premium?: boolean;
-            added_to_attachment_menu?: boolean;
-            allows_write_to_pm?: boolean;
             photo_url?: string;
           };
-          receiver?: {
-            id: number;
-            is_bot?: boolean;
-            first_name: string;
-            last_name?: string;
-            username?: string;
-            language_code?: string;
-            is_premium?: boolean;
-            added_to_attachment_menu?: boolean;
-            allows_write_to_pm?: boolean;
-            photo_url?: string;
-          };
-          chat?: {
-            id: number;
-            type: string;
-            title?: string;
-            username?: string;
-            photo_url?: string;
-          };
+          chat?: { id: number; type: string; title?: string; username?: string; photo_url?: string };
           chat_type?: string;
           chat_instance?: string;
           start_param?: string;
           can_send_after?: number;
-          auth_date: number;
-          hash: string;
+          receiver?: any;
         };
         version?: string;
         platform?: string;
@@ -105,8 +79,8 @@ declare global {
 
         BackButton?: {
           isVisible: boolean;
-          onClick(callback: () => void): void;
-          offClick(callback: () => void): void;
+          onClick(cb: () => void): void;
+          offClick(cb: () => void): void;
           show(): void;
           hide(): void;
         };
@@ -118,8 +92,8 @@ declare global {
           isProgressVisible: boolean;
           isActive: boolean;
           setText(text: string): void;
-          onClick(callback: () => void): void;
-          offClick(callback: () => void): void;
+          onClick(cb: () => void): void;
+          offClick(cb: () => void): void;
           show(): void;
           hide(): void;
           enable(): void;
@@ -142,8 +116,8 @@ declare global {
           isProgressVisible: boolean;
           isActive: boolean;
           setText(text: string): void;
-          onClick(callback: () => void): void;
-          offClick(callback: () => void): void;
+          onClick(cb: () => void): void;
+          offClick(cb: () => void): void;
           show(): void;
           hide(): void;
           enable(): void;
@@ -160,8 +134,8 @@ declare global {
         };
         SettingsButton?: {
           isVisible: boolean;
-          onClick(callback: () => void): void;
-          offClick(callback: () => void): void;
+          onClick(cb: () => void): void;
+          offClick(cb: () => void): void;
           show(): void;
           hide(): void;
         };
@@ -171,12 +145,12 @@ declare global {
           selectionChanged(): void;
         };
         CloudStorage?: {
-          setItem(key: string, value: string, callback?: (error: any, success: boolean) => void): void;
-          getItem(key: string, callback: (error: any, value?: string) => void): void;
-          getItems(keys: string[], callback: (error: any, values?: Record<string, string>) => void): void;
-          removeItem(key: string, callback?: (error: any, success: boolean) => void): void;
-          removeItems(keys: string[], callback?: (error: any, success: boolean) => void): void;
-          getKeys(callback: (error: any, keys?: string[]) => void): void;
+          setItem(key: string, value: string, cb?: (error: any, success: boolean) => void): void;
+          getItem(key: string, cb: (error: any, value?: string) => void): void;
+          getItems(keys: string[], cb: (error: any, values?: Record<string, string>) => void): void;
+          removeItem(key: string, cb?: (error: any, success: boolean) => void): void;
+          removeItems(keys: string[], cb?: (error: any, success: boolean) => void): void;
+          getKeys(cb: (error: any, keys?: string[]) => void): void;
         };
         BiometricManager?: {
           isInited: boolean;
@@ -186,10 +160,10 @@ declare global {
           isAccessGranted: boolean;
           isBiometricTokenSaved: boolean;
           deviceId: string;
-          init(callback?: () => void): void;
-          requestAccess(params: { reason?: string }, callback?: (granted: boolean) => void): void;
-          authenticate(params: { reason?: string }, callback?: (success: boolean, token?: string) => void): void;
-          updateBiometricToken(token: string, callback?: (success: boolean) => void): void;
+          init(cb?: () => void): void;
+          requestAccess(params: { reason?: string }, cb?: (granted: boolean) => void): void;
+          authenticate(params: { reason?: string }, cb?: (success: boolean, token?: string) => void): void;
+          updateBiometricToken(token: string, cb?: (success: boolean) => void): void;
           openSettings(): void;
         };
       };
@@ -212,9 +186,7 @@ export class TelegramWebApp {
   private initialized = false;
 
   static getInstance(): TelegramWebApp {
-    if (!TelegramWebApp.instance) {
-      TelegramWebApp.instance = new TelegramWebApp();
-    }
+    if (!TelegramWebApp.instance) TelegramWebApp.instance = new TelegramWebApp();
     return TelegramWebApp.instance;
   }
 
@@ -234,6 +206,14 @@ export class TelegramWebApp {
     return this.wa?.initDataUnsafe?.user;
   }
 
+  get username(): string | undefined {
+    return this.user?.username;
+  }
+
+  get initData(): string | undefined {
+    return this.wa?.initData;
+  }
+
   get themeParams() {
     return this.wa?.themeParams ?? {};
   }
@@ -251,7 +231,6 @@ export class TelegramWebApp {
     const v = this.wa?.version;
     const num = v ? parseFloat(v) : 0;
     return num >= min;
-    // enableClosingConfirmation أضيفت تقريباً من 6.0
   }
 
   initialize(): void {
@@ -261,27 +240,18 @@ export class TelegramWebApp {
       return;
     }
 
-    // ready/expand آمنة مع فحص
     this.hasFn("ready") && this.wa!.ready!();
     this.hasFn("expand") && this.wa!.expand!();
 
-    // setHeaderColor/setBackgroundColor لو متاحة
     const tp = this.wa!.themeParams ?? {};
-    if (tp.header_bg_color && this.hasFn("setHeaderColor")) {
-      this.wa!.setHeaderColor!(tp.header_bg_color);
-    }
-    if (tp.bg_color && this.hasFn("setBackgroundColor")) {
-      this.wa!.setBackgroundColor!(tp.bg_color);
-    }
+    if (tp.header_bg_color && this.hasFn("setHeaderColor")) this.wa!.setHeaderColor!(tp.header_bg_color);
+    if (tp.bg_color && this.hasFn("setBackgroundColor")) this.wa!.setBackgroundColor!(tp.bg_color);
 
-    // تفعيل تأكيد الإغلاق فقط إذا النسخة >= 6.0 والدالة موجودة
     if (this.versionAtLeast(6.0) && this.hasFn("enableClosingConfirmation")) {
       this.wa!.enableClosingConfirmation!();
     }
 
-    // تطبيق ثيم على CSS
     this.applyTheme();
-
     this.initialized = true;
   }
 
@@ -299,7 +269,6 @@ export class TelegramWebApp {
   showMainButton(text: string, callback: () => void): void {
     const mb = this.wa?.MainButton;
     if (!mb) return;
-    // منع تكدس المستمعين
     try { mb.offClick?.(callback); } catch {}
     mb.setText(text);
     mb.onClick(callback);
@@ -362,3 +331,7 @@ export class TelegramWebApp {
 }
 
 export const telegramWebApp = TelegramWebApp.getInstance();
+export function ensureTelegramReady() {
+  telegramWebApp.initialize();
+  return telegramWebApp;
+}
