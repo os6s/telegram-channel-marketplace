@@ -5,11 +5,8 @@ import { eq, desc, or } from "drizzle-orm";
 import { db } from "../db.js";
 import { disputes, messages, listings, payments } from "@shared/schema";
 
-/* =========================
-   Schemas
-========================= */
+/* ========================= Schemas ========================= */
 const idParam = z.object({ id: z.string().uuid() });
-
 const createDisputeSchema = z.object({
   paymentId: z.string().uuid(),
   buyerUsername: z.string().optional(),
@@ -18,9 +15,7 @@ const createDisputeSchema = z.object({
   evidence: z.string().optional(),
 });
 
-/* =========================
-   Helpers
-========================= */
+/* ========================= Helpers ========================= */
 function expandDisputeRow(row: any) {
   return {
     ...row,
@@ -43,7 +38,6 @@ function getReqUsername(req: Request): string | undefined {
   return undefined;
 }
 
-/** يجلب عنوان الليستنك عبر paymentId -> payments.listingId -> listings.title */
 async function fetchListingTitleByPaymentId(paymentId: string): Promise<string | null> {
   const p = await db
     .select({ listingId: payments.listingId })
@@ -63,15 +57,17 @@ async function fetchListingTitleByPaymentId(paymentId: string): Promise<string |
   return l[0]?.title ?? null;
 }
 
-/* =========================
-   Routes
-========================= */
+/** السماح فقط للمشتري/البائع بالدخول */
+function ensureParticipant(req: Request, d: { buyerUsername: string|null; sellerUsername: string|null }) {
+  const me = (getReqUsername(req) || "").toLowerCase();
+  const by = (d.buyerUsername || "").toLowerCase();
+  const se = (d.sellerUsername || "").toLowerCase();
+  return !!me && (me === by || me === se);
+}
+
+/* ========================= Routes ========================= */
 export function registerDisputesRoutes(app: Express) {
-  /** فهرس النزاعات للمستخدم الحالي فقط:
-   *  - ?me=1 يستخدم يوزر تيليگرام المستنتج
-   *  - ?username= يسمح فقط إذا يطابق المستخدم الحالي
-   *  - غير ذلك => 403
-   */
+  /** فهرس نزاعات المستخدم */
   app.get("/api/disputes", async (req: Request, res: Response) => {
     try {
       const me = req.query.me === "1" || req.query.me === "true";
@@ -103,11 +99,10 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** إنشاء نزاع (يتحقق من وجود الدفع ويستكمل أسماء المستخدمين من payments) */
+  /** إنشاء نزاع */
   app.post("/api/disputes", async (req: Request, res: Response) => {
     try {
       const body = createDisputeSchema.parse(req.body ?? {});
-
       const payRow = await db
         .select({
           id: payments.id,
@@ -118,7 +113,6 @@ export function registerDisputesRoutes(app: Express) {
         .from(payments)
         .where(eq(payments.id, body.paymentId))
         .limit(1);
-
       if (!payRow.length) return res.status(404).json({ error: "payment_not_found" });
 
       const buyerU = body.buyerUsername ?? payRow[0].buyerUsername ?? null;
@@ -137,34 +131,39 @@ export function registerDisputesRoutes(app: Express) {
         .returning();
 
       const listingTitle = await fetchListingTitleByPaymentId(body.paymentId);
-
       return res.status(201).json(expandDisputeRow({ ...inserted[0], listingTitle }));
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 
-  /** قراءة نزاع مفرد + listingTitle من payment->listing */
+  /** قراءة نزاع مفرد (مقيد بالمشاركين) */
   app.get("/api/disputes/:id", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
-
       const rows = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!rows.length) return res.status(404).json({ error: "not_found" });
-
       const d = rows[0];
-      const listingTitle = d.paymentId ? await fetchListingTitleByPaymentId(d.paymentId) : null;
+      if (!ensureParticipant(req, d)) return res.status(403).json({ error: "forbidden" });
 
+      const listingTitle = d.paymentId ? await fetchListingTitleByPaymentId(d.paymentId) : null;
       return res.json(expandDisputeRow({ ...d, listingTitle }));
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 
-  /** رسائل النزاع - قراءة */
+  /** رسائل النزاع - قراءة (مقيد بالمشاركين) */
   app.get("/api/disputes/:id/messages", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
+      const dRows = await db.select({
+        buyerUsername: disputes.buyerUsername,
+        sellerUsername: disputes.sellerUsername,
+      }).from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!dRows.length) return res.status(404).json({ error: "dispute_not_found" });
+      if (!ensureParticipant(req, dRows[0])) return res.status(403).json({ error: "forbidden" });
+
       const list = await db
         .select()
         .from(messages)
@@ -176,24 +175,22 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** رسائل النزاع - إنشاء: يقبل { text } ويستنتج senderUsername */
+  /** رسائل النزاع - إنشاء (مقيد بالمشاركين) */
   app.post("/api/disputes/:id/messages", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
       const text = z.string().min(1).parse(req.body?.text);
-      const senderUsername = getReqUsername(req);
-      if (!senderUsername) return res.status(401).json({ error: "unauthorized" });
+      const me = getReqUsername(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
 
-      const exists = await db
-        .select({ id: disputes.id })
-        .from(disputes)
-        .where(eq(disputes.id, id))
-        .limit(1);
-      if (!exists.length) return res.status(404).json({ error: "dispute_not_found" });
+      const dRows = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!dRows.length) return res.status(404).json({ error: "dispute_not_found" });
+
+      if (!ensureParticipant(req, dRows[0])) return res.status(403).json({ error: "forbidden" });
 
       const row = await db
         .insert(messages)
-        .values({ disputeId: id, content: text, senderUsername })
+        .values({ disputeId: id, content: text, senderUsername: me })
         .returning();
 
       return res.status(201).json(row[0]);
@@ -202,43 +199,50 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** حسم النزاع */
+  /** حسم النزاع (مقيد بالمشاركين) */
   app.post("/api/disputes/:id/resolve", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
+      const dRows = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!dRows.length) return res.status(404).json({ error: "not_found" });
+      if (!ensureParticipant(req, dRows[0])) return res.status(403).json({ error: "forbidden" });
+
       const updated = await db
         .update(disputes)
         .set({ status: "resolved", resolvedAt: new Date() })
         .where(eq(disputes.id, id))
         .returning();
-      if (!updated.length) return res.status(404).json({ error: "not_found" });
 
       const d = updated[0];
       const listingTitle = d.paymentId ? await fetchListingTitleByPaymentId(d.paymentId) : null;
-
       return res.json(expandDisputeRow({ ...d, listingTitle }));
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 
-  /** إلغاء/إغلاق النزاع */
+  /** إلغاء/إغلاق النزاع (مقيد بالمشاركين) */
   app.post("/api/disputes/:id/cancel", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
+      const dRows = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!dRows.length) return res.status(404).json({ error: "not_found" });
+      if (!ensureParticipant(req, dRows[0])) return res.status(403).json({ error: "forbidden" });
+
       const updated = await db
         .update(disputes)
         .set({ status: "cancelled" })
         .where(eq(disputes.id, id))
         .returning();
-      if (!updated.length) return res.status(404).json({ error: "not_found" });
 
       const d = updated[0];
       const listingTitle = d.paymentId ? await fetchListingTitleByPaymentId(d.paymentId) : null;
-
       return res.json(expandDisputeRow({ ...d, listingTitle }));
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 }
+
+/* اختيارياً لتفادي أخطاء استيراد قديمة */
+export { registerDisputesRoutes as mountDisputes };
