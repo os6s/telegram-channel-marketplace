@@ -2,6 +2,7 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
+import { tgAuth, tgOptionalAuth } from "../middleware/tgAuth";
 
 /* -------- Helpers -------- */
 function normUsername(v: unknown) {
@@ -18,45 +19,53 @@ function normSellerUsername(v: unknown) {
 
 const zStrOrNum = z.union([z.string(), z.number()]).optional();
 
+/* ---- auth helpers ---- */
+async function resolveActor(req: any) {
+  // أولاً من tgAuth
+  const tg = req.telegramUser as { id?: number; username?: string } | undefined;
+  if (tg?.id) {
+    const u = await storage.getUserByTelegramId(String(tg.id));
+    if (u) return u;
+    // fallback على username لو ماكو سجل بالـ DB بعد
+    if (tg.username) {
+      const u2 = await storage.getUserByUsername(tg.username.toLowerCase());
+      if (u2) return u2;
+    }
+  }
+
+  // فfallback أخير: مفاتيح query القديمة (اختياري)
+  const userId = req.query.userId as string | undefined;
+  const telegramId = (req.query.telegramId as string | undefined) || undefined;
+  if (userId) return storage.getUser(userId);
+  if (telegramId) return storage.getUserByTelegramId(String(telegramId));
+
+  return undefined;
+}
+function isAdmin(u: any | undefined) {
+  const uname = (u?.username || "").toLowerCase();
+  return u?.role === "admin" || uname === "os6s7";
+}
+
 const createListingSchema = z
   .object({
-    // الهوية بالبـ"يوزرنيم" فقط
     sellerUsername: z.string().optional(),
-    telegramId: z.union([z.string(), z.number()])
-      .transform((v) => (v == null ? undefined : String(v)))
-      .optional(),
-
+    telegramId: z.union([z.string(), z.number()]).transform((v) => (v == null ? undefined : String(v))).optional(),
     kind: z.enum(["channel", "username", "account", "service"]),
-    platform: z
-      .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
-      .optional(),
+    platform: z.enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"]).optional(),
     price: z.string().min(1),
     currency: z.enum(["TON", "USDT"]).default("TON"),
     description: z.string().optional(),
-
-    // channel
     channelMode: z.enum(["subscribers", "gifts"]).optional(),
     link: z.string().optional(),
     channelUsername: z.string().optional(),
     subscribersCount: zStrOrNum,
     giftsCount: zStrOrNum,
     giftKind: z.string().optional(),
-
-    // username
     username: z.string().optional(),
     tgUserType: z.string().optional(),
-
-    // account
     followersCount: zStrOrNum,
-    createdAt: z
-      .string()
-      .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
-      .optional(), // YYYY-MM
-
-    // service
-    serviceType: z
-      .enum(["followers", "members", "boost_channel", "boost_group"])
-      .optional(),
+    createdAt: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(), // YYYY-MM
+    serviceType: z.enum(["followers", "members", "boost_channel", "boost_group"]).optional(),
     target: z
       .union([
         z.enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"]),
@@ -65,8 +74,6 @@ const createListingSchema = z
       ])
       .optional(),
     count: zStrOrNum,
-
-    // عنوان اختياري من الفرونت
     title: z.string().optional(),
   })
   .superRefine((val, ctx) => {
@@ -75,87 +82,51 @@ const createListingSchema = z
         ? normUsername(val.channelUsername || val.link || val.username || "")
         : normUsername(val.username || "");
     if (val.kind !== "service" && !unifiedUsername) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["username"],
-        message: "username is required",
-      });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["username"], message: "username is required" });
     }
   });
-
-/* ---- auth helpers ---- */
-async function resolveActor(req: any) {
-  const userId = req.query.userId as string | undefined;
-  const telegramId = (req.query.telegramId as string | undefined) || undefined;
-  if (userId) return storage.getUser(userId);
-  if (telegramId) return storage.getUserByTelegramId(String(telegramId));
-  return undefined;
-}
-function isAdmin(u: any | undefined) {
-  const uname = (u?.username || "").toLowerCase();
-  return u?.role === "admin" || uname === "os6s7";
-}
 
 export function mountListings(app: Express) {
   /* إنشاء إعلان */
   app.post("/api/listings", async (req, res) => {
     try {
       const raw = req.body || {};
-
       const unifiedUsername =
         raw.kind === "channel"
           ? normUsername(raw.channelUsername || raw.link || raw.username || "")
           : normUsername(raw.username || "");
 
-      const parsed = createListingSchema.parse({
-        ...raw,
-        username: unifiedUsername,
-      });
+      const parsed = createListingSchema.parse({ ...raw, username: unifiedUsername });
 
-      // حسم sellerUsername:
-      // - لو واصل بالحقل نستعمله بعد التطبيع
-      // - وإلا إذا واصل telegramId نجيب المستخدم ونأخذ username
+      // sellerUsername
       let sellerUsername = parsed.sellerUsername ? normSellerUsername(parsed.sellerUsername) : "";
       if (!sellerUsername && parsed.telegramId) {
         const u = await storage.getUserByTelegramId(String(parsed.telegramId));
-        if (!u) {
-          return res
-            .status(400)
-            .json({ error: "User not found. Open app from Telegram first." });
-        }
+        if (!u) return res.status(400).json({ error: "User not found. Open app from Telegram first." });
         sellerUsername = normSellerUsername(u.username || "");
       }
       if (!sellerUsername) return res.status(400).json({ error: "Missing sellerUsername" });
 
-      // منع التكرار على username (للعنصر المعروض) إن وجد
+      // منع تكرار
       if (unifiedUsername) {
         const dupe = await storage.getChannelByUsername(unifiedUsername);
         if (dupe) return res.status(400).json({ error: "Username already exists" });
       }
 
-      // أرقام
       const subscribersCount =
-        parsed.subscribersCount != null &&
-        String(parsed.subscribersCount).trim() !== ""
+        parsed.subscribersCount != null && String(parsed.subscribersCount).trim() !== ""
           ? Number(parsed.subscribersCount)
           : undefined;
-
       const followersCount =
-        parsed.followersCount != null &&
-        String(parsed.followersCount).trim() !== ""
+        parsed.followersCount != null && String(parsed.followersCount).trim() !== ""
           ? Number(parsed.followersCount)
           : undefined;
-
       const serviceCount =
-        parsed.count != null && String(parsed.count).trim() !== ""
-          ? Number(parsed.count)
-          : undefined;
+        parsed.count != null && String(parsed.count).trim() !== "" ? Number(parsed.count) : undefined;
 
-      // تطبيع target
       let target = parsed.target as any;
       if (target === "telegram_channel" || target === "telegram_group") target = "telegram";
 
-      // عنوان افتراضي
       const title =
         (parsed.title && parsed.title.trim()) ||
         (parsed.kind === "channel"
@@ -168,7 +139,6 @@ export function mountListings(app: Express) {
           ? `${parsed.platform || ""} account`.trim()
           : `${parsed.serviceType || "service"} ${target || ""}`.trim());
 
-      // payload لسكيما Drizzle الحالية (بدون sellerId/isVerified/avatarUrl)
       const payload = {
         sellerUsername,
         kind: parsed.kind,
@@ -179,22 +149,13 @@ export function mountListings(app: Express) {
         price: parsed.price,
         currency: parsed.currency,
         isActive: true,
-
-        // channel
         channelMode: parsed.channelMode,
         subscribersCount,
-        giftsCount:
-          parsed.giftsCount != null ? Number(parsed.giftsCount) : undefined,
+        giftsCount: parsed.giftsCount != null ? Number(parsed.giftsCount) : undefined,
         giftKind: parsed.giftKind,
-
-        // username/account
         tgUserType: parsed.tgUserType,
-
-        // account
         followersCount,
         accountCreatedAt: parsed.createdAt,
-
-        // service
         serviceType: parsed.serviceType,
         target,
         serviceCount,
@@ -204,34 +165,21 @@ export function mountListings(app: Express) {
       return res.status(201).json(listing);
     } catch (e: any) {
       console.error("❌ Invalid payload at /api/listings", e?.message);
-      return res.status(400).json({
-        error: "Invalid payload",
-        message: e?.message || "Validation failed",
-        issues: e?.issues || null,
-      });
+      return res.status(400).json({ error: "Invalid payload", message: e?.message || "Validation failed", issues: e?.issues || null });
     }
   });
 
-  /* جلب كل الإعلانات + فلاتر السوق */
+  /* جلب كل الإعلانات */
   app.get("/api/listings", async (req, res) => {
     try {
       const search = (req.query.search as string) || undefined;
-
       const kind = (req.query.type as string) || undefined;
       const platform = (req.query.platform as string) || undefined;
       const channelMode = (req.query.channelMode as string) || undefined;
       const serviceType = (req.query.serviceType as string) || undefined;
-
-      const sellerUsername =
-        req.query.sellerUsername ? normSellerUsername(req.query.sellerUsername as string) : undefined;
-
-      const minSubscribers = req.query.minSubscribers != null
-        ? Number(req.query.minSubscribers)
-        : undefined;
-
-      const maxPrice = req.query.maxPrice != null
-        ? Number(req.query.maxPrice)
-        : undefined;
+      const sellerUsername = req.query.sellerUsername ? normSellerUsername(req.query.sellerUsername as string) : undefined;
+      const minSubscribers = req.query.minSubscribers != null ? Number(req.query.minSubscribers) : undefined;
+      const maxPrice = req.query.maxPrice != null ? Number(req.query.maxPrice) : undefined;
 
       const list = await storage.getChannels({
         search,
@@ -251,19 +199,26 @@ export function mountListings(app: Express) {
     }
   });
 
-  /* جلب إعلان واحد */
-  app.get("/api/listings/:id", async (req, res) => {
+  /* جلب إعلان واحد — يسمح بقراءة هوية المستخدم اختياريًا لتحديد canDelete */
+  app.get("/api/listings/:id", tgOptionalAuth, async (req, res) => {
     try {
       const row = await storage.getChannel(req.params.id);
       if (!row) return res.status(404).json({ error: "Listing not found" });
-      res.json(row);
+
+      let canDelete = false;
+      const actor = await resolveActor(req);
+      if (actor) {
+        canDelete = isAdmin(actor) || (actor.username && actor.username.toLowerCase() === (row.sellerUsername || "").toLowerCase());
+      }
+
+      res.json({ ...row, canDelete });
     } catch (e: any) {
       res.status(500).json({ error: e?.message || "Unknown error" });
     }
   });
 
-  /* حذف إعلان (الإدمن أو البائع) */
-  app.delete("/api/listings/:id", async (req, res) => {
+  /* حذف إعلان (الإدمن أو البائع) — محمي بـ tgAuth */
+  app.delete("/api/listings/:id", tgAuth, async (req, res) => {
     try {
       const listing = await storage.getChannel(req.params.id);
       if (!listing) return res.status(404).json({ error: "Listing not found" });
@@ -279,7 +234,6 @@ export function mountListings(app: Express) {
       const ok = await storage.deleteChannel(req.params.id);
       if (!ok) return res.status(500).json({ error: "Delete failed" });
 
-      // حذف فعلي سيُشغّل تريغر DB (إن كان مفعّل) لتسجيل removed في activities
       res.json({ success: true, deletedId: req.params.id });
     } catch (e: any) {
       res.status(500).json({ error: e?.message || "Unknown error" });
