@@ -80,6 +80,7 @@ export const listings = pgTable(
 
     channelMode: varchar("channel_mode", { length: 32 }),
     subscribersCount: integer("subscribers_count"),
+    followersCount: integer("followers_count"), // ⬅️ مضاف لأن الراوتر يستخدمه
     giftsCount: integer("gifts_count"),
     giftKind: varchar("gift_kind", { length: 64 }),
 
@@ -97,9 +98,6 @@ export const listings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
-
-    // ملاحظة: search_vector موجود بالـ DB كـ tsvector مع تريغر؛
-    // في Drizzle ما عندنا tsvector native، فنتجاهله هنا (مو مطلوب للتطبيق).
   },
   (t) => ({
     listingsSellerIdx: index("idx_listings_seller").on(t.sellerId),
@@ -180,7 +178,7 @@ export const disputes = pgTable(
 );
 
 /* =========================
-   dispute_messages  (نحتفظ بالاسم التصديري messages للتوافق)
+   dispute_messages  (التصدير باسم messages للتوافق)
 ========================= */
 export const messages = pgTable(
   "dispute_messages",
@@ -230,6 +228,33 @@ export const activities = pgTable(
 );
 
 /* =========================
+   payouts  ⬅️ مضاف
+========================= */
+export const payouts = pgTable(
+  "payouts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    paymentId: uuid("payment_id").references(() => payments.id, { onDelete: "set null" }),
+    sellerId: uuid("seller_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    toAddress: varchar("to_address", { length: 128 }).notNull(),
+    amount: numeric("amount", { precision: 18, scale: 8 }).notNull(),
+    currency: varchar("currency", { length: 8 }).notNull().default("TON"),
+    status: varchar("status", { length: 16 }).notNull().default("queued"), // queued/sent/confirmed/failed/rejected
+    txHash: varchar("tx_hash", { length: 128 }),
+    note: text("note"),
+    adminChecked: boolean("admin_checked").notNull().default(false),
+    checklist: text("checklist"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  },
+  (t) => ({
+    payoutsSellerIdx: index("idx_payouts_seller").on(t.sellerId),
+    payoutsStatusIdx: index("idx_payouts_status").on(t.status),
+  })
+);
+
+/* =========================
    relations (اختياري)
 ========================= */
 export const listingsRelations = relations(listings, ({ one }) => ({
@@ -258,6 +283,7 @@ export type Payment = InferSelectModel<typeof payments>;
 export type Dispute = InferSelectModel<typeof disputes>;
 export type Message = InferSelectModel<typeof messages>;
 export type Activity = InferSelectModel<typeof activities>;
+export type Payout = InferSelectModel<typeof payouts>;
 
 export type InsertUser = InferInsertModel<typeof users>;
 export type InsertListing = InferInsertModel<typeof listings>;
@@ -265,6 +291,7 @@ export type InsertPayment = InferInsertModel<typeof payments>;
 export type InsertDispute = InferInsertModel<typeof disputes>;
 export type InsertMessage = InferInsertModel<typeof messages>;
 export type InsertActivity = InferInsertModel<typeof activities>;
+export type InsertPayout = InferInsertModel<typeof payouts>;
 
 /* =========================
    Zod insert schemas (routers input)
@@ -290,10 +317,10 @@ export const insertListingSchema = z.object({
   currency: z.string().default("TON"),
   channelMode: z.string().optional(),
   subscribersCount: z.union([z.string(), z.number()]).optional(),
+  followersCount: z.union([z.string(), z.number()]).optional(), // ⬅️ مضاف
   giftsCount: z.union([z.string(), z.number()]).optional(),
   giftKind: z.string().optional(),
   tgUserType: z.string().optional(),
-  followersCount: z.union([z.string(), z.number()]).optional(),
   accountCreatedAt: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(), // YYYY-MM
   serviceType: z.string().optional(),
   target: z.string().optional(),
