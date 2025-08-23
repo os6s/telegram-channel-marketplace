@@ -24,12 +24,10 @@ export const usernameSchema = z
   .superRefine((val, ctx) => {
     const u = String(val.username || "");
 
-    // منصة تليجرام
     if (val.platform === "telegram") {
       if (!RE_TG_USER.test(u)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TG", path: ["username"] });
       }
-      // لازم يختار نوع اليوزر عند منصة تليجرام
       if (!val.tgUserType) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TG_USER_TYPE_REQ", path: ["tgUserType"] });
       }
@@ -88,7 +86,6 @@ export const channelSchema = z
       if (!val.subscribersCount || Number(val.subscribersCount) < 1) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "SUBS", path: ["subscribersCount"] });
       }
-      // gifts fields يجب تكون فاضية/غير مطلوبة تلقائياً (اختياري)
     } else {
       if (!val.giftsCount || Number(val.giftsCount) < 1) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "GIFS", path: ["giftsCount"] });
@@ -96,31 +93,26 @@ export const channelSchema = z
       if (!val.giftKind) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "GIFT_KIND", path: ["giftKind"] });
       }
-      // subscribersCount يجب إهماله هنا (اختياري)
     }
   });
 
 // -------- Service --------
+// ✅ target مطابق للباك: "telegram" وليس "telegram_channel/group"
 export const serviceSchema = z
   .object({
     type: z.literal("service"),
     serviceType: z.enum(["followers", "members", "boost_channel", "boost_group"]),
-    target: z.enum(["instagram", "twitter", "telegram_channel", "telegram_group"]),
+    target: z.enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"]),
     count: z.coerce.number().min(1, "COUNT_MIN"),
     ...baseCommon,
   })
   .superRefine((val, ctx) => {
-    // تطابق نوع الخدمة مع الهدف
+    // followers: فقط instagram/twitter
     if (val.serviceType === "followers" && !["instagram", "twitter"].includes(val.target)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TARGET_MISMATCH", path: ["target"] });
     }
-    if (val.serviceType === "members" && val.target !== "telegram_channel") {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TARGET_MISMATCH", path: ["target"] });
-    }
-    if (val.serviceType === "boost_channel" && val.target !== "telegram_channel") {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TARGET_MISMATCH", path: ["target"] });
-    }
-    if (val.serviceType === "boost_group" && val.target !== "telegram_group") {
+    // members/boost_channel/boost_group: لازم telegram
+    if (["members", "boost_channel", "boost_group"].includes(val.serviceType) && val.target !== "telegram") {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TARGET_MISMATCH", path: ["target"] });
     }
   });
