@@ -302,32 +302,86 @@ export const payouts = pgTable(
 );
 
 /* =========================
-   View: market_activity
+   Existing Views (6) — يجب أن تكون مُنشأة مسبقًا في PostgreSQL
 ========================= */
-export const marketActivity = pgView("market_activity").as(sql`
-  SELECT
-    a.id,
-    a.created_at,
-    CASE
-      WHEN a.type IN ('sold','buyer_confirm','seller_confirm') THEN 'sold'
-      WHEN a.type = 'listed' THEN 'listed'
-      WHEN a.type = 'updated' THEN 'updated'
-      WHEN a.type = 'cancel' THEN 'cancel'
-      ELSE 'other'
-    END AS kind,
-    l.title,
-    l.username,
-    COALESCE(a.amount, l.price) AS amount,
-    COALESCE(a.currency, l.currency) AS currency,
-    u_s.username AS seller,
-    u_b.username AS buyer
-  FROM activities a
-  LEFT JOIN listings l ON l.id = a.listing_id
-  LEFT JOIN users u_s ON u_s.id = a.seller_id
-  LEFT JOIN users u_b ON u_b.id = a.buyer_id
-  WHERE a.deleted_at IS NULL
-  ORDER BY a.created_at DESC
-`);
+export const activitiesView = pgView("activities_view", {
+  id: uuid("id"),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  type: varchar("type", { length: 32 }),
+  status: varchar("status", { length: 32 }),
+  amount: numeric("amount", { precision: 18, scale: 8 }),
+  currency: varchar("currency", { length: 8 }),
+  listingId: uuid("listing_id"),
+  buyerId: uuid("buyer_id"),
+  sellerId: uuid("seller_id"),
+  paymentId: uuid("payment_id"),
+  buyerUsername: varchar("buyer_username", { length: 64 }),
+  sellerUsername: varchar("seller_username", { length: 64 }),
+}).existing();
+
+export const disputesView = pgView("disputes_view", {
+  id: uuid("id"),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  status: varchar("status", { length: 32 }),
+  paymentId: uuid("payment_id"),
+  buyerId: uuid("buyer_id"),
+  sellerId: uuid("seller_id"),
+  buyerUsername: varchar("buyer_username", { length: 64 }),
+  sellerUsername: varchar("seller_username", { length: 64 }),
+  reason: text("reason"),
+  evidence: text("evidence"),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+}).existing();
+
+export const disputeMessagesView = pgView("dispute_messages_view", {
+  id: uuid("id"),
+  disputeId: uuid("dispute_id"),
+  senderId: uuid("sender_id"),
+  senderUsername: varchar("sender_username", { length: 64 }),
+  content: text("content"),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+}).existing();
+
+export const marketActivityView = pgView("market_activity_view", {
+  id: uuid("id"),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  kind: varchar("kind", { length: 16 }),
+  title: varchar("title", { length: 200 }),
+  username: varchar("username", { length: 64 }),
+  amount: numeric("amount", { precision: 18, scale: 8 }),
+  currency: varchar("currency", { length: 8 }),
+  seller: varchar("seller", { length: 64 }),
+  buyer: varchar("buyer", { length: 64 }),
+}).existing();
+
+export const marketListingsView = pgView("market_listings_view", {
+  id: uuid("id"),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  platform: varchar("platform", { length: 32 }),
+  kind: varchar("kind", { length: 32 }),
+  title: varchar("title", { length: 200 }),
+  username: varchar("username", { length: 64 }),
+  price: numeric("price", { precision: 18, scale: 8 }),
+  currency: varchar("currency", { length: 8 }),
+  seller: varchar("seller", { length: 64 }),
+  isActive: boolean("is_active"),
+}).existing();
+
+export const paymentsView = pgView("payments_view", {
+  id: uuid("id"),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  listingId: uuid("listing_id"),
+  buyerId: uuid("buyer_id"),
+  sellerId: uuid("seller_id"),
+  buyerUsername: varchar("buyer_username", { length: 64 }),
+  sellerUsername: varchar("seller_username", { length: 64 }),
+  amount: numeric("amount", { precision: 18, scale: 8 }),
+  currency: varchar("currency", { length: 8 }),
+  status: varchar("status", { length: 16 }),
+  adminAction: varchar("admin_action", { length: 16 }),
+  escrowAddress: varchar("escrow_address", { length: 128 }),
+  txHash: varchar("tx_hash", { length: 128 }),
+}).existing();
 
 /* =========================
    relations
