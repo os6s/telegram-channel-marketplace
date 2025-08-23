@@ -1,37 +1,31 @@
 // server/routers/users.ts
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { insertUserSchema } from "@shared/schema";
+import { tgOptionalAuth, requireTelegramUser } from "../middleware/tgAuth.js";
 
 // helpers
-const isDbUniqueError = (e: any) =>
-  !!e && (e.code === "23505" || /unique/i.test(String(e.message)));
-
-const normUsername = (v: unknown) =>
-  String(v ?? "")
-    .trim()
-    .replace(/^@/, "")
-    .toLowerCase() || null;
-
-// بسيط: اعتبر "os6s7" إدمن إن احتجنا فحص لاحقاً
+const isDbUniqueError = (e: any) => !!e && (e.code === "23505" || /unique/i.test(String(e.message)));
+const normUsername = (v: unknown) => String(v ?? "").trim().replace(/^@/, "").toLowerCase() || null;
 const isAdminName = (u?: { username?: string | null; role?: string | null }) =>
   (u?.role === "admin") || ((u?.username || "").toLowerCase() === "os6s7");
 
 export function mountUsers(app: Express) {
-  // upsert بالـ telegramId
-  app.post("/api/users", async (req, res) => {
+  // upsert باستخدام telegramId من initData إن لم يُرسل في البودي
+  app.post("/api/users", tgOptionalAuth, async (req: Request, res: Response) => {
     try {
+      const tg = (req as any).telegramUser;
+      const bodyTelegramId =
+        req.body?.telegramId != null ? String(req.body.telegramId) : (tg?.id ? String(tg.id) : "");
+
       const body = {
         ...req.body,
-        telegramId: String(req.body?.telegramId ?? ""),
-        username: normUsername(req.body?.username),
+        telegramId: bodyTelegramId,
+        username: normUsername(req.body?.username ?? tg?.username ?? null),
       };
 
       const userData = insertUserSchema.parse(body);
-
-      if (!userData.telegramId) {
-        return res.status(400).json({ error: "telegramId required" });
-      }
+      if (!userData.telegramId) return res.status(401).json({ error: "unauthorized" });
 
       const existing = await storage.getUserByTelegramId(userData.telegramId);
       if (existing) return res.json(existing);
@@ -51,7 +45,7 @@ export function mountUsers(app: Express) {
     }
   });
 
-  // جلب مستخدم بالـ Telegram ID (مفيد للفرونت)
+  // جلب مستخدم بالـ Telegram ID (للأدوات الخارجية فقط)
   app.get("/api/users/by-telegram/:telegramId", async (req, res) => {
     try {
       const telegramId = String(req.params.telegramId || "");
@@ -75,7 +69,7 @@ export function mountUsers(app: Express) {
     }
   });
 
-  // endpoint قديم via query
+  // endpoint قديم via query — أبقه للتوافق لكن لا تستخدمه في الويب آب
   app.get("/api/users", async (req, res) => {
     try {
       const telegramId = String(req.query.telegramId || "");
@@ -92,17 +86,10 @@ export function mountUsers(app: Express) {
   app.patch("/api/users/:id", async (req, res) => {
     try {
       const updates: any = { ...req.body };
-
-      // طبّع اليوزرنيم
-      if (updates.username !== undefined) {
-        updates.username = normUsername(updates.username);
-      }
-
-      // منع تغيير الدور عبر هذا المسار
+      if (updates.username !== undefined) updates.username = normUsername(updates.username);
       if (Object.prototype.hasOwnProperty.call(updates, "role")) {
         return res.status(403).json({ error: "role update not allowed here" });
       }
-
       const user = await storage.updateUser(req.params.id, updates);
       if (!user) return res.status(404).json({ error: "User not found" });
       res.json(user);
@@ -111,16 +98,10 @@ export function mountUsers(app: Express) {
     }
   });
 
-  // نقطة مساعدة: me عبر telegramId كـ query (بدون auth معقد حالياً)
-  app.get("/api/me", async (req, res) => {
-    try {
-      const telegramId = String(req.query.telegramId || "");
-      if (!telegramId) return res.status(400).json({ error: "telegramId required" });
-      const me = await storage.getUserByTelegramId(telegramId);
-      if (!me) return res.status(404).json({ error: "User not found" });
-      res.json(me);
-    } catch (e: any) {
-      res.status(500).json({ error: e?.message || "Unknown error" });
-    }
+  // me مبني على initData الموقّعة
+  app.get("/api/me", tgOptionalAuth, (req, res) => {
+    const tg = (req as any).telegramUser;
+    if (!tg?.id) return res.status(401).json({ error: "unauthorized" });
+    return res.json({ telegramId: String(tg.id), username: tg.username || null });
   });
 }
