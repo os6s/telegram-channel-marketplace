@@ -20,7 +20,7 @@ export function mountMarketActivity(app: Express) {
 
       const chunks: any[] = [];
 
-      // listed
+      // ===== listed =====
       {
         const whereParts: any[] = [];
         if (cursor && !isNaN(cursor.getTime())) whereParts.push(sql`${listings.createdAt} < ${cursor}`);
@@ -41,7 +41,7 @@ export function mountMarketActivity(app: Express) {
           .orderBy(desc(listings.createdAt))
           .limit(limit);
 
-        const sellerIds = rows.map(r => r.sellerId);
+        const sellerIds = rows.map(r => r.sellerId).filter(Boolean) as string[];
         const sellers = sellerIds.length
           ? await db.select().from(users).where(or(...sellerIds.map(id => eq(users.id, id))))
           : [];
@@ -61,7 +61,7 @@ export function mountMarketActivity(app: Express) {
         }
       }
 
-      // sold (activities.type = 'buy')
+      // ===== sold (activities.type = 'buy') =====
       {
         const whereParts: any[] = [eq(activities.type as any, "buy")];
         if (cursor && !isNaN(cursor.getTime())) whereParts.push(sql`${activities.createdAt} < ${cursor}`);
@@ -82,8 +82,8 @@ export function mountMarketActivity(app: Express) {
           .orderBy(desc(activities.createdAt))
           .limit(limit);
 
-        const listingIds = Array.from(new Set(rows.map(r => r.listingId)));
-        const userIds = Array.from(new Set(rows.flatMap(r => [r.buyerId, r.sellerId])));
+        const listingIds = Array.from(new Set(rows.map(r => r.listingId))).filter(Boolean) as string[];
+        const userIds = Array.from(new Set(rows.flatMap(r => [r.buyerId, r.sellerId]))).filter(Boolean) as string[];
 
         const ls = listingIds.length
           ? await db.select().from(listings).where(or(...listingIds.map(id => eq(listings.id, id))))
