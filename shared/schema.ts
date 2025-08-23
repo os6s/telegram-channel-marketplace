@@ -224,3 +224,54 @@ export type InsertPayout = InferInsertModel<typeof payouts>;
 export type InsertActivity = InferInsertModel<typeof activities>;
 export type InsertDispute = InferInsertModel<typeof disputes>;
 export type InsertMessage = InferInsertModel<typeof messages>;
+
+/* =========================
+   Zod insert schemas (for routers)
+   ملاحظة: نحافظ على المرونة ونسمح ببعض الحقول الاختيارية
+========================= */
+
+const RE_NUMERIC = /^[0-9]+(\.[0-9]+)?$/;
+
+export const insertUserSchema = z.object({
+  telegramId: z.string().min(1),
+  username: z.string().min(1),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  // نسمح بالاسمين للحفاظ على التوافق مع الواجهات السابقة
+  walletAddress: z.string().optional(),
+  tonWallet: z.string().optional(),
+  role: z.string().optional(),
+});
+
+export const insertPaymentSchema = z.object({
+  listingId: z.string().uuid().optional(),
+  kind: z.string().optional(),                    // default: "order"
+  amount: z.string().regex(RE_NUMERIC),           // نحفظ كنص ثم تتحول لـ numeric
+  currency: z.string().default("TON"),
+  buyerUsername: z.string().optional(),
+  sellerUsername: z.string().optional(),
+  comment: z.string().optional(),
+  escrowAddress: z.string().optional(),
+  txHash: z.string().optional(),
+});
+
+export const insertActivitySchema = z.object({
+  listingId: z.string().uuid().optional(),
+  paymentId: z.string().uuid().optional(),
+  buyerUsername: z.string().optional(),
+  sellerUsername: z.string().optional(),
+  type: z.string().min(1),                        // مثل: "buy" | "buyer_confirm" | ...
+  status: z.string().optional(),                  // default: "completed"
+  amount: z.string().regex(RE_NUMERIC).optional(),
+  currency: z.string().optional(),
+  txHash: z.string().optional(),
+  note: z.string().optional(),
+});
+
+export const insertDisputeSchema = z.object({
+  paymentId: z.string().uuid(),
+  buyerUsername: z.string().optional(),
+  sellerUsername: z.string().optional(),
+  reason: z.string().optional(),
+  evidence: z.string().optional(),
+});
