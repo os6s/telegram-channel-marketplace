@@ -1,3 +1,4 @@
+// client/src/pages/listing/[id].tsx  ← عدّل المسار حسب مشروعك
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -24,7 +25,6 @@ type Listing = {
   currency?: string|null;
   isActive?: boolean;
   createdAt?: string;
-  /** اختياري من الباك لتمكين الأدمن أو سياسات خاصة */
   canDelete?: boolean;
 };
 
@@ -38,7 +38,6 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => { ensureTelegramReady(); }, []);
-
   useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
@@ -59,31 +58,34 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
     mutationFn: async () => {
       const pay = await apiRequest("POST", "/api/payments", { listingId: id });
       const paymentId: string | undefined = pay?.id;
-      if (paymentId) {
-        try { await apiRequest("POST", "/api/disputes", { paymentId }); } catch {}
-      }
+      if (paymentId) { try { await apiRequest("POST", "/api/disputes", { paymentId }); } catch {} }
       return { paymentId };
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["/api/activities"] });
-      toast({ title: "تم إنشاء الطلب", description: "توجه لصفحة النزاعات لبدء المحادثة مع البائع." });
+      toast({ title: "تم إنشاء الطلب", description: "اذهب إلى صفحة النزاعات لمحادثة البائع." });
       navigate("/disputes");
     },
     onError: (e: any) => {
-      if (String(e?.message || "").includes("insufficient_balance") || String(e?.message || "").includes("402")) {
+      const msg = String(e?.message || "");
+      if (msg.includes("insufficient_balance") || msg.includes("402")) {
         toast({ title: "الرصيد غير كافٍ", description: "اشحن رصيدك ثم أعد المحاولة.", variant: "destructive" });
         return;
       }
-      toast({ title: "فشل الشراء", description: e?.message || "تعذر إنشاء عملية الدفع", variant: "destructive" });
+      toast({ title: "فشل الشراء", description: msg || "تعذر إنشاء عملية الدفع", variant: "destructive" });
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async () => await apiRequest("DELETE", `/api/listings/${id}`),
+    mutationFn: async () => {
+      const tgId = telegramWebApp.user?.id ? String(telegramWebApp.user.id) : "";
+      const q = tgId ? `?telegramId=${encodeURIComponent(tgId)}` : "";
+      return await apiRequest("DELETE", `/api/listings/${id}${q}`);
+    },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["/api/listings"] });
       toast({ title: "تم حذف الإعلان" });
-      navigate("/market");
+      navigate("/");
     },
     onError: (e: any) => {
       toast({ title: "خطأ", description: e?.message || "تعذر الحذف", variant: "destructive" });
@@ -103,16 +105,17 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
       <div className="p-4">
         <Card><CardContent className="p-4 text-sm text-destructive">العنصر غير موجود.</CardContent></Card>
         <div className="pt-3">
-          <Button variant="secondary" size="sm" onClick={() => navigate("/market")}>رجوع</Button>
+          <Button variant="secondary" size="sm" onClick={() => navigate("/")}>رجوع</Button>
         </div>
       </div>
     );
   }
 
   const currency = listing.currency || "TON";
-  const me = telegramWebApp.username?.toLowerCase() || "";
-  const seller = listing.sellerUsername?.toLowerCase() || listing.username?.toLowerCase() || "";
-  const canDelete = listing.canDelete === true || (seller && me && seller === me);
+  const meUname = (telegramWebApp.user?.username || "").toLowerCase();
+  const sellerUname = (listing.sellerUsername || listing.username || "").toLowerCase();
+  const isOwner = !!meUname && !!sellerUname && meUname === sellerUname;
+  const canDelete = listing.canDelete === true || isOwner;
 
   return (
     <div className="p-4 space-y-3">
@@ -142,13 +145,15 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
           </div>
 
           <div className="pt-2 flex flex-wrap gap-2">
-            <Button
-              className="bg-telegram-500 hover:bg-telegram-600 text-white"
-              disabled={buyMutation.isPending || listing.isActive === false}
-              onClick={() => setConfirmOpen(true)}
-            >
-              {buyMutation.isPending ? "جارٍ المعالجة…" : "شراء الآن"}
-            </Button>
+            {!isOwner && (
+              <Button
+                className="bg-telegram-500 hover:bg-telegram-600 text-white"
+                disabled={buyMutation.isPending || listing.isActive === false}
+                onClick={() => setConfirmOpen(true)}
+              >
+                {buyMutation.isPending ? "جارٍ المعالجة…" : "شراء الآن"}
+              </Button>
+            )}
 
             {canDelete && (
               <Button
@@ -160,20 +165,19 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
               </Button>
             )}
 
-            <Link href="/market">
+            <Link href="/">
               <Button variant="secondary">رجوع</Button>
             </Link>
           </div>
         </CardContent>
       </Card>
 
-      {/* تأكيد الشراء */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>تأكيد الشراء</AlertDialogTitle>
             <AlertDialogDescription>
-              سيتم إنشاء طلب شراء بقيمة {fmt.format(Number(listing.price))} {currency}. بعد ذلك ستُفتح محادثة التسليم مع البائع داخل صفحة النزاعات.
+              سيتم إنشاء طلب شراء بقيمة {fmt.format(Number(listing.price))} {currency}. بعدها تُفتح محادثة التسليم مع البائع في صفحة النزاعات.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -188,14 +192,11 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* تأكيد الحذف */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>حذف الإعلان؟</AlertDialogTitle>
-            <AlertDialogDescription>
-              سيتم حذف هذا الإعلان نهائياً. لا يمكن التراجع.
-            </AlertDialogDescription>
+            <AlertDialogDescription>سيُحذف الإعلان نهائياً.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>إلغاء</AlertDialogCancel>
