@@ -67,9 +67,7 @@ export const users = pgTable(
     usersUsernameIdx: index("idx_users_username").on(t.username),
     usersWalletIdx: index("idx_users_wallet").on(t.walletAddress),
     // 1) case-insensitive unique on LOWER(username)
-    usersUsernameLowerUx: uniqueIndex("ux_users_username_lower").on(
-      sql`lower(${t.username})`
-    ),
+    usersUsernameLowerUx: uniqueIndex("ux_users_username_lower").on(sql`lower(${t.username})`),
   })
 );
 
@@ -123,16 +121,11 @@ export const listings = pgTable(
     listingsPlatCreateIdx: index("idx_listings_platform_created").on(t.platform, t.createdAt),
     listingsActiveIdx: index("idx_listings_active").on(t.isActive),
     // 4) composite index (platform, kind, is_active)
-    listingsPlatKindActiveIdx: index("idx_listings_platform_kind_active").on(
-      t.platform, t.kind, t.isActive
-    ),
+    listingsPlatKindActiveIdx: index("idx_listings_platform_kind_active").on(t.platform, t.kind, t.isActive),
   })
 );
 
-/* ====== DDL: function + trigger to keep search_vector updated ======
-   نفّذ هذه العبارات في المايغريشن:
-   - إنشاء الدالة + التريغر لتعبئة search_vector من (username, title, description)
-==================================================================== */
+/* ====== DDL: function + trigger to keep search_vector updated ====== */
 export const ddlListingsTsvector = sql`
 CREATE OR REPLACE FUNCTION listings_tsvector_update()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -279,10 +272,10 @@ export const activities = pgTable(
     actsPaymentIdx: index("idx_activities_payment_created").on(t.paymentId, t.createdAt),
     actsListingIdx: index("idx_activities_listing_created").on(t.listingId, t.createdAt),
   })
-
+);
 
 /* =========================
-   payouts (اختياري حسب استخدامك)
+   payouts
 ========================= */
 export const payouts = pgTable(
   "payouts",
@@ -309,7 +302,7 @@ export const payouts = pgTable(
 );
 
 /* =========================
-   View: market_activity (7)
+   View: market_activity
 ========================= */
 export const marketActivity = pgView("market_activity").as(sql`
   SELECT
