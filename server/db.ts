@@ -12,7 +12,7 @@ function makePool() {
   return new Pool({
     connectionString: CONN_STR,
     ssl: IS_PROD ? { rejectUnauthorized: false } : undefined,
-    max: 20,
+    max: 10, // 🔽 نزلناها حتى تناسب حدود Neon / Render المجانية
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 2_000,
   });
@@ -31,12 +31,13 @@ async function ensureInitialConnect(retries = 6) {
       return;
     } catch (e) {
       console.error(`⏳ DB connect failed (${i + 1}/${retries}):`, (e as Error).message);
-      await new Promise(r => setTimeout(r, delay));
+      await new Promise((r) => setTimeout(r, delay));
       delay = Math.min(delay * 2, 8000);
     }
   }
-  // آخر محاولة: ارمي الخطأ ليفشل الإقلاع بوضوح
-  const c = await pool.connect(); c.release();
+  // آخر محاولة: يرمي الخطأ ليفشل الإقلاع بوضوح
+  const c = await pool.connect();
+  c.release();
 }
 
 pool.on("error", (err) => {
@@ -60,14 +61,18 @@ const heartbeat = setInterval(async () => {
 
 // غلاف لتنفيذ query مع إعادة محاولة خفيفة عند أخطاء اتصال عابرة
 const TRANSIENT_CODES = new Set(["57P01", "57P02", "57P03", "53300", "53400"]);
-export async function safeQuery<T = unknown>(sql: string, params?: unknown[], retry = true): Promise<pg.QueryResult<T>> {
+export async function safeQuery<T = unknown>(
+  sql: string,
+  params?: unknown[],
+  retry = true
+): Promise<pg.QueryResult<T>> {
   try {
     return await pool.query<T>(sql, params as any);
   } catch (e: any) {
     const code = e?.code;
     if (retry && (code === "ECONNRESET" || TRANSIENT_CODES.has(code))) {
       // محاولة واحدة إضافية بعد انتظار قصير
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 300));
       return await pool.query<T>(sql, params as any);
     }
     throw e;
