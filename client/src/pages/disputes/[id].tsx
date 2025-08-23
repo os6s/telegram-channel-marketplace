@@ -114,13 +114,18 @@ export default function DisputeDetailsPage({ params }: { params: { id: string } 
     try { telegramWebApp?.expand?.(); } catch {}
   }, []);
 
+  const goBack = () => {
+    if (window.history.length > 1) window.history.back();
+    else setLocation("/");
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => setLocation(-1 as any)}>
+            <Button variant="ghost" size="sm" onClick={goBack}>
               <ArrowLeft className="w-4 h-4" />
             </Button>
             <div>
