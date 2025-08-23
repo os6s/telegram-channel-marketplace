@@ -1,167 +1,209 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
-  AlertDialogTitle, AlertDialogDescription, AlertDialogCancel, AlertDialogAction
-} from "@/components/ui/alert-dialog";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { ensureTelegramReady, telegramWebApp } from "@/lib/telegram";
+// server/routers/payments.ts
+import type { Express } from "express";
+import { storage } from "../storage";
+import { insertPaymentSchema, type Payment } from "@shared/schema";
+import { tgSendMessage, notifyAdmin } from "../utils/telegram";
+import { tgAuth } from "../middleware/tgAuth";
 
-type Listing = {
-  id: string;
-  kind?: string;
-  platform?: string|null;
-  username?: string|null;          // حساب المعروض
-  sellerUsername?: string|null;    // البائع
-  title?: string|null;
-  description?: string|null;
-  price: string;
-  currency?: string|null;          // "TON"
-  isActive?: boolean;
-  createdAt?: string;
-};
+type TgUser = { id: number; first_name?: string; username?: string };
 
-export default function ListingDetailsPage({ params }: { params: { id: string } }) {
-  const id = params?.id;
-  const [, navigate] = useLocation();
-  const { toast } = useToast();
-  const qc = useQueryClient();
+function num(v: unknown): number {
+  return Number(String(v).replace(",", "."));
+}
+function feeCalc(amount: number, feePercent: number) {
+  const fee = +((amount * feePercent) / 100).toFixed(9);
+  const sellerAmount = +(amount - fee).toFixed(9);
+  return { fee, sellerAmount };
+}
+function sum(rows: Payment[], pred: (p: Payment) => boolean) {
+  return +rows.filter(pred).reduce((s, p) => s + Number(p.amount || 0), 0).toFixed(9);
+}
 
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
-  useEffect(() => { ensureTelegramReady(); }, []);
-
-  // فتح نافذة التأكيد تلقائياً إذا وصل action=buy
-  useEffect(() => {
+export function mountPayments(app: Express) {
+  // إنشاء طلب شراء من الرصيد: يحجز من الرصيد ويمنع التكرار
+  app.post("/api/payments", tgAuth, async (req, res) => {
     try {
-      const sp = new URLSearchParams(window.location.search);
-      if (sp.get("action") === "buy") setConfirmOpen(true);
-    } catch {}
-  }, []);
+      const escrowAddress = (process.env.ESCROW_WALLET || "").trim();
+      if (!escrowAddress) return res.status(500).json({ error: "ESCROW_WALLET not set" });
+      const feePercent = Number(process.env.FEE_PERCENT || "5");
 
-  // جلب تفاصيل المنتج
-  const { data: listing, isLoading } = useQuery({
-    enabled: !!id,
-    queryKey: ["/api/listings", id],
-    queryFn: async () => await apiRequest("GET", `/api/listings/${id}`) as Listing,
-    refetchOnWindowFocus: false,
+      // المشتري من تيليجرام
+      const tgUser = (req as unknown as { telegramUser: TgUser }).telegramUser;
+      let buyer = await storage.getUserByTelegramId(String(tgUser.id));
+      if (!buyer) {
+        buyer = await storage.createUser({
+          telegramId: String(tgUser.id),
+          username: tgUser.username ?? null,
+          firstName: tgUser.first_name ?? null,
+          lastName: null,
+          tonWallet: null,
+          walletAddress: null,
+          role: "user",
+        });
+      }
+      if (!buyer.username) {
+        return res.status(400).json({ error: "buyer_username_required" });
+      }
+      const buyerUsername = buyer.username.toLowerCase();
+
+      // الإعلان
+      const listingId = String(req.body?.listingId || "");
+      const listing = await storage.getChannel(listingId);
+      if (!listing || !listing.isActive) {
+        return res.status(400).json({ error: "Listing not found or inactive" });
+      }
+
+      // ضروري نعرف البائع باليوزرنيم من الإعلان
+      const sellerUsername = (listing as any).sellerUsername as string | null | undefined;
+      if (!sellerUsername) {
+        return res.status(400).json({ error: "seller_username_required" });
+      }
+      // حاول نجلب user للبائع حتى نقدر نكتب activity (FKs)
+      const sellerUser = await storage.getUserByUsername(sellerUsername);
+      if (!sellerUser) {
+        return res.status(400).json({ error: "seller_user_not_found" });
+      }
+
+      const expected = num(listing.price);
+
+      // رصيد المشتري المتاح = إيداعات مدفوعة - طلبات محجوزة (pending/paid)
+      const pays = await storage.listPaymentsByBuyerUsername(buyerUsername);
+      const deposits = sum(pays, (p) => p.kind === "deposit" && p.status === "paid");
+      const locked = sum(
+        pays,
+        (p) => p.kind === "order" && p.locked && (p.status === "pending" || p.status === "paid"),
+      );
+      const balance = +(deposits - locked).toFixed(9);
+      if (balance < expected) {
+        return res.status(402).json({ error: "insufficient_balance", balance, required: expected });
+      }
+
+      // منع تكرار: إن وجد pending لنفس الإعلان والمشتري رجّعه
+      const dup = pays.find((p) => p.kind === "order" && p.listingId === listing.id && p.status === "pending");
+      if (dup) return res.status(200).json(dup);
+
+      const { fee, sellerAmount } = feeCalc(expected, feePercent);
+
+      // نكتب السجل مع buyerUsername/sellerUsername
+      const draft = insertPaymentSchema.parse({
+        listingId: listing.id,
+        buyerId: buyer.id,                 // موجود بالسكيمة/الـDB
+        buyerUsername: buyerUsername,      // جديد: نعبيه
+        sellerUsername: sellerUsername.toLowerCase(),
+        kind: "order",
+        locked: true,
+        amount: String(expected),
+        currency: "TON",
+        feePercent: String(feePercent),
+        feeAmount: String(fee),
+        sellerAmount: String(sellerAmount),
+        escrowAddress,
+        comment: req.body?.comment ?? null,
+        txHash: null,
+        buyerConfirmed: false,
+        sellerConfirmed: false,
+        status: "pending",
+        adminAction: "none",
+      });
+
+      const payment = await storage.createPayment(draft);
+
+      // نشاط "buy" مع حالة pending — نحط IDs + usernames
+      await storage.createActivity({
+        listingId: listing.id,
+        buyerId: buyer.id,
+        sellerId: sellerUser.id,
+        paymentId: payment.id,
+        buyerUsername: buyerUsername,
+        sellerUsername: sellerUsername.toLowerCase(),
+        type: "buy",
+        status: "pending",
+        amount: String(expected),
+        currency: payment.currency,
+        txHash: null,
+        note: draft.comment ?? null,
+      });
+
+      // إخطار البائع
+      if (sellerUser.telegramId) {
+        const text =
+          `🛒 <b>Order opened</b>\n` +
+          `Listing: ${listing.title || listing.username || listing.id}\n` +
+          `Amount: ${expected} ${payment.currency}\n` +
+          `Please follow up in the app.`;
+        await tgSendMessage(sellerUser.telegramId, text, {
+          inline_keyboard: [[{ text: "Open Marketplace", web_app: { url: process.env.WEBAPP_URL || "" } }]],
+        });
+      } else {
+        await notifyAdmin(`Seller has no telegramId. listingId=${listing.id}, seller=@${sellerUsername}`);
+      }
+
+      res.status(201).json(payment);
+    } catch (e) {
+      console.error("❌ /api/payments error:", e);
+      res.status(400).json({ error: "Invalid payload" });
+    }
   });
 
-  const fmt = useMemo(() => new Intl.NumberFormat(undefined, { maximumFractionDigits: 9 }), []);
+  // تأكيد الطلب: يثبت الدفع داخليًا من الرصيد
+  app.patch("/api/payments/:id/confirm", tgAuth, async (req, res) => {
+    try {
+      const id = req.params.id;
 
-  // إنشاء الدفع ثم فتح غرفة التسليم (نزاع) وتحويل للنزاعات
-  const buyMutation = useMutation({
-    mutationFn: async () => {
-      const pay = await apiRequest("POST", "/api/payments", { listingId: id });
-      const paymentId: string | undefined = pay?.id;
-      if (paymentId) {
-        try { await apiRequest("POST", "/api/disputes", { paymentId }); } catch {}
+      const payment = await storage.getPayment(id);
+      if (!payment) return res.status(404).json({ error: "Payment not found" });
+      if (payment.kind !== "order") return res.status(400).json({ error: "Not an order payment" });
+      if (payment.status !== "pending") return res.status(400).json({ error: "Payment not pending" });
+
+      const listingId = payment.listingId;
+      if (!listingId) return res.status(400).json({ error: "Missing listingId" });
+
+      const listing = await storage.getChannel(listingId);
+      if (!listing) return res.status(404).json({ error: "Listing not found" });
+
+      const up = await storage.updatePayment(id, {
+        status: "paid",
+        confirmedAt: new Date(),
+      });
+      if (!up) return res.status(500).json({ error: "Failed to update payment" });
+
+      // نحتاج sellerId من الـ username
+      const sellerUsername = (payment.sellerUsername ||
+        (listing as any).sellerUsername ||
+        "").toString();
+      const sellerUser = sellerUsername
+        ? await storage.getUserByUsername(sellerUsername)
+        : undefined;
+      if (!sellerUser) {
+        return res.status(400).json({ error: "seller_user_not_found" });
       }
-      return { paymentId };
-    },
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["/api/activities"] });
-      toast({ title: "تم إنشاء الطلب", description: "توجه لصفحة النزاعات لبدء المحادثة مع البائع." });
-      navigate("/disputes");
-    },
-    onError: (e: any) => {
-      if (String(e?.message || "").includes("insufficient_balance") || String(e?.message || "").includes("402")) {
-        toast({ title: "الرصيد غير كافٍ", description: "اشحن رصيدك ثم أعد المحاولة.", variant: "destructive" });
-        return;
-      }
-      toast({ title: "فشل الشراء", description: e?.message || "تعذر إنشاء عملية الدفع", variant: "destructive" });
-    },
+
+      // نشاط "buyer_confirm"
+      await storage.createActivity({
+        listingId,
+        buyerId: payment.buyerId,
+        sellerId: sellerUser.id,
+        paymentId: payment.id,
+        buyerUsername: (payment.buyerUsername || "").toString() || undefined,
+        sellerUsername: sellerUsername || undefined,
+        type: "buyer_confirm",
+        status: "completed",
+        amount: String(payment.amount),
+        currency: payment.currency,
+        txHash: null,
+        note: null,
+      });
+
+      // إشعارات
+      const buyer = await storage.getUser(payment.buyerId);
+      const msg = `✅ <b>Payment confirmed</b>\nAmount: ${payment.amount} ${payment.currency}`;
+      if (buyer?.telegramId) await tgSendMessage(buyer.telegramId, msg);
+      if (sellerUser?.telegramId) await tgSendMessage(sellerUser.telegramId, msg);
+
+      res.json(up);
+    } catch (e) {
+      console.error("❌ /api/payments/:id/confirm error:", e);
+      res.status(500).json({ error: "Unknown error" });
+    }
   });
-
-  if (isLoading) {
-    return (
-      <div className="p-4">
-        <Card><CardContent className="p-4 text-sm text-muted-foreground">جاري التحميل…</CardContent></Card>
-      </div>
-    );
-  }
-
-  if (!listing) {
-    return (
-      <div className="p-4">
-        <Card><CardContent className="p-4 text-sm text-destructive">العنصر غير موجود.</CardContent></Card>
-        <div className="pt-3">
-          <Button variant="secondary" size="sm" onClick={() => navigate("/market")}>رجوع</Button>
-        </div>
-      </div>
-    );
-  }
-
-  const currency = listing.currency || "TON";
-
-  return (
-    <div className="p-4 space-y-3">
-      <header className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">{listing.title || "منتج"}</h1>
-        {listing.isActive === false ? <Badge variant="outline">غير مفعل</Badge> : null}
-      </header>
-
-      <Card className="bg-card border border-border">
-        <CardContent className="p-4 space-y-3">
-          <div className="text-sm text-muted-foreground">
-            البائع: @{listing.sellerUsername || listing.username || "—"}
-          </div>
-
-          {listing.platform ? (
-            <div className="text-xs opacity-80">
-              المنصة: {listing.platform} {listing.kind ? `· ${listing.kind}` : ""}
-            </div>
-          ) : null}
-
-          {listing.description ? (
-            <div className="text-sm whitespace-pre-wrap">{listing.description}</div>
-          ) : null}
-
-          <div className="text-base font-semibold">
-            السعر: {fmt.format(Number(listing.price))} {currency}
-          </div>
-
-          <div className="pt-2 flex gap-2">
-            <Button
-              className="bg-telegram-500 hover:bg-telegram-600 text-white"
-              disabled={buyMutation.isPending || listing.isActive === false}
-              onClick={() => setConfirmOpen(true)}
-            >
-              {buyMutation.isPending ? "جارٍ المعالجة…" : "شراء الآن"}
-            </Button>
-
-            <Link href="/market">
-              <Button variant="secondary">رجوع</Button>
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* تأكيد الشراء */}
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>تأكيد الشراء</AlertDialogTitle>
-            <AlertDialogDescription>
-              سيتم إنشاء طلب شراء بقيمة {fmt.format(Number(listing.price))} {currency}. بعد ذلك ستُفتح محادثة التسليم مع البائع داخل صفحة النزاعات.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={buyMutation.isPending}>إلغاء</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={buyMutation.isPending}
-              onClick={() => buyMutation.mutate()}
-            >
-              تأكيد
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
 }
