@@ -6,8 +6,11 @@ import hpp from "hpp";
 import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import path from "path";                // <-- ESM import بدال require
-import { fileURLToPath } from "url";    // لحساب __dirname
+import path from "path";
+import { fileURLToPath } from "url";
+
+// ✨ إضافة راوتر النزاعات
+import { registerDisputesRoutes } from "./routers/disputes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,7 +56,7 @@ const allowed = (process.env.WEBAPP_URL || process.env.WEBAPP_URLS || "")
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin) return cb(null, true); // WebView داخل Telegram
+      if (!origin) return cb(null, true);
       if (allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
       if (allowRenderWildcard) {
         try {
@@ -112,8 +115,13 @@ app.use((req, res, next) => {
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.WEBAPP_URL || "";
   if (!publicBaseUrl) throw new Error("PUBLIC_BASE_URL or WEBAPP_URL must be set");
 
+  // تسجيل الراوترات الأساسية
   const server = await registerRoutes(app, { publicBaseUrl });
 
+  // ✨ تسجيل راوتر النزاعات بعد الأساسي وقبل الـ error handler
+  registerDisputesRoutes(app);
+
+  // Error handler
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const e = err as { status?: number; statusCode?: number; message?: string };
     res.status(e?.status || e?.statusCode || 500).json({ message: e?.message || "Internal Server Error" });
@@ -130,7 +138,6 @@ app.use((req, res, next) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/webhook")) {
       return res.status(404).json({ error: "Not Found" });
     }
-    // يخدم index.html من dist/public
     return res.sendFile(path.resolve(__dirname, "../public/index.html"));
   });
 
