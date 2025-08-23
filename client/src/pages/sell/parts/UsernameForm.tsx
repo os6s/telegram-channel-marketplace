@@ -2,6 +2,7 @@
 import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/contexts/language-context";
+import { useEffect } from "react";
 
 export default function UsernameForm({
   form,
@@ -13,20 +14,21 @@ export default function UsernameForm({
   const { t } = useLanguage();
   const selectCls = "w-full rounded-md border px-3 py-2 bg-background text-foreground";
 
+  // خزّن المنصة داخل الفورم كلما تغيّرت (لأن حقل العرض readOnly وغير مربوط)
+  useEffect(() => {
+    form.setValue("platform", platform, { shouldValidate: true, shouldDirty: true });
+  }, [platform, form]);
+
   return (
     <>
-      <FormField
-        name="platform"
-        control={form.control}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t("sell.platform")}</FormLabel>
-            <FormControl>
-              <Input {...field} readOnly value={platform} className="bg-background text-foreground" />
-            </FormControl>
-          </FormItem>
-        )}
-      />
+      {/* عرض المنصّة فقط + قيمة مخفية للحفظ */}
+      <FormItem>
+        <FormLabel>{t("sell.platform")}</FormLabel>
+        <FormControl>
+          <Input readOnly value={platform} className="bg-background text-foreground" />
+        </FormControl>
+      </FormItem>
+      <input type="hidden" value={platform} {...form.register("platform")} />
 
       <FormField
         name="username"
