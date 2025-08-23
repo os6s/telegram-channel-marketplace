@@ -1,0 +1,167 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogCancel, AlertDialogAction
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { ensureTelegramReady, telegramWebApp } from "@/lib/telegram";
+
+type Listing = {
+  id: string;
+  kind?: string;
+  platform?: string|null;
+  username?: string|null;          // حساب المعروض
+  sellerUsername?: string|null;    // البائع
+  title?: string|null;
+  description?: string|null;
+  price: string;
+  currency?: string|null;          // "TON"
+  isActive?: boolean;
+  createdAt?: string;
+};
+
+export default function ListingDetailsPage({ params }: { params: { id: string } }) {
+  const id = params?.id;
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  useEffect(() => { ensureTelegramReady(); }, []);
+
+  // فتح نافذة التأكيد تلقائياً إذا وصل action=buy
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("action") === "buy") setConfirmOpen(true);
+    } catch {}
+  }, []);
+
+  // جلب تفاصيل المنتج
+  const { data: listing, isLoading } = useQuery({
+    enabled: !!id,
+    queryKey: ["/api/listings", id],
+    queryFn: async () => await apiRequest("GET", `/api/listings/${id}`) as Listing,
+    refetchOnWindowFocus: false,
+  });
+
+  const fmt = useMemo(() => new Intl.NumberFormat(undefined, { maximumFractionDigits: 9 }), []);
+
+  // إنشاء الدفع ثم فتح غرفة التسليم (نزاع) وتحويل للنزاعات
+  const buyMutation = useMutation({
+    mutationFn: async () => {
+      const pay = await apiRequest("POST", "/api/payments", { listingId: id });
+      const paymentId: string | undefined = pay?.id;
+      if (paymentId) {
+        try { await apiRequest("POST", "/api/disputes", { paymentId }); } catch {}
+      }
+      return { paymentId };
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["/api/activities"] });
+      toast({ title: "تم إنشاء الطلب", description: "توجه لصفحة النزاعات لبدء المحادثة مع البائع." });
+      navigate("/disputes");
+    },
+    onError: (e: any) => {
+      if (String(e?.message || "").includes("insufficient_balance") || String(e?.message || "").includes("402")) {
+        toast({ title: "الرصيد غير كافٍ", description: "اشحن رصيدك ثم أعد المحاولة.", variant: "destructive" });
+        return;
+      }
+      toast({ title: "فشل الشراء", description: e?.message || "تعذر إنشاء عملية الدفع", variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="p-4">
+        <Card><CardContent className="p-4 text-sm text-muted-foreground">جاري التحميل…</CardContent></Card>
+      </div>
+    );
+  }
+
+  if (!listing) {
+    return (
+      <div className="p-4">
+        <Card><CardContent className="p-4 text-sm text-destructive">العنصر غير موجود.</CardContent></Card>
+        <div className="pt-3">
+          <Button variant="secondary" size="sm" onClick={() => navigate("/market")}>رجوع</Button>
+        </div>
+      </div>
+    );
+  }
+
+  const currency = listing.currency || "TON";
+
+  return (
+    <div className="p-4 space-y-3">
+      <header className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold">{listing.title || "منتج"}</h1>
+        {listing.isActive === false ? <Badge variant="outline">غير مفعل</Badge> : null}
+      </header>
+
+      <Card className="bg-card border border-border">
+        <CardContent className="p-4 space-y-3">
+          <div className="text-sm text-muted-foreground">
+            البائع: @{listing.sellerUsername || listing.username || "—"}
+          </div>
+
+          {listing.platform ? (
+            <div className="text-xs opacity-80">
+              المنصة: {listing.platform} {listing.kind ? `· ${listing.kind}` : ""}
+            </div>
+          ) : null}
+
+          {listing.description ? (
+            <div className="text-sm whitespace-pre-wrap">{listing.description}</div>
+          ) : null}
+
+          <div className="text-base font-semibold">
+            السعر: {fmt.format(Number(listing.price))} {currency}
+          </div>
+
+          <div className="pt-2 flex gap-2">
+            <Button
+              className="bg-telegram-500 hover:bg-telegram-600 text-white"
+              disabled={buyMutation.isPending || listing.isActive === false}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {buyMutation.isPending ? "جارٍ المعالجة…" : "شراء الآن"}
+            </Button>
+
+            <Link href="/market">
+              <Button variant="secondary">رجوع</Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* تأكيد الشراء */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>تأكيد الشراء</AlertDialogTitle>
+            <AlertDialogDescription>
+              سيتم إنشاء طلب شراء بقيمة {fmt.format(Number(listing.price))} {currency}. بعد ذلك ستُفتح محادثة التسليم مع البائع داخل صفحة النزاعات.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={buyMutation.isPending}>إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={buyMutation.isPending}
+              onClick={() => buyMutation.mutate()}
+            >
+              تأكيد
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
