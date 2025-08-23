@@ -48,13 +48,11 @@ export default function ProfilePage() {
       if (wallet?.address) {
         const balance = await getBalance().catch(() => "0.000");
         setConnectedWallet({ address: wallet.address, network: wallet.network, balance });
-        // حفظ باليوزرنيم (بدون id)
-        updateWallet.mutate(wallet.address);
+        updateWallet.mutate(wallet.address); // نحفظ باليوزر
       } else {
         setConnectedWallet(null);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet?.address]);
 
   const handleWalletConnect = (w: TonWallet) => {
@@ -64,6 +62,7 @@ export default function ProfilePage() {
   };
 
   const stats = useMemo(() => {
+    if (!Array.isArray(myListings)) return { activeCount: 0, totalValue: "0.00", totalSubs: 0 };
     const active = myListings.filter((l: any) => l.isActive);
     const activeCount = active.length;
     const totalValue = active.reduce(
@@ -101,6 +100,15 @@ export default function ProfilePage() {
     });
   }, [myActivities]);
 
+  // حماية: لو ماكو يوزر داخل من تيليگرام
+  if (!tgUser?.id && !user?.id) {
+    return (
+      <div className="p-6 text-center text-red-500">
+        {t("profilePage.unauthorized") || "⚠️ Please open this app from Telegram."}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <ProfileHeader
@@ -116,9 +124,9 @@ export default function ProfilePage() {
 
         <Tabs defaultValue="listings" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="listings">My Listings</TabsTrigger>
+            <TabsTrigger value="listings">{t("profilePage.tabs.listings") || "My Listings"}</TabsTrigger>
             <TabsTrigger value="activity">{t("profilePage.tabs.activity")}</TabsTrigger>
-            <TabsTrigger value="disputes">Disputes</TabsTrigger>
+            <TabsTrigger value="disputes">{t("profilePage.tabs.disputes") || "Disputes"}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="listings" className="space-y-4">
@@ -126,7 +134,7 @@ export default function ProfilePage() {
               listings={myListings as any}
               isLoading={listingsLoading}
               currentUsername={uname || undefined}
-              ctaLabel="List for sale"
+              ctaLabel={t("profilePage.cta.list") || "List for sale"}
             />
           </TabsContent>
 
