@@ -1,6 +1,6 @@
 // client/src/pages/disputes/[id].tsx
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,12 +43,12 @@ const statusColor: Record<Dispute["status"], string> = {
   cancelled: "bg-gray-400 text-white",
 };
 
-export default function DisputeDetailsPage() {
+export default function DisputeDetailsPage({ params }: { params: { id: string } }) {
   const { t } = useLanguage();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const nav = useNavigate();
-  const { id } = useParams<{ id: string }>();
+  const [, setLocation] = useLocation();
+  const id = params?.id;
   const [msg, setMsg] = useState("");
 
   const meUsername = telegramWebApp?.user?.username || null;
@@ -57,10 +57,7 @@ export default function DisputeDetailsPage() {
   const { data: dispute, isLoading: dLoading } = useQuery({
     enabled: !!id,
     queryKey: ["/api/disputes", id],
-    queryFn: async () => {
-      const r = await apiRequest("GET", `/api/disputes/${id}`);
-      return r as Dispute;
-    },
+    queryFn: async () => (await apiRequest("GET", `/api/disputes/${id}`)) as Dispute,
     refetchOnWindowFocus: true,
   });
 
@@ -123,7 +120,9 @@ export default function DisputeDetailsPage() {
       <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => nav(-1)}><ArrowLeft className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" onClick={() => setLocation(-1 as any)}>
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-semibold text-foreground">Dispute #{id?.slice(0,6)}…</h1>
