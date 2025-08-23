@@ -1,8 +1,7 @@
 // server/routers/listings.ts
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
-import { tgAuth, tgOptionalAuth } from "../middleware/tgAuth";
 
 /* -------- Helpers -------- */
 function normUsername(v: unknown) {
@@ -16,55 +15,54 @@ function normUsername(v: unknown) {
 function normSellerUsername(v: unknown) {
   return String(v ?? "").trim().replace(/^@/, "").toLowerCase();
 }
-
 const zStrOrNum = z.union([z.string(), z.number()]).optional();
 
-/* ---- auth helpers ---- */
-async function resolveActor(req: any) {
-  // أولاً من tgAuth
-  const tg = req.telegramUser as { id?: number; username?: string } | undefined;
-  if (tg?.id) {
-    const u = await storage.getUserByTelegramId(String(tg.id));
-    if (u) return u;
-    // fallback على username لو ماكو سجل بالـ DB بعد
-    if (tg.username) {
-      const u2 = await storage.getUserByUsername(tg.username.toLowerCase());
-      if (u2) return u2;
-    }
-  }
+/* ---- auth helpers (username-based) ---- */
+async function resolveActor(req: Request) {
+  const hU = (req.headers["x-telegram-username"] as string | undefined)?.toLowerCase();
+  const qU = (req.query.username as string | undefined)?.toLowerCase();
+  const bU = (req as any).telegramUser?.username
+    ? String((req as any).telegramUser.username).toLowerCase()
+    : undefined;
 
-  // فfallback أخير: مفاتيح query القديمة (اختياري)
-  const userId = req.query.userId as string | undefined;
-  const telegramId = (req.query.telegramId as string | undefined) || undefined;
-  if (userId) return storage.getUser(userId);
-  if (telegramId) return storage.getUserByTelegramId(String(telegramId));
-
-  return undefined;
+  const uname = (qU || hU || bU || "").trim();
+  if (!uname) return undefined;
+  return storage.getUserByUsername(uname);
 }
 function isAdmin(u: any | undefined) {
   const uname = (u?.username || "").toLowerCase();
   return u?.role === "admin" || uname === "os6s7";
 }
 
+/* -------- Validation -------- */
 const createListingSchema = z
   .object({
-    sellerUsername: z.string().optional(),
-    telegramId: z.union([z.string(), z.number()]).transform((v) => (v == null ? undefined : String(v))).optional(),
+    sellerUsername: z.string().optional(), // يمكن يجي من البودي
     kind: z.enum(["channel", "username", "account", "service"]),
-    platform: z.enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"]).optional(),
+    platform: z
+      .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
+      .optional(),
     price: z.string().min(1),
     currency: z.enum(["TON", "USDT"]).default("TON"),
     description: z.string().optional(),
+
+    // channel
     channelMode: z.enum(["subscribers", "gifts"]).optional(),
     link: z.string().optional(),
     channelUsername: z.string().optional(),
     subscribersCount: zStrOrNum,
     giftsCount: zStrOrNum,
     giftKind: z.string().optional(),
+
+    // username
     username: z.string().optional(),
     tgUserType: z.string().optional(),
+
+    // account
     followersCount: zStrOrNum,
     createdAt: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(), // YYYY-MM
+
+    // service
     serviceType: z.enum(["followers", "members", "boost_channel", "boost_group"]).optional(),
     target: z
       .union([
@@ -74,6 +72,7 @@ const createListingSchema = z
       ])
       .optional(),
     count: zStrOrNum,
+
     title: z.string().optional(),
   })
   .superRefine((val, ctx) => {
@@ -91,6 +90,7 @@ export function mountListings(app: Express) {
   app.post("/api/listings", async (req, res) => {
     try {
       const raw = req.body || {};
+
       const unifiedUsername =
         raw.kind === "channel"
           ? normUsername(raw.channelUsername || raw.link || raw.username || "")
@@ -98,16 +98,18 @@ export function mountListings(app: Express) {
 
       const parsed = createListingSchema.parse({ ...raw, username: unifiedUsername });
 
-      // sellerUsername
+      // تحديد sellerUsername:
+      // 1) من البودي إن وُجد
+      // 2) وإلا من actor المستنتج عبر username
       let sellerUsername = parsed.sellerUsername ? normSellerUsername(parsed.sellerUsername) : "";
-      if (!sellerUsername && parsed.telegramId) {
-        const u = await storage.getUserByTelegramId(String(parsed.telegramId));
-        if (!u) return res.status(400).json({ error: "User not found. Open app from Telegram first." });
-        sellerUsername = normSellerUsername(u.username || "");
+      if (!sellerUsername) {
+        const actor = await resolveActor(req);
+        if (!actor) return res.status(401).json({ error: "Unauthorized: username required" });
+        sellerUsername = normSellerUsername(actor.username || "");
       }
       if (!sellerUsername) return res.status(400).json({ error: "Missing sellerUsername" });
 
-      // منع تكرار
+      // منع التكرار على اسم المعروض
       if (unifiedUsername) {
         const dupe = await storage.getChannelByUsername(unifiedUsername);
         if (dupe) return res.status(400).json({ error: "Username already exists" });
@@ -117,12 +119,16 @@ export function mountListings(app: Express) {
         parsed.subscribersCount != null && String(parsed.subscribersCount).trim() !== ""
           ? Number(parsed.subscribersCount)
           : undefined;
+
       const followersCount =
         parsed.followersCount != null && String(parsed.followersCount).trim() !== ""
           ? Number(parsed.followersCount)
           : undefined;
+
       const serviceCount =
-        parsed.count != null && String(parsed.count).trim() !== "" ? Number(parsed.count) : undefined;
+        parsed.count != null && String(parsed.count).trim() !== ""
+          ? Number(parsed.count)
+          : undefined;
 
       let target = parsed.target as any;
       if (target === "telegram_channel" || target === "telegram_group") target = "telegram";
@@ -149,13 +155,17 @@ export function mountListings(app: Express) {
         price: parsed.price,
         currency: parsed.currency,
         isActive: true,
+
         channelMode: parsed.channelMode,
         subscribersCount,
         giftsCount: parsed.giftsCount != null ? Number(parsed.giftsCount) : undefined,
         giftKind: parsed.giftKind,
+
         tgUserType: parsed.tgUserType,
+
         followersCount,
         accountCreatedAt: parsed.createdAt,
+
         serviceType: parsed.serviceType,
         target,
         serviceCount,
@@ -165,19 +175,27 @@ export function mountListings(app: Express) {
       return res.status(201).json(listing);
     } catch (e: any) {
       console.error("❌ Invalid payload at /api/listings", e?.message);
-      return res.status(400).json({ error: "Invalid payload", message: e?.message || "Validation failed", issues: e?.issues || null });
+      return res.status(400).json({
+        error: "Invalid payload",
+        message: e?.message || "Validation failed",
+        issues: e?.issues || null,
+      });
     }
   });
 
-  /* جلب كل الإعلانات */
+  /* جلب كل الإعلانات + فلاتر السوق */
   app.get("/api/listings", async (req, res) => {
     try {
       const search = (req.query.search as string) || undefined;
+
       const kind = (req.query.type as string) || undefined;
       const platform = (req.query.platform as string) || undefined;
       const channelMode = (req.query.channelMode as string) || undefined;
       const serviceType = (req.query.serviceType as string) || undefined;
-      const sellerUsername = req.query.sellerUsername ? normSellerUsername(req.query.sellerUsername as string) : undefined;
+
+      const sellerUsername =
+        req.query.sellerUsername ? normSellerUsername(req.query.sellerUsername as string) : undefined;
+
       const minSubscribers = req.query.minSubscribers != null ? Number(req.query.minSubscribers) : undefined;
       const maxPrice = req.query.maxPrice != null ? Number(req.query.maxPrice) : undefined;
 
@@ -199,26 +217,19 @@ export function mountListings(app: Express) {
     }
   });
 
-  /* جلب إعلان واحد — يسمح بقراءة هوية المستخدم اختياريًا لتحديد canDelete */
-  app.get("/api/listings/:id", tgOptionalAuth, async (req, res) => {
+  /* جلب إعلان واحد */
+  app.get("/api/listings/:id", async (req, res) => {
     try {
       const row = await storage.getChannel(req.params.id);
       if (!row) return res.status(404).json({ error: "Listing not found" });
-
-      let canDelete = false;
-      const actor = await resolveActor(req);
-      if (actor) {
-        canDelete = isAdmin(actor) || (actor.username && actor.username.toLowerCase() === (row.sellerUsername || "").toLowerCase());
-      }
-
-      res.json({ ...row, canDelete });
+      res.json(row);
     } catch (e: any) {
       res.status(500).json({ error: e?.message || "Unknown error" });
     }
   });
 
-  /* حذف إعلان (الإدمن أو البائع) — محمي بـ tgAuth */
-  app.delete("/api/listings/:id", tgAuth, async (req, res) => {
+  /* حذف إعلان (الإدمن أو صاحب الإعلان) — يعتمد على username */
+  app.delete("/api/listings/:id", async (req, res) => {
     try {
       const listing = await storage.getChannel(req.params.id);
       if (!listing) return res.status(404).json({ error: "Listing not found" });
@@ -227,8 +238,8 @@ export function mountListings(app: Express) {
       if (!actor) return res.status(401).json({ error: "Unauthorized" });
 
       const actorU = (actor.username || "").toLowerCase();
-      const canDelete =
-        isAdmin(actor) || (!!actorU && actorU === (listing.sellerUsername || "").toLowerCase());
+      const sellerU = (listing.sellerUsername || "").toLowerCase();
+      const canDelete = isAdmin(actor) || (!!actorU && actorU === sellerU);
       if (!canDelete) return res.status(403).json({ error: "Forbidden" });
 
       const ok = await storage.deleteChannel(req.params.id);
