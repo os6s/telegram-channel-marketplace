@@ -1,7 +1,7 @@
 // server/routers/disputes.ts
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { eq, desc, or, and } from "drizzle-orm";
+import { eq, desc, or } from "drizzle-orm";
 import { db } from "../db.js";
 import { disputes, messages, listings, payments } from "@shared/schema";
 
@@ -67,10 +67,10 @@ async function fetchListingTitleByPaymentId(paymentId: string): Promise<string |
    Routes
 ========================= */
 export function registerDisputesRoutes(app: Express) {
-  /** فهرس النزاعات:
-   *  - بدون باراميتر: يرجع الكل بترتيب تنازلي
-   *  - ?me=1 : يرجّع نزاعات تخص المستخدم الحالي (مشتري أو بائع)
-   *  - ?username=: يرجّع نزاعات تخص هذا اليوزر
+  /** فهرس النزاعات للمستخدم الحالي فقط:
+   *  - ?me=1 يستخدم يوزر تيليگرام المستنتج
+   *  - ?username= يسمح فقط إذا يطابق المستخدم الحالي
+   *  - غير ذلك => 403
    */
   app.get("/api/disputes", async (req: Request, res: Response) => {
     try {
@@ -81,11 +81,14 @@ export function registerDisputesRoutes(app: Express) {
           : undefined;
 
       const inferred = getReqUsername(req);
-      const username = qUsername ?? (me ? inferred : undefined);
 
-      if (!username) {
-        const list = await db.select().from(disputes).orderBy(desc(disputes.createdAt));
-        return res.json(list.map(expandDisputeRow));
+      let username: string | undefined;
+      if (me && inferred) {
+        username = inferred;
+      } else if (qUsername && inferred && qUsername.toLowerCase() === inferred.toLowerCase()) {
+        username = qUsername;
+      } else {
+        return res.status(403).json({ error: "forbidden" });
       }
 
       const list = await db
@@ -100,10 +103,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** إنشاء نزاع:
-   *  - يتحقق من وجود الـ payment
-   *  - يملأ buyerUsername/sellerUsername من جدول payments إذا ما انبعثت
-   */
+  /** إنشاء نزاع (يتحقق من وجود الدفع ويستكمل أسماء المستخدمين من payments) */
   app.post("/api/disputes", async (req: Request, res: Response) => {
     try {
       const body = createDisputeSchema.parse(req.body ?? {});
@@ -176,7 +176,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** رسائل النزاع - إنشاء: يقبل { text } ويستنتج senderUsername بأمان */
+  /** رسائل النزاع - إنشاء: يقبل { text } ويستنتج senderUsername */
   app.post("/api/disputes/:id/messages", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
@@ -202,7 +202,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** حسم النزاع: status=resolved + resolvedAt */
+  /** حسم النزاع */
   app.post("/api/disputes/:id/resolve", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
@@ -222,7 +222,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** إلغاء/إغلاق النزاع: status=cancelled */
+  /** إلغاء/إغلاق النزاع */
   app.post("/api/disputes/:id/cancel", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
