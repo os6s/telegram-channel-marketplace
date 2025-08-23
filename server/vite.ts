@@ -1,3 +1,5 @@
+جاهز. هذا إصدار مُنظَّف وآمن (بدون process.exit على أخطاء Vite)، مع تحسّينين صغار: التحقق من وجود client/index.html برسالة واضحة، وكاش ثابت للملفات في الإنتاج.
+
 // server/vite.ts
 import express, { type Express } from "express";
 import fs from "fs";
@@ -32,9 +34,9 @@ export async function setupVite(app: Express, server: Server) {
     configFile: false,
     customLogger: {
       ...viteLogger,
+      // لا تُنهِ العملية في التطوير—اطبع الخطأ فقط
       error: (msg, options) => {
         viteLogger.error(msg, options);
-        process.exit(1);
       },
     },
     server: serverOptions,
@@ -46,6 +48,9 @@ export async function setupVite(app: Express, server: Server) {
   app.use("*", async (req, res, next) => {
     try {
       const tplPath = path.resolve(process.cwd(), "client", "index.html");
+      if (!fs.existsSync(tplPath)) {
+        throw new Error(`client/index.html not found at ${tplPath}`);
+      }
       let template = await fs.promises.readFile(tplPath, "utf-8");
       template = template.replace(`src="/src/main.tsx"`, `src="/src/main.tsx?v=${nanoid()}"`);
       const page = await vite.transformIndexHtml(req.originalUrl, template);
@@ -62,6 +67,20 @@ export function serveStatic(app: Express) {
   if (!fs.existsSync(distPath)) {
     throw new Error(`Build output not found: ${distPath}. Run client build first.`);
   }
-  app.use(express.static(distPath));
+
+  // كاش للملفات الثابتة (يمكن تعديل maxAge حسب الحاجة)
+  app.use(
+    express.static(distPath, {
+      setHeaders(res, filePath) {
+        // لا نُخزّن index.html بشدة
+        if (filePath.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      },
+    })
+  );
+
   app.use("*", (_req, res) => res.sendFile(path.resolve(distPath, "index.html")));
 }
