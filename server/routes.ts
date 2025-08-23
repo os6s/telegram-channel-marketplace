@@ -15,13 +15,12 @@ import { mountProfile } from "./routers/profile";
 import { mountBalance } from "./routers/balance";
 import { mountPayouts } from "./routers/payouts";
 import { mountAdmin } from "./routers/admin";
-import { mountAdminPayouts } from "./routers/admin-payouts";
 import { mountStats } from "./routers/stats";
 import { mountMisc } from "./routers/misc";
 import { mountMarketActivity } from "./routers/market-activity";
 
 /* ---------- env & helpers ---------- */
-const WEBAPP_URL = process.env.WEBAPP_URL!; // مطلوب في Render
+const WEBAPP_URL = process.env.WEBAPP_URL!; // keep Render-required
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || WEBAPP_URL;
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
@@ -104,7 +103,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Admin
   mountAdmin(app);
-  mountAdminPayouts(app);
 
   // Stats & misc
   mountStats(app);
