@@ -1,9 +1,16 @@
+// client/src/pages/sell/parts/AccountForm.tsx
 import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/contexts/language-context";
+import { normalizeUsername } from "../utils/normalize";
 
 export default function AccountForm({ form, platform }: { form: any; platform: string }) {
   const { t } = useLanguage();
+
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const maxMonth = `${yyyy}-${mm}`;
 
   return (
     <>
@@ -27,7 +34,16 @@ export default function AccountForm({ form, platform }: { form: any; platform: s
           <FormItem>
             <FormLabel>{t("sell.usernameLabel")}</FormLabel>
             <FormControl>
-              <Input {...field} placeholder="handle" className="bg-card text-foreground" />
+              <Input
+                {...field}
+                autoComplete="off"
+                placeholder="handle"
+                className="bg-card text-foreground"
+                onBlur={(e) => {
+                  const norm = normalizeUsername(e.target.value);
+                  form.setValue("username", norm, { shouldValidate: true });
+                }}
+              />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -39,9 +55,15 @@ export default function AccountForm({ form, platform }: { form: any; platform: s
         control={form.control}
         render={({ field }) => (
           <FormItem>
-            <FormLabel>YYYY-MM</FormLabel>
+            <FormLabel>{t("sell.createdAt") || "YYYY-MM"}</FormLabel>
             <FormControl>
-              <Input type="month" {...field} className="bg-card text-foreground" />
+              <Input
+                type="month"
+                {...field}
+                min="2006-01"
+                max={maxMonth}
+                className="bg-card text-foreground"
+              />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -56,7 +78,15 @@ export default function AccountForm({ form, platform }: { form: any; platform: s
             <FormItem>
               <FormLabel>{t("sell.followers")}</FormLabel>
               <FormControl>
-                <Input type="number" min={0} {...field} className="bg-card text-foreground" />
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  min={0}
+                  {...field}
+                  className="bg-card text-foreground"
+                  onWheel={(e) => e.currentTarget.blur()} // منع سكرول تغيير الرقم
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
