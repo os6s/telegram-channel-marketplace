@@ -1,10 +1,11 @@
 // server/routers/wallet.ts
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
-import { tgAuth } from "../middleware/tgAuth";
-import { storage } from "../storage";
-import { verifyTonDepositByComment } from "../ton-verify";
-import type { Payment } from "@shared/schema";
+import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
+import { db } from "../db.js";
+import { payments, users, type Payment } from "@shared/schema";
+import { eq, and, desc } from "drizzle-orm";
+import { verifyTonDepositByComment } from "../ton-verify.js";
 
 type TgUser = { id: number };
 
@@ -24,9 +25,16 @@ function sum(rows: Payment[], pred: (p: Payment) => boolean) {
     .toFixed(9);
 }
 
+async function getMe(req: Request) {
+  const tg = (req as any).telegramUser as TgUser | undefined;
+  if (!tg?.id) return null;
+  const me = await db.query.users.findFirst({ where: eq(users.telegramId, BigInt(tg.id)) });
+  return me ?? null;
+}
+
 export function mountWallet(app: Express) {
   /** 1) بدء إيداع */
-  app.post("/api/wallet/deposit/initiate", tgAuth, async (req, res) => {
+  app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
     const escrow = (process.env.ESCROW_WALLET || "").trim();
     if (!escrow) return res.status(500).json({ error: "ESCROW_WALLET not set" });
 
@@ -35,19 +43,19 @@ export function mountWallet(app: Express) {
       return res.status(400).json({ error: "invalid_amount" });
     }
 
-    const tgUser = (req as any).telegramUser as TgUser | undefined;
-    if (!tgUser) return res.status(401).json({ error: "unauthorized" });
-    const me = await storage.getUserByTelegramId(String(tgUser.id));
+    const me = await getMe(req);
     if (!me) return res.status(404).json({ error: "user_not_found" });
 
     const code = genCode();
     const amountNano = toNano(amountTon);
     const text = encodeURIComponent(code);
 
-    await storage.createPayment({
+    // سطر إيداع (بدون seller_id, kind = deposit, status = waiting)
+    await db.insert(payments).values({
       listingId: null,
       buyerId: me.id,
-      kind: "deposit",
+      sellerId: null,          // يسمح به بعد تعديل السكيمة
+      kind: "deposit",         // العمود الجديد
       locked: false,
       amount: String(amountTon),
       currency: "TON",
@@ -59,7 +67,7 @@ export function mountWallet(app: Express) {
       txHash: null,
       buyerConfirmed: false,
       sellerConfirmed: false,
-      status: "waiting",
+      status: "waiting",       // أضفناها للـ ENUM
       adminAction: "none",
     });
 
@@ -78,22 +86,25 @@ export function mountWallet(app: Express) {
   });
 
   /** 2) التحقق من الإيداع عبر الكود */
-  app.post("/api/wallet/deposit/status", tgAuth, async (req, res) => {
-    const tgUser = (req as any).telegramUser as TgUser | undefined;
-    if (!tgUser) return res.status(401).json({ error: "unauthorized" });
-
-    const user = await storage.getUserByTelegramId(String(tgUser.id));
-    if (!user) return res.status(404).json({ error: "user_not_found" });
+  app.post("/api/wallet/deposit/status", tgAuth, async (req: Request, res: Response) => {
+    const me = await getMe(req);
+    if (!me) return res.status(401).json({ error: "unauthorized" });
 
     const escrow = (process.env.ESCROW_WALLET || "").trim();
     const code = String(req.body?.code || "");
     const minTon = Number(req.body?.minTon || "0");
     if (!escrow || !code) return res.status(400).json({ error: "bad_request" });
 
-    const myPays = await storage.listPaymentsByBuyer(user.id);
-    const waiting = myPays.find(
-      (p) => p.kind === "deposit" && p.status === "waiting" && (p.comment || "") === code
-    );
+    // آخر دفعة إيداع waiting بنفس الكود
+    const waiting = await db.query.payments.findFirst({
+      where: and(
+        eq(payments.buyerId, me.id),
+        eq(payments.kind, "deposit" as any),
+        eq(payments.status, "waiting" as any),
+        eq(payments.comment, code)
+      ),
+      orderBy: desc(payments.createdAt),
+    });
     if (!waiting) return res.status(404).json({ status: "not_found" });
 
     const v = await verifyTonDepositByComment({
@@ -104,35 +115,45 @@ export function mountWallet(app: Express) {
 
     if (!v.ok) return res.json({ status: "pending" });
 
-    const already = myPays.find(
-      (p) => p.kind === "deposit" && p.txHash && v.txHash && p.txHash === v.txHash
-    );
-    if (already) {
-      return res.json({ status: "paid", amount: Number(already.amount), txHash: already.txHash });
+    // تفادي تكرار نفس المعاملة
+    if (v.txHash) {
+      const dup = await db.query.payments.findFirst({
+        where: and(
+          eq(payments.buyerId, me.id),
+          eq(payments.kind, "deposit" as any),
+          eq(payments.txHash, v.txHash)
+        ),
+      });
+      if (dup) return res.json({ status: "paid", amount: Number(dup.amount), txHash: dup.txHash });
     }
 
-    const updated = await storage.updatePayment(waiting.id, {
-      amount: String(v.amountTon),
-      txHash: v.txHash ?? null,
-      status: "paid",
-      confirmedAt: new Date() as any,
-    });
+    const [updated] = await db
+      .update(payments)
+      .set({
+        amount: String(v.amountTon),
+        txHash: v.txHash ?? null,
+        status: "paid",
+        confirmedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, waiting.id))
+      .returning({ id: payments.id, amount: payments.amount, txHash: payments.txHash });
 
-    res.json({ status: "paid", amount: v.amountTon, txHash: v.txHash, id: updated?.id });
+    res.json({ status: "paid", amount: Number(updated.amount), txHash: updated.txHash, id: updated.id });
   });
 
   /** 3) رصيد داخلي */
-  app.get("/api/wallet/balance", tgAuth, async (req, res) => {
-    const tgUser = (req as any).telegramUser as TgUser | undefined;
-    if (!tgUser) return res.status(401).json({ error: "unauthorized" });
+  app.get("/api/wallet/balance", tgAuth, async (req: Request, res: Response) => {
+    const me = await getMe(req);
+    if (!me) return res.status(401).json({ error: "unauthorized" });
 
-    const me = await storage.getUserByTelegramId(String(tgUser.id));
-    if (!me) return res.status(404).json({ error: "user_not_found" });
+    const rows = await db.query.payments.findMany({
+      where: eq(payments.buyerId, me.id),
+    });
 
-    const pays = await storage.listPaymentsByBuyer(me.id);
-    const deposits = sum(pays, (p) => p.kind === "deposit" && p.status === "paid");
+    const deposits = sum(rows as any, (p) => p.kind === "deposit" && p.status === "paid");
     const locked = sum(
-      pays,
+      rows as any,
       (p) => p.kind === "order" && !!p.locked && (p.status === "pending" || p.status === "paid")
     );
     const balance = +(deposits - locked).toFixed(9);
