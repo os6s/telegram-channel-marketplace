@@ -1,7 +1,7 @@
 // client/src/App.tsx
 import { Switch, Route, Link, useLocation } from "wouter";
-import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TelegramApp } from "@/components/telegram-app";
@@ -11,21 +11,23 @@ import { lazy, Suspense, useMemo } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
 import { TonConnectUIProvider } from "@tonconnect/ui-react";
 
-// Lazy pages
+/* -------- Lazy pages -------- */
 const Marketplace = lazy(() => import("@/pages/marketplace"));
 const SellPage = lazy(() => import("@/pages/sell/sellpage"));
 const Activity = lazy(() => import("@/pages/activity"));
 const Profile = lazy(() => import("@/pages/profile"));
 const AdminPage = lazy(() => import("@/pages/admin"));
-const DisputeDetailsPage = lazy(() => import("@/pages/disputes/[id]")); // ← صفحة النزاع المفرد
+const DisputesIndex = lazy(() => import("@/pages/disputes"));         // ← فهرس النزاعات
+const DisputeDetailsPage = lazy(() => import("@/pages/disputes/[id]")); // ← نزاع مفرد
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center min-h-screen">
-    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-telegram-500"></div>
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-telegram-500" />
   </div>
 );
 
+/* -------- Router -------- */
 function Router() {
   return (
     <Suspense fallback={<LoadingSpinner />}>
@@ -36,37 +38,47 @@ function Router() {
         <Route path="/activity" component={Activity} />
         <Route path="/profile" component={Profile} />
         <Route path="/admin" component={AdminPage} />
-        <Route path="/disputes/:id" component={DisputeDetailsPage} /> {/* ← روت النزاع */}
+        <Route path="/disputes" component={DisputesIndex} />            {/* جديد */}
+        <Route path="/disputes/:id" component={DisputeDetailsPage} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>
   );
 }
 
+/* -------- Bottom Navigation -------- */
 function BottomNavigation() {
   const [location] = useLocation();
   const { t } = useLanguage();
   const { hapticFeedback, webAppData } = useTelegram();
 
-  const isAdmin = webAppData.user?.username === "Os6s7";
+  const uname = (webAppData.user?.username || "").toLowerCase();
+  const isAdmin = uname === "os6s7";
+  const hasTG = !!uname; // نعرض تبويب النزاعات فقط داخل تيليگرام
 
   const navItems = [
     { path: "/", label: t("marketplace"), icon: "🏠" },
-    { path: "/sell", label: "List for sale", icon: "➕" }, // ← الطلب
+    { path: "/sell", label: "List for sale", icon: "➕" },
     { path: "/activity", label: t("activity"), icon: "📊" },
+    ...(hasTG ? [{ path: "/disputes", label: "النزاعات", icon: "🛡️" }] : []),
     { path: "/profile", label: t("profile"), icon: "👤" },
-    ...(isAdmin ? [{ path: "/admin", label: "Admin", icon: "🛡️" }] : []),
+    ...(isAdmin ? [{ path: "/admin", label: "Admin", icon: "🧰" }] : []),
   ] as const;
 
   return (
     <div className="bg-background border-t border-border px-4 py-2 sticky bottom-0 z-50 safe-area-inset">
-      <div className={`grid gap-1`} style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
+      <div
+        className="grid gap-1"
+        style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}
+      >
         {navItems.map((item) => (
           <Link
             key={item.path}
             href={item.path}
             className={`flex flex-col items-center py-2 transition-colors ${
-              location === item.path ? "text-primary" : "text-muted-foreground hover:text-foreground"
+              location === item.path
+                ? "text-primary"
+                : "text-muted-foreground hover:text-foreground"
             }`}
             onClick={() => hapticFeedback?.selection?.()}
           >
@@ -79,6 +91,7 @@ function BottomNavigation() {
   );
 }
 
+/* -------- App Root -------- */
 function App() {
   const manifestUrl = useMemo(() => {
     return typeof window !== "undefined"
