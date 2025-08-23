@@ -3,13 +3,13 @@ export async function tgSendMessage(
   chatId: string | number,
   text: string,
   replyMarkup?: unknown
-) {
+): Promise<boolean> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return;
+  if (!token) return false;
 
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
   const body = {
-    chat_id: chatId,
+    chat_id: Number(chatId), // تأكد أنه رقم
     text,
     parse_mode: "HTML",
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
@@ -28,16 +28,21 @@ export async function tgSendMessage(
     const j = await r.json().catch(() => ({}));
     if (!j?.ok) {
       console.error("[tgSendMessage] telegram error:", j);
+      return false;
     }
+    return true;
   } catch (e) {
     console.error("[tgSendMessage] error:", (e as any)?.message || e);
+    return false;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-/** عرّف ADMIN_TELEGRAM_ID بالـ ENV (رقمي) */
-export async function notifyAdmin(text: string) {
+/** يرسل إشعار للإدمن (حدد ADMIN_TELEGRAM_ID بالـ ENV) */
+export async function notifyAdmin(text: string): Promise<void> {
   const adminId = process.env.ADMIN_TELEGRAM_ID;
-  if (adminId) await tgSendMessage(adminId, text);
+  if (adminId) {
+    await tgSendMessage(adminId, text);
+  }
 }
