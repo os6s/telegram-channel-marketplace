@@ -9,8 +9,10 @@ import { setupVite, serveStatic, log } from "./vite";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// ✨ إضافة راوتر النزاعات
+// Routers إضافية
 import { registerDisputesRoutes } from "./routers/disputes.js";
+import { mountListings } from "./routers/listings.js";
+import { mountPayments } from "./routers/payments.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,7 +58,7 @@ const allowed = (process.env.WEBAPP_URL || process.env.WEBAPP_URLS || "")
 app.use(
   cors({
     origin(origin, cb) {
-      if (!origin) return cb(null, true);
+      if (!origin) return cb(null, true); // WebView داخل Telegram
       if (allowed.length === 0 || allowed.includes(origin)) return cb(null, true);
       if (allowRenderWildcard) {
         try {
@@ -73,6 +75,7 @@ app.use(
       "x-setup-key",
       "x-telegram-bot-api-secret-token",
       "x-telegram-init-data",
+      "x-telegram-username",            // <-- مضاف
     ],
     credentials: true,
   })
@@ -101,9 +104,7 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     if (pathUrl.startsWith("/api") || pathUrl.startsWith("/webhook")) {
       let line = `${req.method} ${pathUrl} ${res.statusCode} in ${Date.now() - t0}ms`;
-      if (captured) {
-        try { line += ` :: ${JSON.stringify(captured)}`; } catch {}
-      }
+      if (captured) { try { line += ` :: ${JSON.stringify(captured)}`; } catch {} }
       if (line.length > 160) line = line.slice(0, 159) + "…";
       log(line);
     }
@@ -115,10 +116,12 @@ app.use((req, res, next) => {
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.WEBAPP_URL || "";
   if (!publicBaseUrl) throw new Error("PUBLIC_BASE_URL or WEBAPP_URL must be set");
 
-  // تسجيل الراوترات الأساسية
+  // الراوترات الأساسية
   const server = await registerRoutes(app, { publicBaseUrl });
 
-  // ✨ تسجيل راوتر النزاعات بعد الأساسي وقبل الـ error handler
+  // راوترات التطبيق
+  mountListings(app);
+  mountPayments(app);
   registerDisputesRoutes(app);
 
   // Error handler
