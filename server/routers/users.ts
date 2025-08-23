@@ -2,7 +2,7 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { insertUserSchema } from "@shared/schema";
-import { tgOptionalAuth, requireTelegramUser } from "../middleware/tgAuth.js";
+import { tgOptionalAuth } from "../middleware/tgAuth.js";
 
 // helpers
 const isDbUniqueError = (e: any) => !!e && (e.code === "23505" || /unique/i.test(String(e.message)));
@@ -18,10 +18,14 @@ export function mountUsers(app: Express) {
       const bodyTelegramId =
         req.body?.telegramId != null ? String(req.body.telegramId) : (tg?.id ? String(tg.id) : "");
 
+      // اشتق اسم بديل إذا ما عنده username في تيليگرام
+      let uname = normUsername(req.body?.username ?? tg?.username ?? null);
+      if (!uname && bodyTelegramId) uname = `tg_${bodyTelegramId}`;
+
       const body = {
         ...req.body,
         telegramId: bodyTelegramId,
-        username: normUsername(req.body?.username ?? tg?.username ?? null),
+        username: uname,
       };
 
       const userData = insertUserSchema.parse(body);
@@ -69,7 +73,7 @@ export function mountUsers(app: Express) {
     }
   });
 
-  // endpoint قديم via query — أبقه للتوافق لكن لا تستخدمه في الويب آب
+  // endpoint قديم via query — للتوافق فقط
   app.get("/api/users", async (req, res) => {
     try {
       const telegramId = String(req.query.telegramId || "");
@@ -86,10 +90,25 @@ export function mountUsers(app: Express) {
   app.patch("/api/users/:id", async (req, res) => {
     try {
       const updates: any = { ...req.body };
-      if (updates.username !== undefined) updates.username = normUsername(updates.username);
+
+      // منع تغيير telegramId
+      if (Object.prototype.hasOwnProperty.call(updates, "telegramId")) {
+        return res.status(403).json({ error: "telegramId update not allowed" });
+      }
+
+      // تطبيع اليوزرنيم
+      if (updates.username !== undefined) {
+        updates.username = normUsername(updates.username);
+        if (!updates.username) {
+          return res.status(400).json({ error: "username cannot be empty" });
+        }
+      }
+
+      // منع تغيير الدور هنا
       if (Object.prototype.hasOwnProperty.call(updates, "role")) {
         return res.status(403).json({ error: "role update not allowed here" });
       }
+
       const user = await storage.updateUser(req.params.id, updates);
       if (!user) return res.status(404).json({ error: "User not found" });
       res.json(user);
