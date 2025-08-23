@@ -2,80 +2,191 @@
 import crypto from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
 
-/** يتحقق من توقيع Telegram WebApp initData */
-function verifyInitData(initData: string, botToken: string) {
-  const urlParams = new URLSearchParams(initData);
-  const hash = urlParams.get("hash") || "";
-  urlParams.delete("hash");
+/* ========= الإعدادات ========= */
+const MAX_INITDATA_BYTES = 8 * 1024; // حد أقصى لحجم initData
+const DEFAULT_MAX_AGE_SEC = 24 * 60 * 60; // 24 ساعة
+const ALLOWED_REFERRERS = [
+  /\.telegram\.org$/i,
+  /\.t\.me$/i,
+];
 
-  const data = [...urlParams.entries()]
-    .map(([k, v]) => `${k}=${v}`)
-    .sort()
-    .join("\n");
+/* ========= أنواع مساعدة ========= */
+declare module "express-serve-static-core" {
+  interface Request {
+    telegramUser?: {
+      id: number;
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+      language_code?: string;
+      is_premium?: boolean;
+    };
+  }
+}
 
-  const secretKey = crypto
-    .createHmac("sha256", "WebAppData")
-    .update(botToken)
-    .digest();
-  const check = crypto.createHmac("sha256", secretKey).update(data).digest("hex");
-
+/* ========= دوال مساعدة ========= */
+function safeTimingEqual(aHex: string, bHex: string): boolean {
+  if (aHex.length !== bHex.length) return false;
   try {
-    return crypto.timingSafeEqual(Buffer.from(check), Buffer.from(hash));
+    return crypto.timingSafeEqual(Buffer.from(aHex, "hex"), Buffer.from(bHex, "hex"));
   } catch {
     return false;
   }
 }
 
-/** يستخرج user من initData بعد التحقق، ويضعه في req.telegramUser */
+function verifyInitData(initData: string, botToken: string): boolean {
+  if (!initData || !botToken) return false;
+  if (Buffer.byteLength(initData, "utf8") > MAX_INITDATA_BYTES) return false;
+
+  const urlParams = new URLSearchParams(initData);
+  const hash = urlParams.get("hash") || "";
+  if (!hash) return false;
+  urlParams.delete("hash");
+
+  // بناء السلسلة حسب توثيق تيليگرام (مفروزة أبجدياً)
+  const dataCheckString = [...urlParams.entries()]
+    .map(([k, v]) => `${k}=${v}`)
+    .sort()
+    .join("\n");
+
+  // HMAC-SHA256("WebAppData", bot_token) ثم HMAC-SHA256(secretKey, dataCheckString)
+  const secretKey = crypto
+    .createHmac("sha256", "WebAppData")
+    .update(botToken)
+    .digest();
+  const checkHash = crypto
+    .createHmac("sha256", secretKey)
+    .update(dataCheckString)
+    .digest("hex");
+
+  return safeTimingEqual(checkHash, hash);
+}
+
+function referrerAllowed(req: Request): boolean {
+  // يُفضّل السماح من داخل تيليگرام أو من WEBAPP_URL فقط بالإنتاج
+  const origin = req.get("origin") || "";
+  const ref = req.get("referer") || "";
+
+  const webapp = process.env.WEBAPP_URL || "";
+  const allowedOrigins: string[] = [];
+  if (webapp) {
+    try {
+      allowedOrigins.push(new URL(webapp).origin);
+    } catch {}
+  }
+
+  const hostOk =
+    (!!origin && allowedOrigins.includes(origin)) ||
+    (!!ref && allowedOrigins.some((o) => ref.startsWith(o))) ||
+    (!!origin && ALLOWED_REFERRERS.some((re) => re.test(new URL(origin).hostname))) ||
+    (!!ref && ALLOWED_REFERRERS.some((re) => {
+      try { return re.test(new URL(ref).hostname); } catch { return false; }
+    }));
+
+  // بالإنتاج نشدد. بالتطوير نسمح أسهل.
+  if (process.env.NODE_ENV === "production") return hostOk;
+  return true;
+}
+
+function parseUser(initData: string) {
+  const params = new URLSearchParams(initData);
+  const userRaw = params.get("user");
+  const authDateStr = params.get("auth_date");
+  const user = userRaw ? JSON.parse(userRaw) : undefined;
+
+  const authDate = authDateStr ? Number(authDateStr) : undefined;
+  return { user, authDate };
+}
+
+/* ========= الميدلويرات ========= */
+
+/** يتحقق إلزامياً من initData ويملأ req.telegramUser */
 export function tgAuth(req: Request, res: Response, next: NextFunction) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const initDataHeader =
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) {
+    return res.status(500).json({ error: "server_misconfig", detail: "TELEGRAM_BOT_TOKEN missing" });
+  }
+
+  const initData =
     req.get("x-telegram-init-data") ||
-    (typeof req.body?.initData === "string" ? req.body.initData : undefined);
+    (typeof req.body?.initData === "string" ? req.body.initData : "");
 
-  // طباعة تشخيص مبكر
-  if (!token) {
-    console.error("[tgAuth] missing TELEGRAM_BOT_TOKEN env");
-    return res.status(401).json({ error: "unauthorized" });
-  }
-  if (!initDataHeader) {
-    console.error("[tgAuth] missing initData (header:x-telegram-init-data or body.initData). path=", req.path);
-    return res.status(401).json({ error: "unauthorized" });
+  if (!initData) {
+    return res.status(401).json({ error: "unauthorized", detail: "init_data_missing" });
   }
 
-  // تحقق التوقيع
-  const ok = verifyInitData(initDataHeader, token);
-  if (!ok) {
-    console.error("[tgAuth] bad_signature for path=", req.path, "len(initData)=", initDataHeader.length);
-    return res.status(401).json({ error: "unauthorized" });
+  if (!referrerAllowed(req)) {
+    return res.status(403).json({ error: "forbidden", detail: "bad_referrer" });
   }
 
-  // قراءة user + auth_date (للتشخيص فقط)
+  if (!verifyInitData(initData, botToken)) {
+    return res.status(401).json({ error: "unauthorized", detail: "bad_signature" });
+  }
+
   try {
-    const params = new URLSearchParams(initDataHeader);
-    const userRaw = params.get("user");
-    const user = userRaw ? JSON.parse(userRaw) : undefined;
+    const { user, authDate } = parseUser(initData);
+    if (!user?.id) {
+      return res.status(401).json({ error: "unauthorized", detail: "user_missing" });
+    }
 
-    // (اختياري للتشخيص) تحقّق من auth_date لو موجود
-    const authDateStr = params.get("auth_date");
-    const authDate = authDateStr ? Number(authDateStr) : undefined;
+    // التحقق من حد الصلاحية
+    const maxAgeSec =
+      Number(process.env.TELEGRAM_INITDATA_MAX_AGE_SEC) || DEFAULT_MAX_AGE_SEC;
     if (authDate && Number.isFinite(authDate)) {
       const ageSec = Math.floor(Date.now() / 1000) - authDate;
-      if (ageSec > 3600 * 24 * 7) {
-        // لا نغيّر السلوك؛ فقط نطبع تحذير
-        console.warn("[tgAuth] very old auth_date (>", ageSec, "sec) user_id=", user?.id);
+      if (ageSec > maxAgeSec) {
+        return res.status(401).json({ error: "unauthorized", detail: "init_data_expired" });
       }
     }
 
-    if (!user?.id) {
-      console.error("[tgAuth] parsed user missing id");
-      return res.status(401).json({ error: "unauthorized" });
-    }
+    req.telegramUser = {
+      id: Number(user.id),
+      username: typeof user.username === "string" ? user.username : undefined,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      language_code: user.language_code,
+      is_premium: !!user.is_premium,
+    };
 
-    (req as any).telegramUser = user; // { id, first_name, last_name, username, ... }
     return next();
   } catch (e) {
-    console.error("[tgAuth] parse_error:", e);
-    return res.status(401).json({ error: "unauthorized" });
+    return res.status(401).json({ error: "unauthorized", detail: "parse_error" });
   }
+}
+
+/** ميدلوير اختياري: يملأ telegramUser إن وجد، ولا يمنع المرور */
+export function tgOptionalAuth(req: Request, _res: Response, next: NextFunction) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const initData =
+    req.get("x-telegram-init-data") ||
+    (typeof req.body?.initData === "string" ? req.body.initData : "");
+
+  if (!botToken || !initData) return next();
+
+  if (verifyInitData(initData, botToken)) {
+    try {
+      const { user } = parseUser(initData);
+      if (user?.id) {
+        req.telegramUser = {
+          id: Number(user.id),
+          username: typeof user.username === "string" ? user.username : undefined,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          language_code: user.language_code,
+          is_premium: !!user.is_premium,
+        };
+      }
+    } catch {
+      // تجاهل الأخطاء بصمت
+    }
+  }
+  next();
+}
+
+/** حارس سريع إذا تحتاج تتأكد بداخل راوتر معيّن */
+export function requireTelegramUser(req: Request, res: Response, next: NextFunction) {
+  if (!req.telegramUser?.id) {
+    return res.status(401).json({ error: "unauthorized", detail: "telegram_user_required" });
+  }
+  next();
 }
