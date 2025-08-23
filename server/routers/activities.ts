@@ -1,26 +1,27 @@
 // server/routers/activities.ts
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { storage } from "../storage";
-import { insertActivitySchema } from "@shared/schema";
+import { and, desc, eq, or, sql } from "drizzle-orm";
+import { db } from "../db.js";
+import {
+  activities,
+  listings,
+  payments,
+  users,
+  insertActivitySchema,
+} from "@shared/schema";
 import { ensureBuyerHasFunds } from "../ton-utils";
 
 /* ========= Telegram notify helper ========= */
 async function sendTelegramMessage(
-  telegramId: string | null | undefined,
+  telegramId: string | number | null | undefined,
   text: string,
   replyMarkup?: any
 ) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) {
-    console.warn("[notify] TELEGRAM_BOT_TOKEN missing – skipping telegram notify");
-    return;
-  }
-  const chatId = telegramId ? Number(telegramId) : NaN;
-  if (!Number.isFinite(chatId)) {
-    console.warn("[notify] invalid telegramId, skipping");
-    return;
-  }
+  if (!token) return;
+  const chatId = Number(telegramId);
+  if (!Number.isFinite(chatId)) return;
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
@@ -32,31 +33,85 @@ async function sendTelegramMessage(
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
     });
-    const data = await res.json();
-    if (!data?.ok) console.warn("[notify] telegram sendMessage failed:", data);
-  } catch (e) {
-    console.error("[notify] telegram error:", e);
+    // optional: ignore response body
+    await res.json().catch(() => null);
+  } catch {
+    /* no-op */
   }
 }
 
 /* ========= helpers ========= */
 const listQuery = z.object({
-  username: z.string().min(1).optional(),   // ⬅️ بدّلنا من userId إلى username
+  username: z.string().min(1).optional(),
   listingId: z.string().uuid().optional(),
 });
 
+const S = (v: unknown) => (v == null ? "" : String(v));
+
+async function getUserByUsernameInsensitive(username: string) {
+  const u = await db.query.users.findFirst({
+    where: sql`lower(${users.username}) = ${username.toLowerCase()}`,
+  });
+  return u || null;
+}
+
+async function getListingOr404(id: string) {
+  const l = await db.query.listings.findFirst({ where: eq(listings.id, id) });
+  return l || null;
+}
+
+function toNum(v: unknown): number | null {
+  if (v == null || S(v).trim() === "") return null;
+  const n = Number(S(v).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+/* ========= Router ========= */
 export function mountActivities(app: Express) {
   // List activities by username or listing
-  app.get("/api/activities", async (req, res) => {
+  app.get("/api/activities", async (req: Request, res: Response) => {
     try {
       const q = listQuery.safeParse(req.query);
       if (!q.success || (!q.data.username && !q.data.listingId)) {
         return res.status(400).json({ error: "username or listingId required" });
       }
 
-      let rows;
-      if (q.data.username) rows = await storage.getActivitiesByUserUsername(q.data.username);
-      else rows = await storage.getActivitiesByListing(q.data.listingId!);
+      let whereExp;
+      if (q.data.username) {
+        const u = await getUserByUsernameInsensitive(q.data.username);
+        if (!u) return res.json([]);
+        whereExp = or(eq(activities.buyerId, u.id), eq(activities.sellerId, u.id));
+      } else {
+        whereExp = eq(activities.listingId, q.data.listingId!);
+      }
+
+      // نرجّع مع يوزرنيمات الأطراف
+      const rows = await db
+        .select({
+          id: activities.id,
+          listingId: activities.listingId,
+          buyerId: activities.buyerId,
+          sellerId: activities.sellerId,
+          paymentId: activities.paymentId,
+          type: activities.type,
+          status: activities.status,
+          amount: activities.amount,
+          currency: activities.currency,
+          txHash: activities.txHash,
+          note: activities.note,
+          createdAt: activities.createdAt,
+          // usernames via joins
+          buyerUsername: users.username,
+          sellerUsername: sql<string | null>`seller_u.username`,
+          title: listings.title,
+          handle: listings.username,
+        })
+        .from(activities)
+        .leftJoin(users, eq(users.id, activities.buyerId))
+        .leftJoin(users.as("seller_u"), eq(sql`seller_u.id`, activities.sellerId))
+        .leftJoin(listings, eq(listings.id, activities.listingId))
+        .where(whereExp)
+        .orderBy(desc(activities.createdAt));
 
       res.json(rows);
     } catch (error: any) {
@@ -65,291 +120,316 @@ export function mountActivities(app: Express) {
   });
 
   // Get activity by id
-  app.get("/api/activities/:id", async (req, res) => {
+  app.get("/api/activities/:id", async (req: Request, res: Response) => {
     try {
-      const activity = await storage.getActivity(req.params.id);
-      if (!activity) return res.status(404).json({ error: "Activity not found" });
-      res.json(activity);
+      const id = String(req.params.id || "");
+      if (!id) return res.status(400).json({ error: "id required" });
+
+      const row = await db
+        .select({
+          id: activities.id,
+          listingId: activities.listingId,
+          buyerId: activities.buyerId,
+          sellerId: activities.sellerId,
+          paymentId: activities.paymentId,
+          type: activities.type,
+          status: activities.status,
+          amount: activities.amount,
+          currency: activities.currency,
+          txHash: activities.txHash,
+          note: activities.note,
+          createdAt: activities.createdAt,
+          buyerUsername: users.username,
+          sellerUsername: sql<string | null>`seller_u.username`,
+          title: listings.title,
+          handle: listings.username,
+        })
+        .from(activities)
+        .leftJoin(users, eq(users.id, activities.buyerId))
+        .leftJoin(users.as("seller_u"), eq(sql`seller_u.id`, activities.sellerId))
+        .leftJoin(listings, eq(listings.id, activities.listingId))
+        .where(eq(activities.id, id));
+
+      if (!row.length) return res.status(404).json({ error: "Activity not found" });
+      res.json(row[0]);
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "Unknown error" });
     }
   });
 
-  // Create activity (buy/confirm/cancel/…)
-  app.post("/api/activities", async (req, res) => {
+  // Create activity (buy / …)
+  app.post("/api/activities", async (req: Request, res: Response) => {
     try {
-      const incoming = { ...(req.body || {}) };
+      const body = { ...(req.body || {}) };
 
-      // required: listingId + buyerUsername
-      const listingId = String(incoming.listingId || "");
-      const buyerUsername = String(incoming.buyerUsername || incoming.buyer_username || "").toLowerCase();
+      const listingId = String(body.listingId || "");
+      const buyerUsername = S(body.buyerUsername || body.buyer_username).toLowerCase();
+      const sellerUsername = S(
+        body.sellerUsername || body.seller_username
+      ).toLowerCase();
+
       if (!listingId) return res.status(400).json({ error: "listingId required" });
       if (!buyerUsername) return res.status(400).json({ error: "buyerUsername required" });
+      if (!sellerUsername) return res.status(400).json({ error: "sellerUsername required" });
 
-      // load listing
-      const listing = await storage.getChannel(listingId);
+      const listing = await getListingOr404(listingId);
       if (!listing || !listing.isActive) {
         return res.status(400).json({ error: "Listing not found or inactive" });
       }
 
-      // seller username from listing (أو من البودي إن أُرسل)
-      const sellerUsername =
-        String(incoming.sellerUsername || incoming.seller_username || (listing as any).sellerUsername || "").toLowerCase();
-      if (!sellerUsername) return res.status(400).json({ error: "sellerUsername required" });
+      const buyer = await getUserByUsernameInsensitive(buyerUsername);
+      const seller = await getUserByUsernameInsensitive(sellerUsername);
+      if (!buyer) return res.status(404).json({ error: "buyer_user_not_found" });
+      if (!seller) return res.status(404).json({ error: "seller_user_not_found" });
+      if (buyer.id === seller.id) return res.status(400).json({ error: "seller_cannot_buy_own_listing" });
 
-      // fetch users by username لتعبئة الـ IDs (FKs)
-      const buyerUser = await storage.getUserByUsername(buyerUsername);
-      const sellerUser = await storage.getUserByUsername(sellerUsername);
-      if (!buyerUser) return res.status(404).json({ error: "buyer_user_not_found" });
-      if (!sellerUser) return res.status(404).json({ error: "seller_user_not_found" });
+      // default type/amount/currency
+      const type = (S(body.type) || "buy") as typeof activities.$inferInsert.type;
+      const amount = S(body.amount) || S(listing.price);
+      const currency = S(body.currency) || S(listing.currency || "TON");
 
-      // prevent self-purchase
-      if (buyerUser.id === sellerUser.id) {
-        return res.status(400).json({ error: "Seller cannot buy own listing" });
+      // verify price equals listing price (لو انرسلت amount)
+      const a = toNum(amount);
+      const p = toNum(listing.price);
+      if (a != null && p != null && a !== p) {
+        return res.status(400).json({ error: "amount_mismatch_with_listing_price" });
       }
 
-      // default fields inherited from listing
-      if (!incoming.amount) incoming.amount = String(listing.price);
-      if (!incoming.currency) incoming.currency = (listing as any).currency ?? "TON";
-      if (!incoming.type) incoming.type = "buy";
-
-      // price match (if provided)
-      if (incoming.amount != null) {
-        const a = parseFloat(String(incoming.amount).replace(",", "."));
-        const p = parseFloat(String(listing.price).replace(",", "."));
-        if (Number.isFinite(a) && Number.isFinite(p) && a !== p) {
-          return res.status(400).json({ error: "Amount does not match listing price" });
-        }
-      }
-
-      // funds check for buy (TON for now)
-      if (incoming.type === "buy") {
-        if (!buyerUser.tonWallet) return res.status(400).json({ error: "Buyer wallet not set" });
-        const priceTON = parseFloat(String(listing.price).replace(",", "."));
-        try {
-          await ensureBuyerHasFunds({ userTonAddress: buyerUser.tonWallet, amountTON: priceTON });
-        } catch (err: any) {
+      // funds check for buy (TON)
+      if (type === "buy") {
+        if (!buyer.tonWallet) return res.status(400).json({ error: "buyer_wallet_not_set" });
+        const priceTON = toNum(listing.price) || 0;
+        await ensureBuyerHasFunds({ userTonAddress: buyer.tonWallet, amountTON: priceTON }).catch((err: any) => {
           if (err?.code === "INSUFFICIENT_FUNDS") {
             return res.status(402).json({ error: err.message, details: err.details });
           }
-          return res.status(400).json({ error: err?.message || "Balance check failed" });
-        }
+          return res.status(400).json({ error: err?.message || "balance_check_failed" });
+        });
       }
 
-      // validate payload (نغذيها بالقيم المشتقة IDs + usernames)
-      const activityData = insertActivitySchema.parse({
-        ...incoming,
-        listingId,
-        buyerId: buyerUser.id,
-        sellerId: sellerUser.id,
-        buyerUsername,
-        sellerUsername,
-      });
-
-      // create
-      const activity = await storage.createActivity(activityData);
-
-      // deactivate non-service listing once bought
-      let listingUpdated: any = null;
-      if (activity.type === "buy" && (listing.kind || "") !== "service" && listing.isActive) {
-        listingUpdated = await storage.updateChannel(listing.id, { isActive: false });
-      }
-
-      // notifications
-      const humanTitle =
-        listing.title ||
-        (listing.username ? `@${listing.username}` : `${listing.platform || ""} ${listing.kind || ""}`.trim());
-      const priceStr = String(activity.amount ?? listing.price);
-      const ccy = String(activity.currency ?? (listing as any).currency ?? "TON");
-
-      if (buyerUser.telegramId) {
-        await sendTelegramMessage(
-          buyerUser.telegramId,
-          [
-            `🛒 <b>Purchase Started</b>`,
-            ``,
-            `<b>Item:</b> ${humanTitle}`,
-            `<b>Price:</b> ${priceStr} ${ccy}`,
-            ``,
-            `✅ Your order has been placed. Please await seller instructions.`,
-            `If anything goes wrong, you can open a dispute from the order screen.`,
-          ].join("\n")
-        );
-      }
-      if (sellerUser.telegramId) {
-        await sendTelegramMessage(
-          sellerUser.telegramId,
-          [
-            `📩 <b>New Order Received</b>`,
-            ``,
-            `<b>Item:</b> ${humanTitle}`,
-            `<b>Price:</b> ${priceStr} ${ccy}`,
-            buyerUser.username ? `<b>Buyer:</b> @${buyerUser.username}` : "",
-            ``,
-            `Please proceed with delivery and communicate in-app if needed.`,
-          ]
-            .filter(Boolean)
-            .join("\n")
-        );
-      }
-
-      res.status(201).json({ activity, listingUpdated });
-    } catch (error: any) {
-      res.status(400).json({ error: error?.message || "Invalid payload" });
-    }
-  });
-
-  // Buyer confirms receipt (usernames فقط)
-  app.post("/api/activities/confirm/buyer", async (req, res) => {
-    try {
-      const listingId = String(req.body?.listingId || "");
-      const buyerUsername = String(req.body?.buyerUsername || req.body?.buyer_username || "").toLowerCase();
-      const sellerUsername = String(req.body?.sellerUsername || req.body?.seller_username || "").toLowerCase();
-      const paymentId = req.body?.paymentId ? String(req.body.paymentId) : null;
-
-      if (!listingId || !buyerUsername || !sellerUsername) {
-        return res.status(400).json({ error: "listingId, buyerUsername, sellerUsername are required" });
-      }
-
-      const listing = await storage.getChannel(listingId);
-      if (!listing) return res.status(404).json({ error: "Listing not found" });
-
-      const buyer = await storage.getUserByUsername(buyerUsername);
-      const seller = await storage.getUserByUsername(sellerUsername);
-      if (!buyer || !seller) return res.status(404).json({ error: "user_not_found" });
-
-      const act = await storage.createActivity({
+      const payload = insertActivitySchema.parse({
         listingId,
         buyerId: buyer.id,
         sellerId: seller.id,
-        paymentId,
-        buyerUsername,
-        sellerUsername,
-        type: "buyer_confirm",
-        status: "completed",
-        amount: String(listing.price),
-        currency: (listing as any).currency ?? "TON",
-        note: "buyer_confirm",
-        txHash: null,
+        paymentId: S(body.paymentId) || undefined,
+        type,
+        status: body.status || "pending",
+        amount: amount,
+        currency: currency,
+        txHash: S(body.txHash) || undefined,
+        note: body.note ?? undefined,
       });
+
+      const created = await db.insert(activities).values(payload).returning();
+      const activity = created[0];
+
+      // deactivate listing (non-service) after buy
+      if (type === "buy" && listing.kind !== "service" && listing.isActive) {
+        await db
+          .update(listings)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(eq(listings.id, listing.id));
+      }
+
+      // notify
+      const title =
+        listing.title ||
+        (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const priceStr = S(activity.amount || listing.price);
+      const ccy = S(activity.currency || listing.currency || "TON");
+
+      await sendTelegramMessage(
+        buyer.telegramId,
+        [
+          `🛒 <b>Purchase Started</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Price:</b> ${priceStr} ${ccy}`,
+          ``,
+          `✅ Order placed. Please await seller instructions.`,
+        ].join("\n")
+      );
+      await sendTelegramMessage(
+        seller.telegramId,
+        [
+          `📩 <b>New Order Received</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Price:</b> ${priceStr} ${ccy}`,
+          buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
+          ``,
+          `Please proceed with delivery and communicate in-app if needed.`,
+        ]
+          .filter(Boolean)
+          .join("\n")
+      );
+
+      res.status(201).json(activity);
+    } catch (error: any) {
+      // إذا ensureBuyerHasFunds رجع رد response مسبقاً، نوقف
+      if (!res.headersSent) {
+        res.status(400).json({ error: error?.message || "Invalid payload" });
+      }
+    }
+  });
+
+  // Buyer confirms receipt
+  app.post("/api/activities/confirm/buyer", async (req: Request, res: Response) => {
+    try {
+      const listingId = S(req.body?.listingId);
+      const buyerUsername = S(req.body?.buyerUsername || req.body?.buyer_username).toLowerCase();
+      const sellerUsername = S(req.body?.sellerUsername || req.body?.seller_username).toLowerCase();
+      const paymentId = S(req.body?.paymentId) || null;
+
+      if (!listingId || !buyerUsername || !sellerUsername) {
+        return res.status(400).json({ error: "listingId, buyerUsername, sellerUsername required" });
+      }
+
+      const listing = await getListingOr404(listingId);
+      if (!listing) return res.status(404).json({ error: "listing_not_found" });
+
+      const buyer = await getUserByUsernameInsensitive(buyerUsername);
+      const seller = await getUserByUsernameInsensitive(sellerUsername);
+      if (!buyer || !seller) return res.status(404).json({ error: "user_not_found" });
+
+      const created = await db
+        .insert(activities)
+        .values({
+          listingId,
+          buyerId: buyer.id,
+          sellerId: seller.id,
+          paymentId: paymentId || undefined,
+          type: "buyer_confirm",
+          status: "completed",
+          amount: S(listing.price),
+          currency: S(listing.currency || "TON"),
+          note: { tag: "buyer_confirm" } as any,
+        })
+        .returning();
 
       const title =
         listing.title ||
-        (listing.username ? `@${listing.username}` : `${listing.platform || ""} ${listing.kind || ""}`.trim());
-      const priceStr = String(listing.price);
-      const ccy = String((listing as any).currency ?? "TON");
+        (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const priceStr = S(listing.price);
+      const ccy = S(listing.currency || "TON");
 
-      if (seller.telegramId) {
-        await sendTelegramMessage(
-          seller.telegramId,
-          [
-            `✅ <b>Buyer Confirmed Receipt</b>`,
-            ``,
-            `<b>Item:</b> ${title}`,
-            `<b>Price:</b> ${priceStr} ${ccy}`,
-            buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
-            ``,
-            `Admin will review and finalize the transaction.`,
-          ].filter(Boolean).join("\n")
-        );
-      }
-      if (buyer.telegramId) {
-        await sendTelegramMessage(
-          buyer.telegramId,
-          [
-            `📝 <b>Your confirmation was recorded</b>`,
-            ``,
-            `<b>Item:</b> ${title}`,
-            `<b>Status:</b> Waiting for admin finalization`,
-          ].join("\n")
-        );
-      }
+      await sendTelegramMessage(
+        seller.telegramId,
+        [
+          `✅ <b>Buyer Confirmed Receipt</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Price:</b> ${priceStr} ${ccy}`,
+          buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
+          ``,
+          `Admin will review and finalize the transaction.`,
+        ]
+          .filter(Boolean)
+          .join("\n")
+      );
+      await sendTelegramMessage(
+        buyer.telegramId,
+        [
+          `📝 <b>Your confirmation was recorded</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Status:</b> Waiting for admin finalization`,
+        ].join("\n")
+      );
 
-      res.status(201).json({ activity: act });
+      res.status(201).json(created[0]);
     } catch (e: any) {
       res.status(400).json({ error: e?.message || "Failed to confirm (buyer)" });
     }
   });
 
-  // Seller confirms delivery (usernames فقط)
-  app.post("/api/activities/confirm/seller", async (req, res) => {
+  // Seller confirms delivery
+  app.post("/api/activities/confirm/seller", async (req: Request, res: Response) => {
     try {
-      const listingId = String(req.body?.listingId || "");
-      const buyerUsername = String(req.body?.buyerUsername || req.body?.buyer_username || "").toLowerCase();
-      const sellerUsername = String(req.body?.sellerUsername || req.body?.seller_username || "").toLowerCase();
-      const paymentId = req.body?.paymentId ? String(req.body.paymentId) : null;
+      const listingId = S(req.body?.listingId);
+      const buyerUsername = S(req.body?.buyerUsername || req.body?.buyer_username).toLowerCase();
+      const sellerUsername = S(req.body?.sellerUsername || req.body?.seller_username).toLowerCase();
+      const paymentId = S(req.body?.paymentId) || null;
 
       if (!listingId || !buyerUsername || !sellerUsername) {
-        return res.status(400).json({ error: "listingId, buyerUsername, sellerUsername are required" });
+        return res.status(400).json({ error: "listingId, buyerUsername, sellerUsername required" });
       }
 
-      const listing = await storage.getChannel(listingId);
-      if (!listing) return res.status(404).json({ error: "Listing not found" });
+      const listing = await getListingOr404(listingId);
+      if (!listing) return res.status(404).json({ error: "listing_not_found" });
 
-      const buyer = await storage.getUserByUsername(buyerUsername);
-      const seller = await storage.getUserByUsername(sellerUsername);
+      const buyer = await getUserByUsernameInsensitive(buyerUsername);
+      const seller = await getUserByUsernameInsensitive(sellerUsername);
       if (!buyer || !seller) return res.status(404).json({ error: "user_not_found" });
 
-      const act = await storage.createActivity({
-        listingId,
-        buyerId: buyer.id,
-        sellerId: seller.id,
-        paymentId,
-        buyerUsername,
-        sellerUsername,
-        type: "seller_confirm",
-        status: "completed",
-        amount: String(listing.price),
-        currency: (listing as any).currency ?? "TON",
-        note: "seller_confirm",
-        txHash: null,
-      });
+      const created = await db
+        .insert(activities)
+        .values({
+          listingId,
+          buyerId: buyer.id,
+          sellerId: seller.id,
+          paymentId: paymentId || undefined,
+          type: "seller_confirm",
+          status: "completed",
+          amount: S(listing.price),
+          currency: S(listing.currency || "TON"),
+          note: { tag: "seller_confirm" } as any,
+        })
+        .returning();
 
       const title =
         listing.title ||
-        (listing.username ? `@${listing.username}` : `${listing.platform || ""} ${listing.kind || ""}`.trim());
-      const priceStr = String(listing.price);
-      const ccy = String((listing as any).currency ?? "TON");
+        (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const priceStr = S(listing.price);
+      const ccy = S(listing.currency || "TON");
 
-      if (buyer.telegramId) {
-        await sendTelegramMessage(
-          buyer.telegramId,
-          [
-            `📦 <b>Seller Confirmed Delivery</b>`,
-            ``,
-            `<b>Item:</b> ${title}`,
-            `<b>Price:</b> ${priceStr} ${ccy}`,
-            seller.username ? `<b>Seller:</b> @${seller.username}` : "",
-            ``,
-            `Please confirm receipt from your side if all is OK.`,
-          ].filter(Boolean).join("\n")
-        );
-      }
-      if (seller.telegramId) {
-        await sendTelegramMessage(
-          seller.telegramId,
-          [
-            `📝 <b>Your delivery confirmation was recorded</b>`,
-            ``,
-            `<b>Item:</b> ${title}`,
-            `<b>Status:</b> Waiting for buyer / admin`,
-          ].join("\n")
-        );
-      }
+      await sendTelegramMessage(
+        buyer.telegramId,
+        [
+          `📦 <b>Seller Confirmed Delivery</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Price:</b> ${priceStr} ${ccy}`,
+          seller.username ? `<b>Seller:</b> @${seller.username}` : "",
+          ``,
+          `Please confirm receipt from your side if all is OK.`,
+        ]
+          .filter(Boolean)
+          .join("\n")
+      );
+      await sendTelegramMessage(
+        seller.telegramId,
+        [
+          `📝 <b>Your delivery confirmation was recorded</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Status:</b> Waiting for buyer / admin`,
+        ].join("\n")
+      );
 
-      res.status(201).json({ activity: act });
+      res.status(201).json(created[0]);
     } catch (e: any) {
       res.status(400).json({ error: e?.message || "Failed to confirm (seller)" });
     }
   });
 
-  // Update activity (generic)
-  app.patch("/api/activities/:id", async (req, res) => {
+  // Update activity (status / note)
+  app.patch("/api/activities/:id", async (req: Request, res: Response) => {
     try {
-      const updates = req.body || {};
-      const activity = await storage.updateActivity(req.params.id, updates);
-      if (!activity) return res.status(404).json({ error: "Activity not found" });
-      res.json(activity);
+      const id = String(req.params.id || "");
+      if (!id) return res.status(400).json({ error: "id required" });
+
+      const allowed: Partial<typeof activities.$inferInsert> = {};
+      if (typeof req.body?.status === "string") allowed.status = req.body.status as any;
+      if (req.body?.note !== undefined) allowed.note = req.body.note;
+
+      if (Object.keys(allowed).length === 0) {
+        return res.status(400).json({ error: "no_updates" });
+      }
+
+      const updated = await db.update(activities).set(allowed).where(eq(activities.id, id)).returning();
+      if (!updated.length) return res.status(404).json({ error: "Activity not found" });
+      res.json(updated[0]);
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "Unknown error" });
     }
