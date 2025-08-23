@@ -17,8 +17,8 @@ const SellPage = lazy(() => import("@/pages/sell/sellpage"));
 const Activity = lazy(() => import("@/pages/activity"));
 const Profile = lazy(() => import("@/pages/profile"));
 const AdminPage = lazy(() => import("@/pages/admin"));
-const DisputesIndex = lazy(() => import("@/pages/disputes"));         // ← فهرس النزاعات
-const DisputeDetailsPage = lazy(() => import("@/pages/disputes/[id]")); // ← نزاع مفرد
+const DisputesIndex = lazy(() => import("@/pages/disputes"));          // صفحة النزاعات
+const DisputeDetailsPage = lazy(() => import("@/pages/disputes/[id]")); // نزاع مفرد
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const LoadingSpinner = () => (
@@ -38,8 +38,8 @@ function Router() {
         <Route path="/activity" component={Activity} />
         <Route path="/profile" component={Profile} />
         <Route path="/admin" component={AdminPage} />
-        <Route path="/disputes" component={DisputesIndex} />            {/* جديد */}
-        <Route path="/disputes/:id" component={DisputeDetailsPage} />
+        <Route path="/disputes" component={DisputesIndex} />            {/* فهرس النزاعات */}
+        <Route path="/disputes/:id" component={DisputeDetailsPage} />   {/* نزاع مفرد */}
         <Route component={NotFound} />
       </Switch>
     </Suspense>
@@ -54,13 +54,12 @@ function BottomNavigation() {
 
   const uname = (webAppData.user?.username || "").toLowerCase();
   const isAdmin = uname === "os6s7";
-  const hasTG = !!uname; // نعرض تبويب النزاعات فقط داخل تيليگرام
 
   const navItems = [
     { path: "/", label: t("marketplace"), icon: "🏠" },
     { path: "/sell", label: "List for sale", icon: "➕" },
     { path: "/activity", label: t("activity"), icon: "📊" },
-    ...(hasTG ? [{ path: "/disputes", label: "النزاعات", icon: "🛡️" }] : []),
+    { path: "/disputes", label: "النزاعات", icon: "🛡️" },   // ← مضاف
     { path: "/profile", label: t("profile"), icon: "👤" },
     ...(isAdmin ? [{ path: "/admin", label: "Admin", icon: "🧰" }] : []),
   ] as const;
