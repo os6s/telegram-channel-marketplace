@@ -1,3 +1,4 @@
+// client/src/pages/profile.tsx
 import { useMemo, useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SettingsModal } from "@/components/settings-modal";
@@ -11,7 +12,14 @@ import { StatsCards } from "@/components/profile/StatsCards";
 import { ListingsTab } from "@/components/profile/ListingsTab";
 import { ActivityTab } from "@/components/profile/ActivityTab";
 import { ActivityDialog } from "@/components/profile/ActivityDialog";
-import { useMe, useMyListings, useMyActivities, useUpdateWallet } from "@/hooks/use-me";
+import { DisputesTab } from "@/components/profile/DisputesTab";
+import {
+  useMe,
+  useMyListings,
+  useMyActivities,
+  useMyDisputes,
+  useUpdateWallet,
+} from "@/hooks/use-me";
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
 const N = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
@@ -32,6 +40,7 @@ export default function ProfilePage() {
 
   const { data: myListings = [], isLoading: listingsLoading } = useMyListings(uname || undefined);
   const { data: myActivities = [] } = useMyActivities(uname || undefined);
+  const { data: myDisputes = [], isLoading: disputesLoading } = useMyDisputes(uname || undefined);
   const updateWallet = useUpdateWallet();
 
   useEffect(() => {
@@ -39,7 +48,8 @@ export default function ProfilePage() {
       if (wallet?.address) {
         const balance = await getBalance().catch(() => "0.000");
         setConnectedWallet({ address: wallet.address, network: wallet.network, balance });
-        updateWallet.mutate(wallet.address); // حفظ باليوزرنيم
+        // حفظ باليوزرنيم (بدون id)
+        updateWallet.mutate(wallet.address);
       } else {
         setConnectedWallet(null);
       }
@@ -56,7 +66,10 @@ export default function ProfilePage() {
   const stats = useMemo(() => {
     const active = myListings.filter((l: any) => l.isActive);
     const activeCount = active.length;
-    const totalValue = active.reduce((s: number, l: any) => s + Number(String(l.price).replace(",", ".")), 0);
+    const totalValue = active.reduce(
+      (s: number, l: any) => s + Number(String(l.price).replace(",", ".")),
+      0
+    );
     const totalSubs = active
       .filter((l: any) => l.kind === "channel")
       .reduce((s: number, l: any) => s + N(l.subscribersCount), 0);
@@ -68,13 +81,23 @@ export default function ProfilePage() {
       const amt = `${S(a.currency) || "TON"} ${S(a.amount) || ""}`.trim();
       let type: "UPDATED" | "SOLD" | "RELEASED" | "CANCELLED" = "UPDATED";
       let title = "Activity";
-      if (a.type === "buy") { type = "SOLD"; title = "Order paid to escrow"; }
-      else if (["buyer_confirm", "seller_confirm", "admin_release"].includes(a.type)) {
-        type = "RELEASED"; title = "Funds release approved";
+      if (a.type === "buy") {
+        type = "SOLD";
+        title = "Order paid to escrow";
+      } else if (["buyer_confirm", "seller_confirm", "admin_release"].includes(a.type)) {
+        type = "RELEASED";
+        title = "Funds release approved";
       } else if (["admin_refund", "cancel"].includes(a.type)) {
-        type = "CANCELLED"; title = "Order refunded/cancelled";
+        type = "CANCELLED";
+        title = "Order refunded/cancelled";
       }
-      return { id: a.id, type, title, subtitle: amt, createdAt: a.createdAt || new Date().toISOString() };
+      return {
+        id: a.id,
+        type,
+        title,
+        subtitle: amt,
+        createdAt: a.createdAt || new Date().toISOString(),
+      };
     });
   }, [myActivities]);
 
@@ -92,17 +115,27 @@ export default function ProfilePage() {
         <StatsCards activeCount={stats.activeCount} totalValue={stats.totalValue} totalSubs={stats.totalSubs} />
 
         <Tabs defaultValue="listings" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="listings">My Listings</TabsTrigger>
             <TabsTrigger value="activity">{t("profilePage.tabs.activity")}</TabsTrigger>
+            <TabsTrigger value="disputes">Disputes</TabsTrigger>
           </TabsList>
 
           <TabsContent value="listings" className="space-y-4">
-            <ListingsTab listings={myListings as any} isLoading={listingsLoading} currentUsername={uname || undefined} />
+            <ListingsTab
+              listings={myListings as any}
+              isLoading={listingsLoading}
+              currentUsername={uname || undefined}
+              ctaLabel="List for sale"
+            />
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-4">
             <ActivityTab events={events as any} emptyText={t("activityPage.empty") || "No activity yet"} />
+          </TabsContent>
+
+          <TabsContent value="disputes" className="space-y-4">
+            <DisputesTab disputes={myDisputes as any} isLoading={disputesLoading} />
           </TabsContent>
         </Tabs>
       </div>
