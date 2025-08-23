@@ -16,7 +16,8 @@ const Marketplace = lazy(() => import("@/pages/marketplace"));
 const SellPage = lazy(() => import("@/pages/sell/sellpage"));
 const Activity = lazy(() => import("@/pages/activity"));
 const Profile = lazy(() => import("@/pages/profile"));
-const AdminPage = lazy(() => import("@/pages/admin"));   // ⬅️ صفحة الأدمن
+const AdminPage = lazy(() => import("@/pages/admin"));
+const DisputeDetailsPage = lazy(() => import("@/pages/disputes/[id]")); // ← صفحة النزاع المفرد
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const LoadingSpinner = () => (
@@ -34,7 +35,8 @@ function Router() {
         <Route path="/sell-channel" component={SellPage} />
         <Route path="/activity" component={Activity} />
         <Route path="/profile" component={Profile} />
-        <Route path="/admin" component={AdminPage} />   {/* ⬅️ روت الأدمن */}
+        <Route path="/admin" component={AdminPage} />
+        <Route path="/disputes/:id" component={DisputeDetailsPage} /> {/* ← روت النزاع */}
         <Route component={NotFound} />
       </Switch>
     </Suspense>
@@ -46,14 +48,14 @@ function BottomNavigation() {
   const { t } = useLanguage();
   const { hapticFeedback, webAppData } = useTelegram();
 
-  const isAdmin = webAppData.user?.username === "Os6s7"; // ⬅️ شرط الأدمن (موك)
+  const isAdmin = webAppData.user?.username === "Os6s7";
 
   const navItems = [
     { path: "/", label: t("marketplace"), icon: "🏠" },
-    { path: "/sell", label: t("sellChannel"), icon: "➕" },
+    { path: "/sell", label: "List for sale", icon: "➕" }, // ← الطلب
     { path: "/activity", label: t("activity"), icon: "📊" },
     { path: "/profile", label: t("profile"), icon: "👤" },
-    ...(isAdmin ? [{ path: "/admin", label: "Admin", icon: "🛡️" }] : []), // ⬅️ يظهر فقط للأدمن
+    ...(isAdmin ? [{ path: "/admin", label: "Admin", icon: "🛡️" }] : []),
   ] as const;
 
   return (
