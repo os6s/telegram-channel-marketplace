@@ -14,6 +14,9 @@ import { registerDisputesRoutes } from "./routers/disputes.js";
 import { mountListings } from "./routers/listings.js";
 import { mountPayments } from "./routers/payments.js";
 
+// ✨ توثيق تيليگرام الخفيف
+import { tgOptionalAuth } from "./middleware/tgAuth.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -75,7 +78,7 @@ app.use(
       "x-setup-key",
       "x-telegram-bot-api-secret-token",
       "x-telegram-init-data",
-      "x-telegram-username",            // <-- مضاف
+      "x-telegram-username",
     ],
     credentials: true,
   })
@@ -84,6 +87,9 @@ app.use(
 // Body limits
 app.use(express.json({ limit: "200kb" }));
 app.use(express.urlencoded({ extended: false, limit: "200kb" }));
+
+// ✨ يقرأ initData ويحقن req.telegramUser إن توفّر
+app.use(tgOptionalAuth);
 
 // Rate limit
 app.use("/api", rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
