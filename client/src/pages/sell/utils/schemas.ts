@@ -1,3 +1,4 @@
+// client/src/pages/sell/utils/schemas.ts
 import { z } from "zod";
 import { normalizeUsername } from "./normalize";
 import { RE_PRICE, RE_TG_USER, RE_GENERIC, RE_TIKTOK, RE_MONTH } from "./regex";
@@ -52,34 +53,23 @@ export const accountSchema = z.object({
   ...baseCommon,
 });
 
-// -------- Channel --------
+// -------- Channel (link فقط) --------
 export const channelSchema = z
   .object({
     type: z.literal("channel"),
     channelMode: z.enum(["subscribers", "gifts"]),
-    link: z.string().optional(),
-    channelUsername: z.string().optional(),
+    link: z.string().min(1, "NEED_LINK"),
     subscribersCount: z.coerce.number().min(1).optional(),
     giftsCount: z.coerce.number().min(1).optional(),
     giftKind: z.enum(["upgraded", "regular", "both"]).optional(),
     ...baseCommon,
   })
   .superRefine((val, ctx) => {
-    const link = val.link?.trim();
-    const uname = val.channelUsername?.trim();
+    const link = (val.link || "").trim();
+    const candidate = normalizeUsername(link);
 
-    if (!link && !uname) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "NEED_LINK_OR_USER", path: ["link"] });
-      return;
-    }
-
-    const candidate = normalizeUsername(link || uname || "");
     if (!RE_TG_USER.test(candidate)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "TG",
-        path: link ? ["link"] : ["channelUsername"],
-      });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "TG", path: ["link"] });
     }
 
     if (val.channelMode === "subscribers") {
@@ -97,7 +87,7 @@ export const channelSchema = z
   });
 
 // -------- Service --------
-// ✅ target مطابق للباك: "telegram" وليس "telegram_channel/group"
+// target مطابق للباك: "telegram" للخدمات الخاصة بتلغرام
 export const serviceSchema = z
   .object({
     type: z.literal("service"),
