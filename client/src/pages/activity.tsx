@@ -32,7 +32,7 @@ export default function Activity() {
   const { data, isLoading, error } = useQuery<ApiActivity[]>({
     queryKey: ["/api/market-activity", { limit: 50 }],
     queryFn: async ({ queryKey }) => {
-      // لا تفكك بشكل صَارِم لتجنّب cannot convert
+      // لا تفكك بشكل صارم لتجنّب أخطاء "cannot convert"
       const qk = queryKey as unknown[];
       const params = (qk[1] as { limit?: number }) || {};
       const limit = Number.isFinite(params?.limit as number) ? (params!.limit as number) : 50;
@@ -53,9 +53,8 @@ export default function Activity() {
     if (!Array.isArray(data)) return [];
     return data.map((item) => {
       const tag = has(item.username) ? `@${S(item.username)}` : has(item.title) ? S(item.title) : "Listing";
-      const price = has(item.price) && has(item.currency)
-        ? `${S(item.price)} ${S(item.currency)}`
-        : undefined;
+      const price =
+        has(item.price) && has(item.currency) ? `${S(item.price)} ${S(item.currency)}` : undefined;
       const seller = has(item.seller) ? `@${S(item.seller)}` : undefined;
 
       if (item.kind === "sold") {
