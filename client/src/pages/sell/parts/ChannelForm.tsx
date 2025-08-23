@@ -2,6 +2,7 @@
 import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/contexts/language-context";
+import { normalizeUsername } from "../utils/normalize";
 
 export default function ChannelForm({ form }: { form: any }) {
   const { t } = useLanguage();
@@ -21,10 +22,12 @@ export default function ChannelForm({ form }: { form: any }) {
                 className={selectCls}
                 onChange={(e) => {
                   field.onChange(e);
-                  // أفرّغ الحقول التابعة للمود وأعيد الفالديشن
-                  form.setValue("subscribersCount", "", { shouldValidate: true });
-                  form.setValue("giftsCount", "", { shouldValidate: true });
-                  form.setValue("giftKind", "regular", { shouldValidate: true });
+                  if (e.target.value === "subscribers") {
+                    form.setValue("giftsCount", "", { shouldValidate: true });
+                    form.setValue("giftKind", "regular", { shouldValidate: true });
+                  } else {
+                    form.setValue("subscribersCount", "", { shouldValidate: true });
+                  }
                   form.trigger();
                 }}
               >
@@ -37,28 +40,23 @@ export default function ChannelForm({ form }: { form: any }) {
         )}
       />
 
+      {/* نخلي بس لينك */}
       <FormField
         name="link"
         control={form.control}
         render={({ field }) => (
           <FormItem>
-            <FormLabel>{t("sell.channelLinkOpt")}</FormLabel>
+            <FormLabel>{t("sell.channelLink")}</FormLabel>
             <FormControl>
-              <Input {...field} className="bg-background" placeholder="https://t.me/yourchannel" />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        name="channelUsername"
-        control={form.control}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t("sell.channelUserOpt")}</FormLabel>
-            <FormControl>
-              <Input {...field} className="bg-background" placeholder="yourchannel" />
+              <Input
+                {...field}
+                className="bg-background"
+                placeholder="https://t.me/yourchannel"
+                onBlur={(e) => {
+                  const norm = normalizeUsername(e.target.value);
+                  form.setValue("link", norm, { shouldValidate: true });
+                }}
+              />
             </FormControl>
             <FormMessage />
           </FormItem>
