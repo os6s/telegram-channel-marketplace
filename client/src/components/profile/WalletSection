@@ -1,0 +1,34 @@
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Wallet as WalletIcon } from "lucide-react";
+import { WalletConnect } from "@/components/wallet-connect";
+import type { TonWallet } from "@/lib/ton-connect";
+
+export function WalletSection({
+  connectedWallet,
+  onConnect,
+  t,
+}: {
+  connectedWallet: TonWallet | null;
+  onConnect: (w: TonWallet) => void;
+  t: (k: string) => string;
+}) {
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <WalletIcon className="w-5 h-5 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">{t("profilePage.tonWallet")}</span>
+          </div>
+          <WalletConnect onWalletConnect={onConnect} />
+        </div>
+        {connectedWallet && (
+          <div className="mt-2 text-sm text-muted-foreground">
+            {t("wallet.balance")}: {connectedWallet.balance} TON
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
