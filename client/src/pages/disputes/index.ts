@@ -1,5 +1,5 @@
 // client/src/pages/disputes/index.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,44 +30,64 @@ const statusBadge = (s: string) => {
 export default function DisputesIndex() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
+
+  const hasTG = !!telegramWebApp;
   const me = telegramWebApp?.user?.username || null;
 
   const [items, setItems] = useState<Dispute[]>([]);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
 
+  // فورماتر تواريخ محلي
+  const fmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    []
+  );
+
   // توسيع الويب فيو
   useEffect(() => {
-    try { telegramWebApp?.expand?.(); } catch {}
+    try { telegramWebApp?.ready?.(); telegramWebApp?.expand?.(); } catch {}
   }, []);
 
-  // حماية الوصول: لازم يكون عنده username داخل تيليگرام
+  // حماية الوصول: لازم تيليگرام + username
   useEffect(() => {
-    if (!me) {
+    if (!hasTG || !me) {
       setDenied(true);
       setLoading(false);
       return;
     }
-    let mounted = true;
+
+    const ac = new AbortController();
+    setLoading(true);
+
     (async () => {
       try {
-        const data = await apiRequest("GET", "/api/disputes?me=1");
-        if (!mounted) return;
-        if (!Array.isArray(data)) {
-          setItems([]);
-        } else {
-          setItems(data as Dispute[]);
-        }
+        const data = await apiRequest<Dispute[]>("GET", "/api/disputes?me=1");
+        if (ac.signal.aborted) return;
+        setItems(Array.isArray(data) ? data : []);
       } catch (e: any) {
-        if (!mounted) return;
+        if (ac.signal.aborted) return;
         setItems([]);
-        toast({ title: "خطأ", description: e?.message || "تعذر جلب النزاعات", variant: "destructive" });
+        const msg =
+          e?.error === "forbidden"
+            ? "غير مسموح. افتح التطبيق من داخل تيليگرام."
+            : e?.message || "تعذر جلب النزاعات";
+        toast({ title: "خطأ", description: msg, variant: "destructive" });
+        if (e?.error === "forbidden") setDenied(true);
       } finally {
-        if (mounted) setLoading(false);
+        if (!ac.signal.aborted) setLoading(false);
       }
     })();
-    return () => { mounted = false; };
-  }, [me, toast]);
+
+    return () => ac.abort();
+  }, [hasTG, me, toast]);
 
   if (denied) {
     return (
@@ -78,6 +98,9 @@ export default function DisputesIndex() {
             غير مسموح. افتح التطبيق من داخل تيليگرام وبحسابك.
           </CardContent>
         </Card>
+        <div className="pt-2">
+          <Button variant="secondary" size="sm" onClick={() => navigate("/")}>رجوع</Button>
+        </div>
       </div>
     );
   }
@@ -100,7 +123,7 @@ export default function DisputesIndex() {
                   {d.listingTitle ? <span className="text-sm opacity-80">— {d.listingTitle}</span> : null}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {d.createdAt ? new Date(d.createdAt).toLocaleString() : ""}
+                  {d.createdAt ? fmt.format(new Date(d.createdAt)) : ""}
                 </div>
                 <div className="text-sm">
                   {d.buyerUsername ? `المشتري: @${d.buyerUsername}` : null}
@@ -118,7 +141,6 @@ export default function DisputesIndex() {
         ))
       )}
 
-      {/* زر رجوع اختياري */}
       <div className="pt-2">
         <Button variant="secondary" size="sm" onClick={() => navigate("/")}>رجوع</Button>
       </div>
