@@ -1,10 +1,13 @@
 // server/routers/disputes.ts
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, or, and } from "drizzle-orm";
 import { db } from "../db.js";
-import { disputes, messages, listings } from "@shared/schema";
+import { disputes, messages, listings, payments } from "@shared/schema";
 
+/* =========================
+   Schemas
+========================= */
 const idParam = z.object({ id: z.string().uuid() });
 
 const createDisputeSchema = z.object({
@@ -15,7 +18,9 @@ const createDisputeSchema = z.object({
   evidence: z.string().optional(),
 });
 
-/** يرجّع الشكل المناسب للفرونت */
+/* =========================
+   Helpers
+========================= */
 function expandDisputeRow(row: any) {
   return {
     ...row,
@@ -27,51 +32,128 @@ function expandDisputeRow(row: any) {
   };
 }
 
-/** يستخرج يوزر من الهيدر أو ميدلوير tgAuth */
 function getReqUsername(req: Request): string | undefined {
   const hdr =
     (req.headers["x-telegram-username"] as string) ||
     (req.headers["x-user-username"] as string);
   if (hdr && typeof hdr === "string") return hdr;
   const tg = (req as any).telegramUser;
-  if (tg?.username) return tg.username as string;
+  if (tg?.username) return String(tg.username);
   if (typeof req.body?.senderUsername === "string") return req.body.senderUsername;
   return undefined;
 }
 
+/** يجلب عنوان الليستنك عبر paymentId -> payments.listingId -> listings.title */
+async function fetchListingTitleByPaymentId(paymentId: string): Promise<string | null> {
+  const p = await db
+    .select({ listingId: payments.listingId })
+    .from(payments)
+    .where(eq(payments.id, paymentId))
+    .limit(1);
+
+  const listingId = p[0]?.listingId;
+  if (!listingId) return null;
+
+  const l = await db
+    .select({ title: listings.title })
+    .from(listings)
+    .where(eq(listings.id, listingId))
+    .limit(1);
+
+  return l[0]?.title ?? null;
+}
+
+/* =========================
+   Routes
+========================= */
 export function registerDisputesRoutes(app: Express) {
-  /** إنشاء نزاع */
-  app.post("/api/disputes", async (req: Request, res: Response) => {
+  /** فهرس النزاعات:
+   *  - بدون باراميتر: يرجع الكل بترتيب تنازلي
+   *  - ?me=1 : يرجّع نزاعات تخص المستخدم الحالي (مشتري أو بائع)
+   *  - ?username=: يرجّع نزاعات تخص هذا اليوزر
+   */
+  app.get("/api/disputes", async (req: Request, res: Response) => {
     try {
-      const body = createDisputeSchema.parse(req.body ?? {});
-      const inserted = await db
-        .insert(disputes)
-        .values({
-          paymentId: body.paymentId,
-          buyerUsername: body.buyerUsername ?? null,
-          sellerUsername: body.sellerUsername ?? null,
-          reason: body.reason ?? null,
-          evidence: body.evidence ?? null,
-          status: "open",
-        })
-        .returning();
-      return res.status(201).json(expandDisputeRow(inserted[0]));
+      const me = req.query.me === "1" || req.query.me === "true";
+      const qUsername =
+        typeof req.query.username === "string" && req.query.username.trim()
+          ? String(req.query.username).trim()
+          : undefined;
+
+      const inferred = getReqUsername(req);
+      const username = qUsername ?? (me ? inferred : undefined);
+
+      if (!username) {
+        const list = await db.select().from(disputes).orderBy(desc(disputes.createdAt));
+        return res.json(list.map(expandDisputeRow));
+      }
+
+      const list = await db
+        .select()
+        .from(disputes)
+        .where(or(eq(disputes.buyerUsername, username), eq(disputes.sellerUsername, username)))
+        .orderBy(desc(disputes.createdAt));
+
+      return res.json(list.map(expandDisputeRow));
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 
-  /** قراءة نزاع + عنوان الليستنك إن توفّر */
+  /** إنشاء نزاع:
+   *  - يتحقق من وجود الـ payment
+   *  - يملأ buyerUsername/sellerUsername من جدول payments إذا ما انبعثت
+   */
+  app.post("/api/disputes", async (req: Request, res: Response) => {
+    try {
+      const body = createDisputeSchema.parse(req.body ?? {});
+
+      const payRow = await db
+        .select({
+          id: payments.id,
+          buyerUsername: payments.buyerUsername,
+          sellerUsername: payments.sellerUsername,
+          listingId: payments.listingId,
+        })
+        .from(payments)
+        .where(eq(payments.id, body.paymentId))
+        .limit(1);
+
+      if (!payRow.length) return res.status(404).json({ error: "payment_not_found" });
+
+      const buyerU = body.buyerUsername ?? payRow[0].buyerUsername ?? null;
+      const sellerU = body.sellerUsername ?? payRow[0].sellerUsername ?? null;
+
+      const inserted = await db
+        .insert(disputes)
+        .values({
+          paymentId: body.paymentId,
+          buyerUsername: buyerU,
+          sellerUsername: sellerU,
+          reason: body.reason ?? null,
+          evidence: body.evidence ?? null,
+          status: "open",
+        })
+        .returning();
+
+      const listingTitle = await fetchListingTitleByPaymentId(body.paymentId);
+
+      return res.status(201).json(expandDisputeRow({ ...inserted[0], listingTitle }));
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** قراءة نزاع مفرد + listingTitle من payment->listing */
   app.get("/api/disputes/:id", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
+
       const rows = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!rows.length) return res.status(404).json({ error: "not_found" });
 
       const d = rows[0];
-      // محاولة جلب listingTitle إذا عندك ربط بين payment->listing أو تخزّنه بغير مكان
-      // هنا نفترض عندك listingId داخل disputes غير موجود حالياً، فالعنوان يبقى null
-      const listingTitle: string | null = null;
+      const listingTitle = d.paymentId ? await fetchListingTitleByPaymentId(d.paymentId) : null;
 
       return res.json(expandDisputeRow({ ...d, listingTitle }));
     } catch (e: any) {
@@ -94,7 +176,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** رسائل النزاع - إنشاء: يقبل { text } */
+  /** رسائل النزاع - إنشاء: يقبل { text } ويستنتج senderUsername بأمان */
   app.post("/api/disputes/:id/messages", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
@@ -120,7 +202,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** حسم النزاع: يضبط status=resolved و resolvedAt */
+  /** حسم النزاع: status=resolved + resolvedAt */
   app.post("/api/disputes/:id/resolve", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
@@ -130,7 +212,11 @@ export function registerDisputesRoutes(app: Express) {
         .where(eq(disputes.id, id))
         .returning();
       if (!updated.length) return res.status(404).json({ error: "not_found" });
-      return res.json(expandDisputeRow(updated[0]));
+
+      const d = updated[0];
+      const listingTitle = d.paymentId ? await fetchListingTitleByPaymentId(d.paymentId) : null;
+
+      return res.json(expandDisputeRow({ ...d, listingTitle }));
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
@@ -146,7 +232,11 @@ export function registerDisputesRoutes(app: Express) {
         .where(eq(disputes.id, id))
         .returning();
       if (!updated.length) return res.status(404).json({ error: "not_found" });
-      return res.json(expandDisputeRow(updated[0]));
+
+      const d = updated[0];
+      const listingTitle = d.paymentId ? await fetchListingTitleByPaymentId(d.paymentId) : null;
+
+      return res.json(expandDisputeRow({ ...d, listingTitle }));
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
