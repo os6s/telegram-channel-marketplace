@@ -1,23 +1,42 @@
 // server/routers/balance.ts
-import type { Express } from "express";
-import { tgAuth } from "../middleware/tgAuth";
-import { storage } from "../storage";
-import type { Payment } from "@shared/schema";
+import type { Express, Request, Response } from "express";
+import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
+import { db } from "../db.js";
+import { users, payments } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
-function sum(rows: Payment[], pred: (p: Payment) => boolean) {
-  return +rows.filter(pred).reduce((s, p) => s + Number(p.amount || 0), 0).toFixed(9);
+type TgUser = { id: number };
+
+function sum(nums: (string | number | null | undefined)[]) {
+  return +nums.reduce((s, v) => s + Number(v || 0), 0).toFixed(9);
+}
+
+async function getMe(req: Request) {
+  const tg = (req as any).telegramUser as TgUser | undefined;
+  if (!tg?.id) return null;
+  // telegram_id هو BIGINT؛ وضعناه كـ number في Drizzle
+  return await db.query.users.findFirst({ where: eq(users.telegramId, Number(tg.id)) });
 }
 
 export function mountBalance(app: Express) {
-  app.get("/api/me/balance", tgAuth, async (req, res) => {
-    const me = await storage.getUserByTelegramId(String((req as any).telegramUser.id));
+  app.get("/api/me/balance", tgAuth, async (req: Request, res: Response) => {
+    const me = await getMe(req);
     if (!me) return res.status(404).json({ error: "user_not_found" });
-    if (!me.username) return res.status(400).json({ error: "username_required" });
 
-    const pays = await storage.listPaymentsByBuyerUsername(me.username);
+    const rows = await db.query.payments.findMany({
+      where: eq(payments.buyerId, me.id),
+      columns: {
+        amount: true,
+        kind: true,
+        status: true,
+        locked: true,
+      },
+    });
 
-    const deposits = sum(pays, p => p.kind === "deposit" && p.status === "paid");
-    const locked   = sum(pays, p => p.kind === "order" && !!p.locked && (p.status === "pending" || p.status === "paid"));
+    const deposits = sum(rows.filter(r => r.kind === "deposit" && r.status === "paid").map(r => r.amount));
+    const locked   = sum(rows.filter(r =>
+      r.kind === "order" && !!r.locked && (r.status === "pending" || r.status === "paid")
+    ).map(r => r.amount));
     const balance  = +(deposits - locked).toFixed(9);
 
     res.json({ currency: "TON", deposits, locked, balance });
