@@ -4,6 +4,7 @@ import { z } from "zod";
 import { eq, desc, or } from "drizzle-orm";
 import { db } from "../db.js";
 import { disputes, messages, listings, payments } from "@shared/schema";
+import { tgOptionalAuth } from "../middleware/tgAuth.js";
 
 /* ========================= Schemas ========================= */
 const idParam = z.object({ id: z.string().uuid() });
@@ -31,10 +32,10 @@ function getReqUsername(req: Request): string | undefined {
   const hdr =
     (req.headers["x-telegram-username"] as string) ||
     (req.headers["x-user-username"] as string);
-  if (hdr && typeof hdr === "string") return hdr;
+  if (hdr && typeof hdr === "string") return hdr.toLowerCase();
   const tg = (req as any).telegramUser;
-  if (tg?.username) return String(tg.username);
-  if (typeof req.body?.senderUsername === "string") return req.body.senderUsername;
+  if (tg?.username) return String(tg.username).toLowerCase();
+  if (typeof req.body?.senderUsername === "string") return String(req.body.senderUsername).toLowerCase();
   return undefined;
 }
 
@@ -44,22 +45,19 @@ async function fetchListingTitleByPaymentId(paymentId: string): Promise<string |
     .from(payments)
     .where(eq(payments.id, paymentId))
     .limit(1);
-
   const listingId = p[0]?.listingId;
   if (!listingId) return null;
-
   const l = await db
     .select({ title: listings.title })
     .from(listings)
     .where(eq(listings.id, listingId))
     .limit(1);
-
   return l[0]?.title ?? null;
 }
 
 /** السماح فقط للمشتري/البائع بالدخول */
 function ensureParticipant(req: Request, d: { buyerUsername: string|null; sellerUsername: string|null }) {
-  const me = (getReqUsername(req) || "").toLowerCase();
+  const me = getReqUsername(req) || "";
   const by = (d.buyerUsername || "").toLowerCase();
   const se = (d.sellerUsername || "").toLowerCase();
   return !!me && (me === by || me === se);
@@ -67,30 +65,22 @@ function ensureParticipant(req: Request, d: { buyerUsername: string|null; seller
 
 /* ========================= Routes ========================= */
 export function registerDisputesRoutes(app: Express) {
+  // فعّل التوثيق الاختياري لكل طلبات النزاعات
+  app.use("/api/disputes", tgOptionalAuth);
+
   /** فهرس نزاعات المستخدم */
   app.get("/api/disputes", async (req: Request, res: Response) => {
     try {
       const me = req.query.me === "1" || req.query.me === "true";
-      const qUsername =
-        typeof req.query.username === "string" && req.query.username.trim()
-          ? String(req.query.username).trim()
-          : undefined;
-
       const inferred = getReqUsername(req);
-
-      let username: string | undefined;
-      if (me && inferred) {
-        username = inferred;
-      } else if (qUsername && inferred && qUsername.toLowerCase() === inferred.toLowerCase()) {
-        username = qUsername;
-      } else {
+      if (!me || !inferred) {
         return res.status(403).json({ error: "forbidden" });
       }
 
       const list = await db
         .select()
         .from(disputes)
-        .where(or(eq(disputes.buyerUsername, username), eq(disputes.sellerUsername, username)))
+        .where(or(eq(disputes.buyerUsername, inferred), eq(disputes.sellerUsername, inferred)))
         .orderBy(desc(disputes.createdAt));
 
       return res.json(list.map(expandDisputeRow));
@@ -137,7 +127,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** قراءة نزاع مفرد (مقيد بالمشاركين) */
+  /** قراءة نزاع مفرد */
   app.get("/api/disputes/:id", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
@@ -153,7 +143,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** رسائل النزاع - قراءة (مقيد بالمشاركين) */
+  /** رسائل النزاع - قراءة */
   app.get("/api/disputes/:id/messages", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
@@ -175,7 +165,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** رسائل النزاع - إنشاء (مقيد بالمشاركين) */
+  /** رسائل النزاع - إنشاء */
   app.post("/api/disputes/:id/messages", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
@@ -185,7 +175,6 @@ export function registerDisputesRoutes(app: Express) {
 
       const dRows = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!dRows.length) return res.status(404).json({ error: "dispute_not_found" });
-
       if (!ensureParticipant(req, dRows[0])) return res.status(403).json({ error: "forbidden" });
 
       const row = await db
@@ -199,7 +188,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** حسم النزاع (مقيد بالمشاركين) */
+  /** حسم النزاع */
   app.post("/api/disputes/:id/resolve", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
@@ -221,7 +210,7 @@ export function registerDisputesRoutes(app: Express) {
     }
   });
 
-  /** إلغاء/إغلاق النزاع (مقيد بالمشاركين) */
+  /** إلغاء/إغلاق النزاع */
   app.post("/api/disputes/:id/cancel", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
@@ -244,5 +233,5 @@ export function registerDisputesRoutes(app: Express) {
   });
 }
 
-/* اختيارياً لتفادي أخطاء استيراد قديمة */
+// للتوافق مع استيراد mountDisputes
 export { registerDisputesRoutes as mountDisputes };
