@@ -279,18 +279,7 @@ export const activities = pgTable(
     actsPaymentIdx: index("idx_activities_payment_created").on(t.paymentId, t.createdAt),
     actsListingIdx: index("idx_activities_listing_created").on(t.listingId, t.createdAt),
   })
-).addCheckConstraint(
-  // 6) CHECK constraint: presence of money fields for certain types
-  "activities_money_presence",
-  sql`
-    (
-      (type IN ('buy','sold','buyer_confirm','seller_confirm','admin_release','admin_refund')
-        AND amount IS NOT NULL AND currency IS NOT NULL)
-      OR
-      (type IN ('listed','updated','cancel') AND amount IS NULL AND currency IS NULL)
-    )
-  `
-);
+
 
 /* =========================
    payouts (اختياري حسب استخدامك)
