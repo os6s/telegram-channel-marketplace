@@ -1,5 +1,3 @@
-جاهز. هذا إصدار مُنظَّف وآمن (بدون process.exit على أخطاء Vite)، مع تحسّينين صغار: التحقق من وجود client/index.html برسالة واضحة، وكاش ثابت للملفات في الإنتاج.
-
 // server/vite.ts
 import express, { type Express } from "express";
 import fs from "fs";
