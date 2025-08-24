@@ -1,10 +1,9 @@
 // shared/schema/views.ts
-import { pgView, uuid, timestamp, varchar, numeric, boolean } from "drizzle-orm/pg-core";
+import { pgView, uuid, timestamp, varchar, numeric, boolean, bigint } from "drizzle-orm/pg-core";
 
 /* =========================
-   Existing Views (from DB)
+   Activities View
 ========================= */
-
 export const activitiesView = pgView("activities_view", {
   id: uuid("id"),
   createdAt: timestamp("created_at", { withTimezone: true }),
@@ -20,6 +19,9 @@ export const activitiesView = pgView("activities_view", {
   sellerUsername: varchar("seller_username", { length: 64 }),
 }).existing();
 
+/* =========================
+   Disputes View
+========================= */
 export const disputesView = pgView("disputes_view", {
   id: uuid("id"),
   createdAt: timestamp("created_at", { withTimezone: true }),
@@ -34,6 +36,9 @@ export const disputesView = pgView("disputes_view", {
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
 }).existing();
 
+/* =========================
+   Dispute Messages View
+========================= */
 export const disputeMessagesView = pgView("dispute_messages_view", {
   id: uuid("id"),
   disputeId: uuid("dispute_id"),
@@ -43,7 +48,10 @@ export const disputeMessagesView = pgView("dispute_messages_view", {
   createdAt: timestamp("created_at", { withTimezone: true }),
 }).existing();
 
-export const marketActivityView = pgView("market_activity_view", {
+/* =========================
+   Market Activity View
+========================= */
+export const marketActivityView = pgView("market_activity", {
   id: uuid("id"),
   createdAt: timestamp("created_at", { withTimezone: true }),
   kind: varchar("kind", { length: 16 }),
@@ -55,6 +63,9 @@ export const marketActivityView = pgView("market_activity_view", {
   buyer: varchar("buyer", { length: 64 }),
 }).existing();
 
+/* =========================
+   Market Listings View
+========================= */
 export const marketListingsView = pgView("market_listings_view", {
   id: uuid("id"),
   createdAt: timestamp("created_at", { withTimezone: true }),
@@ -68,6 +79,9 @@ export const marketListingsView = pgView("market_listings_view", {
   isActive: boolean("is_active"),
 }).existing();
 
+/* =========================
+   Payments View
+========================= */
 export const paymentsView = pgView("payments_view", {
   id: uuid("id"),
   createdAt: timestamp("created_at", { withTimezone: true }),
@@ -85,11 +99,12 @@ export const paymentsView = pgView("payments_view", {
 }).existing();
 
 /* =========================
-   New View: wallet_balances
+   Wallet Balances View
 ========================= */
 export const walletBalancesView = pgView("wallet_balances", {
   userId: uuid("user_id"),
   username: varchar("username", { length: 64 }),
   balance: numeric("balance", { precision: 18, scale: 8 }),
-  currency: varchar("currency", { length: 8 }),
+  txCount: bigint("tx_count", { mode: "number" }),
+  lastTx: timestamp("last_tx", { withTimezone: true }),
 }).existing();
