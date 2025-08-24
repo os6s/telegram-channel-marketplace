@@ -4,7 +4,9 @@ import { sql } from "drizzle-orm";
 import { listingKindEnum, platformKindEnum } from "./enums";
 import { users } from "./users";
 
-const tsvector = customType<{ data: string; notNull: false; default: false }>({ dataType: () => "tsvector" });
+const tsvector = customType<{ data: string; notNull: false; default: false }>({
+  dataType: () => "tsvector",
+});
 
 export const listings = pgTable(
   "listings",
@@ -61,7 +63,7 @@ CREATE OR REPLACE FUNCTION listings_tsvector_update()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   NEW.search_vector :=
-    to_tsvector('english',
+    to_tsvector('simple',
       coalesce(NEW.username,'') || ' ' ||
       coalesce(NEW.title,'')    || ' ' ||
       coalesce(NEW.description,'')
@@ -78,4 +80,8 @@ BEGIN
     FOR EACH ROW EXECUTE FUNCTION listings_tsvector_update();
   END IF;
 END$$;
+
+-- فهرس GIN لتسريع البحث النصي
+CREATE INDEX IF NOT EXISTS idx_listings_search_vector
+ON listings USING GIN (search_vector);
 `;
