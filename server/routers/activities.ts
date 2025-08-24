@@ -60,21 +60,25 @@ function toNum(v: unknown): number | null {
 
 /* ========= Router ========= */
 export function mountActivities(app: Express) {
-  // List activities by username or listing
+  // List activities (by username / listingId) or latest if none provided
   app.get("/api/activities", async (req: Request, res: Response) => {
     try {
       const q = listQuery.safeParse(req.query);
-      if (!q.success || (!q.data.username && !q.data.listingId)) {
-        return res.status(400).json({ error: "username or listingId required" });
-      }
 
-      let whereExp;
-      if (q.data.username) {
-        const u = await getUserByUsernameInsensitive(q.data.username);
-        if (!u) return res.json([]);
-        whereExp = or(eq(activities.buyerId, u.id), eq(activities.sellerId, u.id));
-      } else {
-        whereExp = eq(activities.listingId, q.data.listingId!);
+      // aliases لجدول users
+      const buyerU = users.as("buyer_u");
+      const sellerU = users.as("seller_u");
+
+      let whereExp: any | undefined;
+
+      if (q.success && (q.data.username || q.data.listingId)) {
+        if (q.data.username) {
+          const u = await getUserByUsernameInsensitive(q.data.username);
+          if (!u) return res.json([]);
+          whereExp = or(eq(activities.buyerId, u.id), eq(activities.sellerId, u.id));
+        } else {
+          whereExp = eq(activities.listingId, q.data.listingId!);
+        }
       }
 
       const rows = await db
@@ -91,17 +95,18 @@ export function mountActivities(app: Express) {
           txHash: activities.txHash,
           note: activities.note,
           createdAt: activities.createdAt,
-          buyerUsername: users.username,
-          sellerUsername: users.username, // راح يرجع آخر join (seller)
+          buyerUsername: buyerU.username,
+          sellerUsername: sellerU.username,
           title: listings.title,
           handle: listings.username,
         })
         .from(activities)
-        .leftJoin(users, eq(users.id, activities.buyerId))
-        .leftJoin(users, eq(users.id, activities.sellerId))
+        .leftJoin(buyerU, eq(buyerU.id, activities.buyerId))
+        .leftJoin(sellerU, eq(sellerU.id, activities.sellerId))
         .leftJoin(listings, eq(listings.id, activities.listingId))
         .where(whereExp)
-        .orderBy(desc(activities.createdAt));
+        .orderBy(desc(activities.createdAt))
+        .limit(whereExp ? 200 : 50); // إذا ماكو فلتر رجّع آخر 50
 
       res.json(rows);
     } catch (error: any) {
@@ -114,6 +119,9 @@ export function mountActivities(app: Express) {
     try {
       const id = String(req.params.id || "");
       if (!id) return res.status(400).json({ error: "id required" });
+
+      const buyerU = users.as("buyer_u");
+      const sellerU = users.as("seller_u");
 
       const row = await db
         .select({
@@ -129,14 +137,14 @@ export function mountActivities(app: Express) {
           txHash: activities.txHash,
           note: activities.note,
           createdAt: activities.createdAt,
-          buyerUsername: users.username,
-          sellerUsername: users.username,
+          buyerUsername: buyerU.username,
+          sellerUsername: sellerU.username,
           title: listings.title,
           handle: listings.username,
         })
         .from(activities)
-        .leftJoin(users, eq(users.id, activities.buyerId))
-        .leftJoin(users, eq(users.id, activities.sellerId))
+        .leftJoin(buyerU, eq(buyerU.id, activities.buyerId))
+        .leftJoin(sellerU, eq(sellerU.id, activities.sellerId))
         .leftJoin(listings, eq(listings.id, activities.listingId))
         .where(eq(activities.id, id));
 
@@ -213,10 +221,14 @@ export function mountActivities(app: Express) {
       const activity = created[0];
 
       if (type === "buy" && listing.kind !== "service" && listing.isActive) {
-        await db.update(listings).set({ isActive: false, updatedAt: new Date() }).where(eq(listings.id, listing.id));
+        await db
+          .update(listings)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(eq(listings.id, listing.id));
       }
 
-      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const title =
+        listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
       const priceStr = S(activity.amount || listing.price);
       const ccy = S(activity.currency || listing.currency || "TON");
 
@@ -241,7 +253,9 @@ export function mountActivities(app: Express) {
           buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
           ``,
           `Please proceed with delivery and communicate in-app if needed.`,
-        ].filter(Boolean).join("\n")
+        ]
+          .filter(Boolean)
+          .join("\n")
       );
 
       res.status(201).json(activity);
@@ -286,7 +300,8 @@ export function mountActivities(app: Express) {
         })
         .returning();
 
-      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const title =
+        listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
       const priceStr = S(listing.price);
       const ccy = S(listing.currency || "TON");
 
@@ -300,11 +315,18 @@ export function mountActivities(app: Express) {
           buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
           ``,
           `Admin will review and finalize the transaction.`,
-        ].filter(Boolean).join("\n")
+        ]
+          .filter(Boolean)
+          .join("\n")
       );
       await sendTelegramMessage(
         buyer.telegramId,
-        [`📝 <b>Your confirmation was recorded</b>`, ``, `<b>Item:</b> ${title}`, `<b>Status:</b> Waiting for admin finalization`].join("\n")
+        [
+          `📝 <b>Your confirmation was recorded</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Status:</b> Waiting for admin finalization`,
+        ].join("\n")
       );
 
       res.status(201).json(created[0]);
@@ -347,7 +369,8 @@ export function mountActivities(app: Express) {
         })
         .returning();
 
-      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const title =
+        listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
       const priceStr = S(listing.price);
       const ccy = S(listing.currency || "TON");
 
@@ -361,11 +384,18 @@ export function mountActivities(app: Express) {
           seller.username ? `<b>Seller:</b> @${seller.username}` : "",
           ``,
           `Please confirm receipt from your side if all is OK.`,
-        ].filter(Boolean).join("\n")
+        ]
+          .filter(Boolean)
+          .join("\n")
       );
       await sendTelegramMessage(
         seller.telegramId,
-        [`📝 <b>Your delivery confirmation was recorded</b>`, ``, `<b>Item:</b> ${title}`, `<b>Status:</b> Waiting for buyer / admin`].join("\n")
+        [
+          `📝 <b>Your delivery confirmation was recorded</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Status:</b> Waiting for buyer / admin`,
+        ].join("\n")
       );
 
       res.status(201).json(created[0]);
@@ -388,7 +418,11 @@ export function mountActivities(app: Express) {
         return res.status(400).json({ error: "no_updates" });
       }
 
-      const updated = await db.update(activities).set(allowed).where(eq(activities.id, id)).returning();
+      const updated = await db
+        .update(activities)
+        .set(allowed)
+        .where(eq(activities.id, id))
+        .returning();
       if (!updated.length) return res.status(404).json({ error: "Activity not found" });
       res.json(updated[0]);
     } catch (error: any) {
