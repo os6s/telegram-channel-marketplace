@@ -1,7 +1,8 @@
 // server/routers/activities.ts
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { desc, eq, or, sql, alias } from "drizzle-orm";
+import { desc, eq, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core"; // 👈 التصحيح هنا
 import { db } from "../db.js";
 import { activities, listings, users } from "@shared/schema";
 import { ensureBuyerHasFunds } from "../ton-utils";
@@ -27,7 +28,7 @@ async function sendTelegramMessage(
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
     });
-  } catch { /* ignore */ }
+  } catch {}
 }
 
 /* ========= schemas (محلية) ========= */
