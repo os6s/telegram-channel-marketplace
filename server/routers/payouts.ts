@@ -3,35 +3,28 @@ import type { Express } from "express";
 import { tgAuth } from "../middleware/tgAuth";
 import { storage } from "../storage";
 import { db } from "../db";
-import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
-import type { Payout } from "@shared/schema";
 
-/** الرصيد المتاح = deposits(paid) - orders(locked & pending/paid)
- *  نعتمد على buyerUsername للرصيد فقط (لا نخزن usernames في payouts)
- */
-async function computeBalance(buyerUsername: string) {
-  const pays = await storage.listPaymentsByBuyerUsername(buyerUsername);
-  const deposits = +pays
-    .filter((p) => p.kind === "deposit" && p.status === "paid")
-    .reduce((s, p) => s + Number(p.amount || 0), 0)
-    .toFixed(9);
+// استيراد موحّد من الإنديكس
+import { users, walletBalancesView, type Payout } from "@shared/schema";
 
-  const locked = +pays
-    .filter(
-      (p) =>
-        p.kind === "order" &&
-        p.locked &&
-        (p.status === "pending" || p.status === "paid")
+/** حساب الرصيد المتاح من الفيو wallet_balances */
+async function computeBalanceByUserId(userId: string, currency = "TON") {
+  const row = await db
+    .select({ balance: walletBalancesView.balance })
+    .from(walletBalancesView)
+    .where(
+      // لو عندك multi-currency وتريد تقيّد بالعملة:
+      // and(eq(walletBalancesView.userId, userId as any), eq(walletBalancesView.currency, currency))
+      eq(walletBalancesView.userId, userId as any)
     )
-    .reduce((s, p) => s + Number(p.amount || 0), 0)
-    .toFixed(9);
+    .limit(1);
 
-  return +(deposits - locked).toFixed(9);
+  return Number(row[0]?.balance ?? 0);
 }
 
-const MIN_WITHDRAW = Number(process.env.MIN_WITHDRAW || "0"); // اختياري
-const MAX_WITHDRAW = Number(process.env.MAX_WITHDRAW || "0"); // اختياري (0 = بدون حد)
+const MIN_WITHDRAW = Number(process.env.MIN_WITHDRAW || "0"); // 0 = بدون حد أدنى
+const MAX_WITHDRAW = Number(process.env.MAX_WITHDRAW || "0"); // 0 = بدون حد أعلى
 
 export function mountPayouts(app: Express) {
   /** إنشاء طلب سحب — يخزّن IDs فقط ويرجع sellerUsername في الـresponse */
@@ -59,7 +52,8 @@ export function mountPayouts(app: Express) {
         return res.status(400).json({ error: "above_max_withdraw", max: MAX_WITHDRAW });
       }
 
-      const balance = await computeBalance(uname);
+      // الرصيد من الـ view الجديدة
+      const balance = await computeBalanceByUserId(me.id, "TON");
       if (amount > balance) {
         return res.status(400).json({ error: "insufficient_balance", balance });
       }
@@ -70,7 +64,6 @@ export function mountPayouts(app: Express) {
         return res.status(409).json({ error: "payout_already_queued" });
       }
 
-      // نخزّن sellerId فقط
       const created = await storage.createPayout({
         paymentId: null,
         sellerId: me.id,
@@ -82,7 +75,6 @@ export function mountPayouts(app: Express) {
         txHash: null,
       });
 
-      // نضيف sellerUsername في الـresponse فقط (لا يُخزَّن)
       res.status(201).json({ ...created, sellerUsername: me.username ?? null });
     } catch (e: any) {
       res.status(500).json({ error: e?.message || "payout_request_failed" });
@@ -96,7 +88,6 @@ export function mountPayouts(app: Express) {
       if (!me) return res.status(404).json({ error: "user_not_found" });
 
       const rows = await storage.listPayoutsBySeller(me.id);
-      // enrich بـ sellerUsername (من users)
       const out = rows
         .sort(
           (a: Payout, b: Payout) =>
@@ -110,15 +101,18 @@ export function mountPayouts(app: Express) {
     }
   });
 
-  /** (اختياري) جلب payout مفرد وإضافة sellerUsername بالـresponse */
+  /** جلب payout مفرد وإضافة sellerUsername بالـresponse */
   app.get("/api/payouts/:id", tgAuth, async (req, res) => {
     try {
       const p = await storage.getPayout(req.params.id);
       if (!p) return res.status(404).json({ error: "not_found" });
 
-      // fetch seller username via join
       const u = p.sellerId
-        ? (await db.select({ username: users.username }).from(users).where(eq(users.id, p.sellerId)).limit(1))[0]
+        ? (await db
+            .select({ username: users.username })
+            .from(users)
+            .where(eq(users.id, p.sellerId))
+            .limit(1))[0]
         : undefined;
 
       return res.json({ ...p, sellerUsername: u?.username ?? null });
