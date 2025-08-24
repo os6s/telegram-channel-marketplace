@@ -67,7 +67,14 @@ export function mountListings(app: Express) {
       const unifiedUsername =
         parsed.kind === "service" ? undefined : normHandle(parsed.username);
 
-      const insert = {
+      // نجهّز القيم الاختيارية كأرقام (أو null)
+      const subs  = toNumberOrNull(parsed.subscribersCount);
+      const gifts = toNumberOrNull(parsed.giftsCount);
+      const folls = toNumberOrNull(parsed.followersCount);
+      const svcCt = toNumberOrNull(parsed.serviceCount);
+
+      // جسم الإدخال الأساسي (حقول موجودة أكيد بالجدول)
+      const insert: Partial<typeof listings.$inferInsert> = {
         sellerId: me.id,
         buyerId: null,
         kind: parsed.kind,
@@ -80,21 +87,27 @@ export function mountListings(app: Express) {
         price: S(parsed.price),
         currency: parsed.currency || "TON",
         channelMode: parsed.channelMode || null,
-        subscribersCount: toNumberOrNull(parsed.subscribersCount) as any,
-        giftsCount: toNumberOrNull(parsed.giftsCount) as any,
         giftKind: parsed.giftKind || null,
         tgUserType: parsed.tgUserType || null,
-        followersCount: toNumberOrNull(parsed.followersCount) as any,
         accountCreatedAt: parsed.accountCreatedAt || null,
         serviceType: parsed.serviceType || null,
         target: parsed.target || null,
-        serviceCount: toNumberOrNull(parsed.serviceCount) as any,
         isActive: true,
         removedByAdmin: false,
         removedReason: null,
-      } satisfies typeof listings.$inferInsert;
+      };
 
-      const created = await db.insert(listings).values(insert).returning();
+      // أضف الحقول الاختيارية فقط إذا لها قيمة — لتجنّب أعمدة غير موجودة في DB
+      if (subs  !== null) insert.subscribersCount = subs as any;
+      if (gifts !== null) insert.giftsCount      = gifts as any;
+      if (svcCt !== null) insert.serviceCount    = svcCt as any;
+
+      // followersCount: لا تضيفه لِـ kind="username"، وبشكل عام أضِفه فقط إذا عندك العمود وتحتاجه
+      if (parsed.kind !== "username" && folls !== null) {
+        (insert as any).followersCount = folls;
+      }
+
+      const created = await db.insert(listings).values(insert as any).returning();
       return res.status(201).json(created[0]);
     } catch (e: any) {
       return res.status(400).json({ error: e?.message || "invalid_payload" });
@@ -104,11 +117,11 @@ export function mountListings(app: Express) {
   /** GET /api/listings — يستخدم الفيو market_listings */
   app.get("/api/listings", async (req: Request, res: Response) => {
     try {
-      const search = (req.query.search as string) || "";
-      const kind = (req.query.kind as string) || (req.query.type as string) || "";
+      const search   = (req.query.search as string) || "";
+      const kind     = (req.query.kind as string) || (req.query.type as string) || "";
       const platform = (req.query.platform as string) || "";
       const onlyActive = req.query.active !== "0"; // default true
-      const seller = (req.query.seller as string) || (req.query.sellerUsername as string) || "";
+      const seller   = (req.query.seller as string) || (req.query.sellerUsername as string) || "";
 
       const whereParts: any[] = [];
 
@@ -122,13 +135,10 @@ export function mountListings(app: Express) {
       if (platform) whereParts.push(eq(marketListingsView.platform, platform));
       if (onlyActive) whereParts.push(eq(marketListingsView.isActive, true));
 
-      // seller filter (يُضاف فقط عند وجود قيمة)
       if (seller && seller.trim() !== "") {
-        const s = seller.trim().replace(/^@/, "").toLowerCase();
-        // تطابق تام
-        whereParts.push(eq(marketListingsView.seller, s));
-        // لو تريد contains بدلًا من التطابق التام، استبدل بالسطر التالي:
-        // whereParts.push(ilike(marketListingsView.seller, `%${s}%`));
+        // خزنّاه بالفيو كنص (عادة بدون @). خليه contains حتى ما نتقيّد بالشكل
+        const s = seller.trim().replace(/^@/, "");
+        whereParts.push(ilike(marketListingsView.seller, `%${s}%`));
       }
 
       const rows = await db
