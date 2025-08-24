@@ -1,25 +1,29 @@
 // server/storage.ts
-import { and, ilike, eq, gte, desc, or, sql } from "drizzle-orm";
+import { and, ilike, eq, gte, desc, or, sql, lt } from "drizzle-orm";
 import {
   users,
   listings,
   activities,
   payments,
   payouts,
+  walletLedger,
+  walletBalancesView,
 } from "@shared/schema";
 import { db } from "./db";
 
 /* ---------- Types from Drizzle tables ---------- */
-export type User          = typeof users.$inferSelect;
-export type InsertUser    = typeof users.$inferInsert;
-export type Listing       = typeof listings.$inferSelect;
-export type InsertListing = typeof listings.$inferInsert;
-export type Activity      = typeof activities.$inferSelect;
-export type InsertActivity= typeof activities.$inferInsert;
-export type Payment       = typeof payments.$inferSelect;
-export type InsertPayment = typeof payments.$inferInsert;
-export type Payout        = typeof payouts.$inferSelect;
-export type InsertPayout  = typeof payouts.$inferInsert;
+export type User              = typeof users.$inferSelect;
+export type InsertUser        = typeof users.$inferInsert;
+export type Listing           = typeof listings.$inferSelect;
+export type InsertListing     = typeof listings.$inferInsert;
+export type Activity          = typeof activities.$inferSelect;
+export type InsertActivity    = typeof activities.$inferInsert;
+export type Payment           = typeof payments.$inferSelect;
+export type InsertPayment     = typeof payments.$inferInsert;
+export type Payout            = typeof payouts.$inferSelect;
+export type InsertPayout      = typeof payouts.$inferInsert;
+export type WalletLedgerRow   = typeof walletLedger.$inferSelect;
+export type InsertWalletEntry = typeof walletLedger.$inferInsert;
 
 /* ---------- Contract ---------- */
 export interface IStorage {
@@ -68,6 +72,14 @@ export interface IStorage {
   listPayoutsBySellerId(sellerId: string): Promise<Payout[]>;
   createPayout(data: InsertPayout): Promise<Payout>;
   updatePayout(id: string, updates: Partial<Payout>): Promise<Payout | undefined>;
+
+  // wallet
+  getWalletBalance(userId: string, currency?: string): Promise<{ balance: number; currency: string }>;
+  listWalletLedger(
+    userId: string,
+    opts?: { limit?: number; before?: Date }
+  ): Promise<WalletLedgerRow[]>;
+  addWalletEntry(entry: InsertWalletEntry): Promise<WalletLedgerRow>;
 
   // stats
   getMarketplaceStats(): Promise<{ activeListings: number; totalVolume: string; totalSales: number }>;
@@ -260,6 +272,50 @@ class PostgreSQLStorage implements IStorage {
   }
   async updatePayout(id: string, updates: Partial<Payout>) {
     const rows = await db.update(payouts).set(updates as any).where(eq(payouts.id, id)).returning();
+    return rows[0];
+  }
+
+  /* wallet */
+  async getWalletBalance(userId: string, currency = "TON") {
+    // نحاول من الفيو أولاً (أسرع)، وإذا ما رجع صف نستخدم تجميع مباشر
+    const viewRow = await db.query.walletBalancesView.findFirst({
+      where: and(eq(walletBalancesView.userId, userId), eq(walletBalancesView.currency, currency)),
+      columns: { balance: true },
+    });
+
+    if (viewRow?.balance != null) {
+      return { balance: Number(viewRow.balance), currency };
+    }
+
+    const agg = await db
+      .select({
+        bal: sql<number>`COALESCE(SUM(CASE WHEN ${walletLedger.direction} = 'in' THEN ${walletLedger.amount} ELSE -${walletLedger.amount} END), 0)::numeric`,
+      })
+      .from(walletLedger)
+      .where(and(eq(walletLedger.userId, userId), eq(walletLedger.currency, currency)));
+
+    const bal = Number((agg[0] as any)?.bal ?? 0);
+    return { balance: bal, currency };
+  }
+
+  async listWalletLedger(userId: string, opts?: { limit?: number; before?: Date }) {
+    const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 200);
+    const rows = await db
+      .select()
+      .from(walletLedger)
+      .where(
+        and(
+          eq(walletLedger.userId, userId),
+          opts?.before ? lt(walletLedger.createdAt, opts.before) : sql`TRUE`
+        )
+      )
+      .orderBy(desc(walletLedger.createdAt))
+      .limit(limit);
+    return rows;
+  }
+
+  async addWalletEntry(entry: InsertWalletEntry) {
+    const rows = await db.insert(walletLedger).values(entry).returning();
     return rows[0];
   }
 
