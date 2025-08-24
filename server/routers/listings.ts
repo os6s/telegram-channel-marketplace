@@ -1,17 +1,21 @@
 // server/routers/listings.ts
 import type { Express, Request, Response } from "express";
 import { db } from "../db.js";
-import { listings, users } from "@shared/schema";
 import { and, desc, eq, ilike, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { requireTelegramUser } from "../middleware/tgAuth.js";
 
+// استيراد موحد
+import {
+  listings,
+  users,
+  marketListingsView, // الفيو
+} from "@shared/schema";
+
 /* ===== Zod: create listing (sellerId from auth, not body) ===== */
 const createListingSchema = z.object({
   kind: z.enum(["channel", "username", "account", "service"]),
-  platform: z
-    .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
-    .default("telegram"),
+  platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).default("telegram"),
   username: z.string().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
@@ -41,10 +45,7 @@ const normHandle = (v?: string) =>
 
 async function currentUserRow(req: Request) {
   const meTg = req.telegramUser!;
-  const row = await db.query.users.findFirst({
-    where: eq(users.telegramId, Number(meTg.id)),
-  });
-  return row!;
+  return (await db.query.users.findFirst({ where: eq(users.telegramId, Number(meTg.id)) }))!;
 }
 
 function toNumberOrNull(v?: string | number | null) {
@@ -56,96 +57,74 @@ function toNumberOrNull(v?: string | number | null) {
 /* ===== Routes ===== */
 export function mountListings(app: Express) {
   /** POST /api/listings — create (seller = current user) */
-  app.post(
-    "/api/listings",
-    requireTelegramUser,
-    async (req: Request, res: Response) => {
-      try {
-        const me = await currentUserRow(req);
-        if (!me?.id) return res.status(401).json({ error: "unauthorized" });
+  app.post("/api/listings", requireTelegramUser, async (req: Request, res: Response) => {
+    try {
+      const me = await currentUserRow(req);
+      if (!me?.id) return res.status(401).json({ error: "unauthorized" });
 
-        const parsed = createListingSchema.parse(req.body ?? {});
-        const unifiedUsername =
-          parsed.kind === "service" ? undefined : normHandle(parsed.username);
+      const parsed = createListingSchema.parse(req.body ?? {});
+      const unifiedUsername =
+        parsed.kind === "service" ? undefined : normHandle(parsed.username);
 
-        const insert = {
-          sellerId: me.id,
-          buyerId: null,
-          kind: parsed.kind,
-          platform: parsed.platform,
-          username: unifiedUsername || null,
-          title:
-            (parsed.title && parsed.title.trim()) ||
-            (unifiedUsername ? `@${unifiedUsername}` : `${parsed.platform} ${parsed.kind}`),
-          description: parsed.description || null,
-          price: S(parsed.price),
-          currency: parsed.currency || "TON",
-          channelMode: parsed.channelMode || null,
-          subscribersCount: toNumberOrNull(parsed.subscribersCount) as any,
-          giftsCount: toNumberOrNull(parsed.giftsCount) as any,
-          giftKind: parsed.giftKind || null,
-          tgUserType: parsed.tgUserType || null,
-          followersCount: toNumberOrNull(parsed.followersCount) as any,
-          accountCreatedAt: parsed.accountCreatedAt || null,
-          serviceType: parsed.serviceType || null,
-          target: parsed.target || null,
-          serviceCount: toNumberOrNull(parsed.serviceCount) as any,
-          isActive: true,
-          removedByAdmin: false,
-          removedReason: null,
-        } satisfies typeof listings.$inferInsert;
+      const insert = {
+        sellerId: me.id,
+        buyerId: null,
+        kind: parsed.kind,
+        platform: parsed.platform,
+        username: unifiedUsername || null,
+        title: (parsed.title?.trim()) || (unifiedUsername ? `@${unifiedUsername}` : `${parsed.platform} ${parsed.kind}`),
+        description: parsed.description || null,
+        price: S(parsed.price),
+        currency: parsed.currency || "TON",
+        channelMode: parsed.channelMode || null,
+        subscribersCount: toNumberOrNull(parsed.subscribersCount) as any,
+        giftsCount: toNumberOrNull(parsed.giftsCount) as any,
+        giftKind: parsed.giftKind || null,
+        tgUserType: parsed.tgUserType || null,
+        followersCount: toNumberOrNull(parsed.followersCount) as any,
+        accountCreatedAt: parsed.accountCreatedAt || null,
+        serviceType: parsed.serviceType || null,
+        target: parsed.target || null,
+        serviceCount: toNumberOrNull(parsed.serviceCount) as any,
+        isActive: true,
+        removedByAdmin: false,
+        removedReason: null,
+      } satisfies typeof listings.$inferInsert;
 
-        const created = await db.insert(listings).values(insert).returning();
-        return res.status(201).json(created[0]);
-      } catch (e: any) {
-        return res.status(400).json({ error: e?.message || "invalid_payload" });
-      }
+      const created = await db.insert(listings).values(insert).returning();
+      return res.status(201).json(created[0]);
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message || "invalid_payload" });
     }
-  );
+  });
 
-  /** GET /api/listings — list with filters & exposing seller username */
+  /** GET /api/listings — يستخدم الفيو market_listings_view */
   app.get("/api/listings", async (req: Request, res: Response) => {
     try {
       const search = (req.query.search as string) || "";
       const kind = (req.query.kind as string) || (req.query.type as string) || "";
       const platform = (req.query.platform as string) || "";
       const onlyActive = req.query.active !== "0"; // default true
-      const sellerId = (req.query.sellerId as string) || "";
+      const seller = (req.query.seller as string) || (req.query.sellerUsername as string) || "";
 
       const whereParts = [
         search
           ? or(
-              ilike(listings.title, `%${search}%`),
-              ilike(listings.username, `%${search.replace(/^@/, "")}%`),
-              ilike(listings.description, `%${search}%`)
+              ilike(marketListingsView.title, `%${search}%`),
+              ilike(marketListingsView.username, `%${search.replace(/^@/, "")}%`)
             )
           : undefined,
-        kind ? (eq as any)(listings.kind, kind) : undefined,
-        platform ? (eq as any)(listings.platform, platform) : undefined,
-        sellerId ? eq(listings.sellerId, sellerId) : undefined,
-        onlyActive ? eq(listings.isActive, true) : undefined,
-        isNull(listings.deletedAt),
+        kind ? (eq as any)(marketListingsView.kind, kind) : undefined,
+        platform ? (eq as any)(marketListingsView.platform, platform) : undefined,
+        seller ? ilike(marketListingsView.seller, seller.startsWith("@") ? seller : `@${seller}`) : undefined,
+        onlyActive ? eq(marketListingsView.isActive, true) : undefined,
       ].filter(Boolean) as any[];
 
       const rows = await db
-        .select({
-          id: listings.id,
-          kind: listings.kind,
-          platform: listings.platform,
-          username: listings.username,
-          title: listings.title,
-          description: listings.description,
-          price: listings.price,
-          currency: listings.currency,
-          isActive: listings.isActive,
-          createdAt: listings.createdAt,
-          sellerId: listings.sellerId,
-          sellerUsername: users.username, // via join
-        })
-        .from(listings)
-        .leftJoin(users, eq(users.id, listings.sellerId))
+        .select()
+        .from(marketListingsView)
         .where(whereParts.length ? and(...whereParts) : undefined)
-        .orderBy(desc(listings.createdAt));
+        .orderBy(desc(marketListingsView.createdAt));
 
       return res.json(rows);
     } catch (e: any) {
@@ -153,7 +132,7 @@ export function mountListings(app: Express) {
     }
   });
 
-  /** GET /api/listings/:id — single (with seller username) */
+  /** GET /api/listings/:id — single (نحتاج sellerId لذا نقرأ من الجدول مع join) */
   app.get("/api/listings/:id", async (req: Request, res: Response) => {
     const id = String(req.params.id || "");
     if (!id) return res.status(400).json({ error: "id required" });
@@ -182,23 +161,19 @@ export function mountListings(app: Express) {
   });
 
   /** DELETE /api/listings/:id — owner or admin/moderator */
-  app.delete(
-    "/api/listings/:id",
-    requireTelegramUser,
-    async (req: Request, res: Response) => {
-      const id = String(req.params.id || "");
-      if (!id) return res.status(400).json({ error: "id required" });
+  app.delete("/api/listings/:id", requireTelegramUser, async (req: Request, res: Response) => {
+    const id = String(req.params.id || "");
+    if (!id) return res.status(400).json({ error: "id required" });
 
-      const me = await currentUserRow(req);
-      const listing = await db.query.listings.findFirst({ where: eq(listings.id, id) });
-      if (!listing) return res.status(404).json({ error: "not_found" });
+    const me = await currentUserRow(req);
+    const listing = await db.query.listings.findFirst({ where: eq(listings.id, id) });
+    if (!listing) return res.status(404).json({ error: "not_found" });
 
-      const amOwner = listing.sellerId === me.id;
-      const amAdmin = me.role === "admin" || me.role === "moderator";
-      if (!amOwner && !amAdmin) return res.status(403).json({ error: "forbidden" });
+    const amOwner = listing.sellerId === me.id;
+    const amAdmin = me.role === "admin" || me.role === "moderator";
+    if (!amOwner && !amAdmin) return res.status(403).json({ error: "forbidden" });
 
-      await db.delete(listings).where(eq(listings.id, id));
-      return res.json({ success: true, deletedId: id });
-    }
-  );
+    await db.delete(listings).where(eq(listings.id, id));
+    return res.json({ success: true, deletedId: id });
+  });
 }
