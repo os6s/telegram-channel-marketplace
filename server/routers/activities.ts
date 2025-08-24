@@ -1,15 +1,12 @@
 // server/routers/activities.ts
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { desc, eq, or, sql } from "drizzle-orm";
 import { db } from "../db.js";
-import {
-  activities,
-  listings,
-  payments,
-  users,
-  insertActivitySchema,
-} from "@shared/schema";
+import { activities, insertActivitySchema } from "@shared/schema/activities";
+import { listings } from "@shared/schema/listings";
+import { users } from "@shared/schema/users";
+// (payments غير مستخدم هنا، احذفه إن ما تحتاجه)
 import { ensureBuyerHasFunds } from "../ton-utils";
 
 /* ========= Telegram notify helper ========= */
@@ -33,11 +30,8 @@ async function sendTelegramMessage(
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
     });
-    // optional: ignore response body
     await res.json().catch(() => null);
-  } catch {
-    /* no-op */
-  }
+  } catch {}
 }
 
 /* ========= helpers ========= */
@@ -68,6 +62,8 @@ function toNum(v: unknown): number | null {
 
 /* ========= Router ========= */
 export function mountActivities(app: Express) {
+  const sellerU = users.as("seller_u");
+
   // List activities by username or listing
   app.get("/api/activities", async (req: Request, res: Response) => {
     try {
@@ -85,7 +81,6 @@ export function mountActivities(app: Express) {
         whereExp = eq(activities.listingId, q.data.listingId!);
       }
 
-      // نرجّع مع يوزرنيمات الأطراف
       const rows = await db
         .select({
           id: activities.id,
@@ -100,15 +95,14 @@ export function mountActivities(app: Express) {
           txHash: activities.txHash,
           note: activities.note,
           createdAt: activities.createdAt,
-          // usernames via joins
           buyerUsername: users.username,
-          sellerUsername: sql<string | null>`seller_u.username`,
+          sellerUsername: sellerU.username,
           title: listings.title,
           handle: listings.username,
         })
         .from(activities)
         .leftJoin(users, eq(users.id, activities.buyerId))
-        .leftJoin(users.as("seller_u"), eq(sql`seller_u.id`, activities.sellerId))
+        .leftJoin(sellerU, eq(sellerU.id, activities.sellerId))
         .leftJoin(listings, eq(listings.id, activities.listingId))
         .where(whereExp)
         .orderBy(desc(activities.createdAt));
@@ -140,13 +134,13 @@ export function mountActivities(app: Express) {
           note: activities.note,
           createdAt: activities.createdAt,
           buyerUsername: users.username,
-          sellerUsername: sql<string | null>`seller_u.username`,
+          sellerUsername: sellerU.username,
           title: listings.title,
           handle: listings.username,
         })
         .from(activities)
         .leftJoin(users, eq(users.id, activities.buyerId))
-        .leftJoin(users.as("seller_u"), eq(sql`seller_u.id`, activities.sellerId))
+        .leftJoin(sellerU, eq(sellerU.id, activities.sellerId))
         .leftJoin(listings, eq(listings.id, activities.listingId))
         .where(eq(activities.id, id));
 
@@ -164,9 +158,7 @@ export function mountActivities(app: Express) {
 
       const listingId = String(body.listingId || "");
       const buyerUsername = S(body.buyerUsername || body.buyer_username).toLowerCase();
-      const sellerUsername = S(
-        body.sellerUsername || body.seller_username
-      ).toLowerCase();
+      const sellerUsername = S(body.sellerUsername || body.seller_username).toLowerCase();
 
       if (!listingId) return res.status(400).json({ error: "listingId required" });
       if (!buyerUsername) return res.status(400).json({ error: "buyerUsername required" });
@@ -183,23 +175,21 @@ export function mountActivities(app: Express) {
       if (!seller) return res.status(404).json({ error: "seller_user_not_found" });
       if (buyer.id === seller.id) return res.status(400).json({ error: "seller_cannot_buy_own_listing" });
 
-      // default type/amount/currency
       const type = (S(body.type) || "buy") as typeof activities.$inferInsert.type;
       const amount = S(body.amount) || S(listing.price);
       const currency = S(body.currency) || S(listing.currency || "TON");
 
-      // verify price equals listing price (لو انرسلت amount)
       const a = toNum(amount);
       const p = toNum(listing.price);
       if (a != null && p != null && a !== p) {
         return res.status(400).json({ error: "amount_mismatch_with_listing_price" });
       }
 
-      // funds check for buy (TON)
+      // funds check for buy (uses walletAddress now)
       if (type === "buy") {
-        if (!buyer.tonWallet) return res.status(400).json({ error: "buyer_wallet_not_set" });
+        if (!buyer.walletAddress) return res.status(400).json({ error: "buyer_wallet_not_set" });
         const priceTON = toNum(listing.price) || 0;
-        await ensureBuyerHasFunds({ userTonAddress: buyer.tonWallet, amountTON: priceTON }).catch((err: any) => {
+        await ensureBuyerHasFunds({ userTonAddress: buyer.walletAddress, amountTON: priceTON }).catch((err: any) => {
           if (err?.code === "INSUFFICIENT_FUNDS") {
             return res.status(402).json({ error: err.message, details: err.details });
           }
@@ -214,8 +204,8 @@ export function mountActivities(app: Express) {
         paymentId: S(body.paymentId) || undefined,
         type,
         status: body.status || "pending",
-        amount: amount,
-        currency: currency,
+        amount,
+        currency,
         txHash: S(body.txHash) || undefined,
         note: body.note ?? undefined,
       });
@@ -223,31 +213,17 @@ export function mountActivities(app: Express) {
       const created = await db.insert(activities).values(payload).returning();
       const activity = created[0];
 
-      // deactivate listing (non-service) after buy
       if (type === "buy" && listing.kind !== "service" && listing.isActive) {
-        await db
-          .update(listings)
-          .set({ isActive: false, updatedAt: new Date() })
-          .where(eq(listings.id, listing.id));
+        await db.update(listings).set({ isActive: false, updatedAt: new Date() }).where(eq(listings.id, listing.id));
       }
 
-      // notify
-      const title =
-        listing.title ||
-        (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
       const priceStr = S(activity.amount || listing.price);
       const ccy = S(activity.currency || listing.currency || "TON");
 
       await sendTelegramMessage(
         buyer.telegramId,
-        [
-          `🛒 <b>Purchase Started</b>`,
-          ``,
-          `<b>Item:</b> ${title}`,
-          `<b>Price:</b> ${priceStr} ${ccy}`,
-          ``,
-          `✅ Order placed. Please await seller instructions.`,
-        ].join("\n")
+        [`🛒 <b>Purchase Started</b>`, ``, `<b>Item:</b> ${title}`, `<b>Price:</b> ${priceStr} ${ccy}`, ``, `✅ Order placed. Please await seller instructions.`].join("\n")
       );
       await sendTelegramMessage(
         seller.telegramId,
@@ -259,14 +235,11 @@ export function mountActivities(app: Express) {
           buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
           ``,
           `Please proceed with delivery and communicate in-app if needed.`,
-        ]
-          .filter(Boolean)
-          .join("\n")
+        ].filter(Boolean).join("\n")
       );
 
       res.status(201).json(activity);
     } catch (error: any) {
-      // إذا ensureBuyerHasFunds رجع رد response مسبقاً، نوقف
       if (!res.headersSent) {
         res.status(400).json({ error: error?.message || "Invalid payload" });
       }
@@ -307,34 +280,17 @@ export function mountActivities(app: Express) {
         })
         .returning();
 
-      const title =
-        listing.title ||
-        (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
       const priceStr = S(listing.price);
       const ccy = S(listing.currency || "TON");
 
       await sendTelegramMessage(
         seller.telegramId,
-        [
-          `✅ <b>Buyer Confirmed Receipt</b>`,
-          ``,
-          `<b>Item:</b> ${title}`,
-          `<b>Price:</b> ${priceStr} ${ccy}`,
-          buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
-          ``,
-          `Admin will review and finalize the transaction.`,
-        ]
-          .filter(Boolean)
-          .join("\n")
+        [`✅ <b>Buyer Confirmed Receipt</b>`, ``, `<b>Item:</b> ${title}`, `<b>Price:</b> ${priceStr} ${ccy}`, buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "", ``, `Admin will review and finalize the transaction.`].filter(Boolean).join("\n")
       );
       await sendTelegramMessage(
         buyer.telegramId,
-        [
-          `📝 <b>Your confirmation was recorded</b>`,
-          ``,
-          `<b>Item:</b> ${title}`,
-          `<b>Status:</b> Waiting for admin finalization`,
-        ].join("\n")
+        [`📝 <b>Your confirmation was recorded</b>`, ``, `<b>Item:</b> ${title}`, `<b>Status:</b> Waiting for admin finalization`].join("\n")
       );
 
       res.status(201).json(created[0]);
@@ -377,34 +333,17 @@ export function mountActivities(app: Express) {
         })
         .returning();
 
-      const title =
-        listing.title ||
-        (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
       const priceStr = S(listing.price);
       const ccy = S(listing.currency || "TON");
 
       await sendTelegramMessage(
         buyer.telegramId,
-        [
-          `📦 <b>Seller Confirmed Delivery</b>`,
-          ``,
-          `<b>Item:</b> ${title}`,
-          `<b>Price:</b> ${priceStr} ${ccy}`,
-          seller.username ? `<b>Seller:</b> @${seller.username}` : "",
-          ``,
-          `Please confirm receipt from your side if all is OK.`,
-        ]
-          .filter(Boolean)
-          .join("\n")
+        [`📦 <b>Seller Confirmed Delivery</b>`, ``, `<b>Item:</b> ${title}`, `<b>Price:</b> ${priceStr} ${ccy}`, seller.username ? `<b>Seller:</b> @${seller.username}` : "", ``, `Please confirm receipt from your side if all is OK.`].filter(Boolean).join("\n")
       );
       await sendTelegramMessage(
         seller.telegramId,
-        [
-          `📝 <b>Your delivery confirmation was recorded</b>`,
-          ``,
-          `<b>Item:</b> ${title}`,
-          `<b>Status:</b> Waiting for buyer / admin`,
-        ].join("\n")
+        [`📝 <b>Your delivery confirmation was recorded</b>`, ``, `<b>Item:</b> ${title}`, `<b>Status:</b> Waiting for buyer / admin`].join("\n")
       );
 
       res.status(201).json(created[0]);
