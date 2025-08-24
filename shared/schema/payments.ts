@@ -1,5 +1,5 @@
 import { pgTable, uuid, varchar, boolean, timestamp, numeric, index } from "drizzle-orm/pg-core";
-import { paymentStatusEnum, adminActionEnum } from "./enums";
+import { paymentStatusEnum, adminActionEnum, paymentKindEnum } from "./enums";
 import { listings } from "./listings";
 import { users } from "./users";
 
@@ -11,6 +11,9 @@ export const payments = pgTable(
     listingId: uuid("listing_id").references(() => listings.id, { onDelete: "set null" }),
     buyerId: uuid("buyer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     sellerId: uuid("seller_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+
+    // الجديد:
+    kind: paymentKindEnum("kind").notNull().default("order"),
 
     amount: numeric("amount", { precision: 18, scale: 8 }).notNull(),
     currency: varchar("currency", { length: 8 }).notNull().default("TON"),
@@ -39,5 +42,6 @@ export const payments = pgTable(
     paymentsBuyerCreatedIdx: index("idx_payments_buyer_created").on(t.buyerId, t.createdAt),
     paymentsListingStatusIdx: index("idx_payments_listing_status").on(t.listingId, t.status),
     paymentsStatusCreatedIdx: index("idx_payments_status_created").on(t.status, t.createdAt),
+    paymentsKindIdx: index("idx_payments_kind_created").on(t.kind, t.createdAt), // مفيد لاستعلامات الأدمن
   })
 );
