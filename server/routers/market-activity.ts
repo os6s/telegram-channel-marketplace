@@ -1,17 +1,19 @@
 // server/routers/market-activity.ts
 import type { Express } from "express";
 import { db } from "../db";
-import { sql } from "drizzle-orm";
+import { and, desc, lt } from "drizzle-orm";
+
+// استيراد موحّد من الإندكس
+import { marketActivityView } from "@shared/schema";
 
 /**
  * GET /api/market-activity
  * Query:
  *   limit?  (default 30, max 100)
- *   cursor? (ISO datetime؛ يرجّع عناصر created_at < cursor)
+ *   cursor? (ISO datetime؛ يرجّع عناصر createdAt < cursor)
  *
- * يعرض بيانات موحّدة من الـ VIEW: market_activity
- * الأعمدة المتوقعة في الـ VIEW:
- *   id, created_at, kind, title, username, amount, currency, seller, buyer
+ * يعرض بيانات موحّدة من الـ VIEW: market_activity_view (مربوط كـ marketActivityView)
+ * الأعمدة: id, createdAt, kind, title, username, amount, currency, seller, buyer
  */
 export function mountMarketActivity(app: Express) {
   app.get("/api/market-activity", async (req, res) => {
@@ -20,47 +22,35 @@ export function mountMarketActivity(app: Express) {
       const cursorStr = typeof req.query.cursor === "string" ? req.query.cursor : "";
       const cursor = cursorStr ? new Date(cursorStr) : null;
 
-      // نبني شرط cursor إن وجد
-      const whereSql = cursor && !isNaN(cursor.getTime())
-        ? sql`WHERE created_at < ${cursor}`
-        : sql``;
+      const where = cursor && !isNaN(cursor.getTime())
+        ? and(lt(marketActivityView.createdAt, cursor))
+        : undefined;
 
-      // ملاحظة: نقرأ مباشرة من الـ VIEW "market_activity"
-      const rows = await db.execute<{
-        id: string;
-        created_at: string;
-        kind: string;
-        title: string | null;
-        username: string | null;
-        amount: string | null;
-        currency: string | null;
-        seller: string | null;
-        buyer: string | null;
-      }>(sql`
-        SELECT
-          id,
-          created_at,
-          kind,
-          title,
-          username,
-          amount,
-          currency,
-          seller,
-          buyer
-        FROM market_activity
-        ${whereSql}
-        ORDER BY created_at DESC
-        LIMIT ${limit}
-      `);
+      const rows = await db
+        .select({
+          id: marketActivityView.id,
+          createdAt: marketActivityView.createdAt,
+          kind: marketActivityView.kind,
+          title: marketActivityView.title,
+          username: marketActivityView.username,
+          amount: marketActivityView.amount,
+          currency: marketActivityView.currency,
+          seller: marketActivityView.seller,
+          buyer: marketActivityView.buyer,
+        })
+        .from(marketActivityView)
+        .where(where)
+        .orderBy(desc(marketActivityView.createdAt))
+        .limit(limit);
 
-      // نطابق شكل الاستجابة السابق (camelCase + price=amount)
-      const out = rows.rows.map((r) => ({
+      // نطابق شكل الاستجابة السابق (price = amount)
+      const out = rows.map((r) => ({
         id: r.id,
-        kind: r.kind, // 'listed' | 'sold' | 'updated' | 'cancel' | 'other' حسب الـ VIEW
-        createdAt: r.created_at,
+        kind: r.kind,
+        createdAt: r.createdAt,
         title: r.title,
         username: r.username,
-        price: r.amount,          // نفس العامود amount من الـ VIEW
+        price: r.amount,
         currency: r.currency,
         seller: r.seller,
         buyer: r.buyer,
