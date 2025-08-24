@@ -1,20 +1,20 @@
 // server/routers/payouts.ts
 import type { Express } from "express";
-import { tgAuth } from "../middleware/tgAuth";
+import { tgAuth } from "../middleware/tgAuth.js";
 import { storage } from "../storage";
-import { db } from "../db";
-import { eq } from "drizzle-orm";
+import { db } from "../db.js";
+import { eq /*, and*/ } from "drizzle-orm";
 
 // استيراد موحّد من الإنديكس
-import { users, walletBalancesView, type Payout } from "@shared/schema";
+import { users, walletBalancesView } from "@shared/schema";
 
 /** حساب الرصيد المتاح من الفيو wallet_balances */
 async function computeBalanceByUserId(userId: string, currency = "TON") {
   const row = await db
-    .select({ balance: walletBalancesView.balance })
+    .select({ balance: walletBalancesView.balance /*, cur: walletBalancesView.currency */ })
     .from(walletBalancesView)
     .where(
-      // لو عندك multi-currency وتريد تقيّد بالعملة:
+      // لو عندك multi-currency وتريد تقيّد بالعملة، فعّل السطر التالي بدل الحالي:
       // and(eq(walletBalancesView.userId, userId as any), eq(walletBalancesView.currency, currency))
       eq(walletBalancesView.userId, userId as any)
     )
@@ -59,7 +59,7 @@ export function mountPayouts(app: Express) {
       }
 
       // امنع وجود queued سابق
-      const existing = await storage.listPayoutsBySeller(me.id);
+      const existing = await storage.listPayoutsBySellerId(me.id);
       if (existing.some((p) => p.status === "queued")) {
         return res.status(409).json({ error: "payout_already_queued" });
       }
@@ -87,12 +87,9 @@ export function mountPayouts(app: Express) {
       const me = await storage.getUserByTelegramId(String((req as any).telegramUser.id));
       if (!me) return res.status(404).json({ error: "user_not_found" });
 
-      const rows = await storage.listPayoutsBySeller(me.id);
+      const rows = await storage.listPayoutsBySellerId(me.id);
       const out = rows
-        .sort(
-          (a: Payout, b: Payout) =>
-            new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime()
-        )
+        .sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime())
         .map((p) => ({ ...p, sellerUsername: me.username ?? null }));
 
       res.json(out);
