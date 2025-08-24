@@ -1,10 +1,9 @@
 // server/routers/activities.ts
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { desc, eq, or, sql } from "drizzle-orm";
+import { desc, eq, or, sql, alias } from "drizzle-orm";
 import { db } from "../db.js";
 import { activities, listings, users } from "@shared/schema";
-import { insertActivitySchema } from "@shared/dto";
 import { ensureBuyerHasFunds } from "../ton-utils";
 
 /* ========= Telegram notify helper ========= */
@@ -18,7 +17,7 @@ async function sendTelegramMessage(
   const chatId = Number(telegramId);
   if (!Number.isFinite(chatId)) return;
   try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -28,16 +27,38 @@ async function sendTelegramMessage(
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
     });
-    await res.json().catch(() => null);
-  } catch {}
+  } catch { /* ignore */ }
 }
 
-/* ========= helpers ========= */
+/* ========= schemas (محلية) ========= */
 const listQuery = z.object({
   username: z.string().min(1).optional(),
   listingId: z.string().uuid().optional(),
 });
 
+const createActivitySchema = z.object({
+  listingId: z.string().uuid(),
+  buyerUsername: z.string().min(1),
+  sellerUsername: z.string().min(1),
+  type: z
+    .enum(["list", "update", "buy", "buyer_confirm", "admin_release", "admin_refund", "other"])
+    .optional()
+    .default("buy"),
+  amount: z.string().optional(),
+  currency: z.string().optional(),
+  paymentId: z.string().uuid().optional(),
+  txHash: z.string().optional(),
+  note: z.any().optional(),
+});
+
+const confirmSchema = z.object({
+  listingId: z.string().uuid(),
+  buyerUsername: z.string().min(1),
+  sellerUsername: z.string().min(1),
+  paymentId: z.string().uuid().optional(),
+});
+
+/* ========= helpers ========= */
 const S = (v: unknown) => (v == null ? "" : String(v));
 
 async function getUserByUsernameInsensitive(username: string) {
@@ -47,7 +68,7 @@ async function getUserByUsernameInsensitive(username: string) {
   return u || null;
 }
 
-async function getListingOr404(id: string) {
+async function getListingOrNull(id: string) {
   const l = await db.query.listings.findFirst({ where: eq(listings.id, id) });
   return l || null;
 }
@@ -60,25 +81,24 @@ function toNum(v: unknown): number | null {
 
 /* ========= Router ========= */
 export function mountActivities(app: Express) {
-  // List activities (by username / listingId) or latest if none provided
+  const buyerU = alias(users, "buyer_u");
+  const sellerU = alias(users, "seller_u");
+
+  // List activities by username or listing
   app.get("/api/activities", async (req: Request, res: Response) => {
     try {
       const q = listQuery.safeParse(req.query);
+      if (!q.success || (!q.data.username && !q.data.listingId)) {
+        return res.status(400).json({ error: "username or listingId required" });
+      }
 
-      // aliases لجدول users
-      const buyerU = users.as("buyer_u");
-      const sellerU = users.as("seller_u");
-
-      let whereExp: any | undefined;
-
-      if (q.success && (q.data.username || q.data.listingId)) {
-        if (q.data.username) {
-          const u = await getUserByUsernameInsensitive(q.data.username);
-          if (!u) return res.json([]);
-          whereExp = or(eq(activities.buyerId, u.id), eq(activities.sellerId, u.id));
-        } else {
-          whereExp = eq(activities.listingId, q.data.listingId!);
-        }
+      let whereExp;
+      if (q.data.username) {
+        const u = await getUserByUsernameInsensitive(q.data.username);
+        if (!u) return res.json([]);
+        whereExp = or(eq(activities.buyerId, u.id), eq(activities.sellerId, u.id));
+      } else {
+        whereExp = eq(activities.listingId, q.data.listingId!);
       }
 
       const rows = await db
@@ -105,8 +125,7 @@ export function mountActivities(app: Express) {
         .leftJoin(sellerU, eq(sellerU.id, activities.sellerId))
         .leftJoin(listings, eq(listings.id, activities.listingId))
         .where(whereExp)
-        .orderBy(desc(activities.createdAt))
-        .limit(whereExp ? 200 : 50); // إذا ماكو فلتر رجّع آخر 50
+        .orderBy(desc(activities.createdAt));
 
       res.json(rows);
     } catch (error: any) {
@@ -119,9 +138,6 @@ export function mountActivities(app: Express) {
     try {
       const id = String(req.params.id || "");
       if (!id) return res.status(400).json({ error: "id required" });
-
-      const buyerU = users.as("buyer_u");
-      const sellerU = users.as("seller_u");
 
       const row = await db
         .select({
@@ -158,30 +174,20 @@ export function mountActivities(app: Express) {
   // Create activity (buy / …)
   app.post("/api/activities", async (req: Request, res: Response) => {
     try {
-      const body = { ...(req.body || {}) };
-
-      const listingId = String(body.listingId || "");
-      const buyerUsername = S(body.buyerUsername || body.buyer_username).toLowerCase();
-      const sellerUsername = S(body.sellerUsername || body.seller_username).toLowerCase();
-
-      if (!listingId) return res.status(400).json({ error: "listingId required" });
-      if (!buyerUsername) return res.status(400).json({ error: "buyerUsername required" });
-      if (!sellerUsername) return res.status(400).json({ error: "sellerUsername required" });
-
-      const listing = await getListingOr404(listingId);
+      const body = createActivitySchema.parse(req.body || {});
+      const listing = await getListingOrNull(body.listingId);
       if (!listing || !listing.isActive) {
         return res.status(400).json({ error: "Listing not found or inactive" });
       }
 
-      const buyer = await getUserByUsernameInsensitive(buyerUsername);
-      const seller = await getUserByUsernameInsensitive(sellerUsername);
+      const buyer = await getUserByUsernameInsensitive(body.buyerUsername);
+      const seller = await getUserByUsernameInsensitive(body.sellerUsername);
       if (!buyer) return res.status(404).json({ error: "buyer_user_not_found" });
       if (!seller) return res.status(404).json({ error: "seller_user_not_found" });
       if (buyer.id === seller.id) return res.status(400).json({ error: "seller_cannot_buy_own_listing" });
 
-      const type = (S(body.type) || "buy") as typeof activities.$inferInsert.type;
-      const amount = S(body.amount) || S(listing.price);
-      const currency = S(body.currency) || S(listing.currency || "TON");
+      const amount = S(body.amount || listing.price);
+      const currency = S(body.currency || listing.currency || "TON");
 
       const a = toNum(amount);
       const p = toNum(listing.price);
@@ -190,45 +196,45 @@ export function mountActivities(app: Express) {
       }
 
       // funds check for buy (uses walletAddress)
-      if (type === "buy") {
+      if (body.type === "buy") {
         if (!buyer.walletAddress) return res.status(400).json({ error: "buyer_wallet_not_set" });
         const priceTON = toNum(listing.price) || 0;
-        await ensureBuyerHasFunds({
-          userTonAddress: buyer.walletAddress,
-          amountTON: priceTON,
-        }).catch((err: any) => {
+        try {
+          await ensureBuyerHasFunds({ userTonAddress: buyer.walletAddress, amountTON: priceTON });
+        } catch (err: any) {
           if (err?.code === "INSUFFICIENT_FUNDS") {
             return res.status(402).json({ error: err.message, details: err.details });
           }
           return res.status(400).json({ error: err?.message || "balance_check_failed" });
-        });
+        }
       }
 
-      const payload = insertActivitySchema.parse({
-        listingId,
-        buyerId: buyer.id,
-        sellerId: seller.id,
-        paymentId: S(body.paymentId) || undefined,
-        type,
-        status: body.status || "pending",
-        amount,
-        currency,
-        txHash: S(body.txHash) || undefined,
-        note: body.note ?? undefined,
-      });
+      const created = await db
+        .insert(activities)
+        .values({
+          listingId: listing.id,
+          buyerId: buyer.id,
+          sellerId: seller.id,
+          paymentId: body.paymentId,
+          type: body.type,
+          status: "pending",
+          amount,
+          currency,
+          txHash: body.txHash,
+          note: body.note as any,
+        })
+        .returning();
 
-      const created = await db.insert(activities).values(payload).returning();
       const activity = created[0];
 
-      if (type === "buy" && listing.kind !== "service" && listing.isActive) {
+      if (body.type === "buy" && listing.kind !== "service" && listing.isActive) {
         await db
           .update(listings)
           .set({ isActive: false, updatedAt: new Date() })
           .where(eq(listings.id, listing.id));
       }
 
-      const title =
-        listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
       const priceStr = S(activity.amount || listing.price);
       const ccy = S(activity.currency || listing.currency || "TON");
 
@@ -253,9 +259,7 @@ export function mountActivities(app: Express) {
           buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
           ``,
           `Please proceed with delivery and communicate in-app if needed.`,
-        ]
-          .filter(Boolean)
-          .join("\n")
+        ].filter(Boolean).join("\n")
       );
 
       res.status(201).json(activity);
@@ -269,29 +273,27 @@ export function mountActivities(app: Express) {
   // Buyer confirms receipt
   app.post("/api/activities/confirm/buyer", async (req: Request, res: Response) => {
     try {
-      const listingId = S(req.body?.listingId);
-      const buyerUsername = S(req.body?.buyerUsername || req.body?.buyer_username).toLowerCase();
-      const sellerUsername = S(req.body?.sellerUsername || req.body?.seller_username).toLowerCase();
-      const paymentId = S(req.body?.paymentId) || null;
+      const body = confirmSchema.parse({
+        listingId: req.body?.listingId,
+        buyerUsername: req.body?.buyerUsername || req.body?.buyer_username,
+        sellerUsername: req.body?.sellerUsername || req.body?.seller_username,
+        paymentId: req.body?.paymentId,
+      });
 
-      if (!listingId || !buyerUsername || !sellerUsername) {
-        return res.status(400).json({ error: "listingId, buyerUsername, sellerUsername required" });
-      }
-
-      const listing = await getListingOr404(listingId);
+      const listing = await getListingOrNull(body.listingId);
       if (!listing) return res.status(404).json({ error: "listing_not_found" });
 
-      const buyer = await getUserByUsernameInsensitive(buyerUsername);
-      const seller = await getUserByUsernameInsensitive(sellerUsername);
+      const buyer = await getUserByUsernameInsensitive(body.buyerUsername);
+      const seller = await getUserByUsernameInsensitive(body.sellerUsername);
       if (!buyer || !seller) return res.status(404).json({ error: "user_not_found" });
 
       const created = await db
         .insert(activities)
         .values({
-          listingId,
+          listingId: listing.id,
           buyerId: buyer.id,
           sellerId: seller.id,
-          paymentId: paymentId || undefined,
+          paymentId: body.paymentId,
           type: "buyer_confirm",
           status: "completed",
           amount: S(listing.price),
@@ -300,8 +302,7 @@ export function mountActivities(app: Express) {
         })
         .returning();
 
-      const title =
-        listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
       const priceStr = S(listing.price);
       const ccy = S(listing.currency || "TON");
 
@@ -315,18 +316,11 @@ export function mountActivities(app: Express) {
           buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
           ``,
           `Admin will review and finalize the transaction.`,
-        ]
-          .filter(Boolean)
-          .join("\n")
+        ].filter(Boolean).join("\n")
       );
       await sendTelegramMessage(
         buyer.telegramId,
-        [
-          `📝 <b>Your confirmation was recorded</b>`,
-          ``,
-          `<b>Item:</b> ${title}`,
-          `<b>Status:</b> Waiting for admin finalization`,
-        ].join("\n")
+        [`📝 <b>Your confirmation was recorded</b>`, ``, `<b>Item:</b> ${title}`, `<b>Status:</b> Waiting for admin finalization`].join("\n")
       );
 
       res.status(201).json(created[0]);
@@ -338,29 +332,27 @@ export function mountActivities(app: Express) {
   // Seller confirms delivery
   app.post("/api/activities/confirm/seller", async (req: Request, res: Response) => {
     try {
-      const listingId = S(req.body?.listingId);
-      const buyerUsername = S(req.body?.buyerUsername || req.body?.buyer_username).toLowerCase();
-      const sellerUsername = S(req.body?.sellerUsername || req.body?.seller_username).toLowerCase();
-      const paymentId = S(req.body?.paymentId) || null;
+      const body = confirmSchema.parse({
+        listingId: req.body?.listingId,
+        buyerUsername: req.body?.buyerUsername || req.body?.buyer_username,
+        sellerUsername: req.body?.sellerUsername || req.body?.seller_username,
+        paymentId: req.body?.paymentId,
+      });
 
-      if (!listingId || !buyerUsername || !sellerUsername) {
-        return res.status(400).json({ error: "listingId, buyerUsername, sellerUsername required" });
-      }
-
-      const listing = await getListingOr404(listingId);
+      const listing = await getListingOrNull(body.listingId);
       if (!listing) return res.status(404).json({ error: "listing_not_found" });
 
-      const buyer = await getUserByUsernameInsensitive(buyerUsername);
-      const seller = await getUserByUsernameInsensitive(sellerUsername);
+      const buyer = await getUserByUsernameInsensitive(body.buyerUsername);
+      const seller = await getUserByUsernameInsensitive(body.sellerUsername);
       if (!buyer || !seller) return res.status(404).json({ error: "user_not_found" });
 
       const created = await db
         .insert(activities)
         .values({
-          listingId,
+          listingId: listing.id,
           buyerId: buyer.id,
           sellerId: seller.id,
-          paymentId: paymentId || undefined,
+          paymentId: body.paymentId,
           type: "seller_confirm",
           status: "completed",
           amount: S(listing.price),
@@ -369,8 +361,7 @@ export function mountActivities(app: Express) {
         })
         .returning();
 
-      const title =
-        listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
       const priceStr = S(listing.price);
       const ccy = S(listing.currency || "TON");
 
@@ -384,18 +375,11 @@ export function mountActivities(app: Express) {
           seller.username ? `<b>Seller:</b> @${seller.username}` : "",
           ``,
           `Please confirm receipt from your side if all is OK.`,
-        ]
-          .filter(Boolean)
-          .join("\n")
+        ].filter(Boolean).join("\n")
       );
       await sendTelegramMessage(
         seller.telegramId,
-        [
-          `📝 <b>Your delivery confirmation was recorded</b>`,
-          ``,
-          `<b>Item:</b> ${title}`,
-          `<b>Status:</b> Waiting for buyer / admin`,
-        ].join("\n")
+        [`📝 <b>Your delivery confirmation was recorded</b>`, ``, `<b>Item:</b> ${title}`, `<b>Status:</b> Waiting for buyer / admin`].join("\n")
       );
 
       res.status(201).json(created[0]);
@@ -418,11 +402,7 @@ export function mountActivities(app: Express) {
         return res.status(400).json({ error: "no_updates" });
       }
 
-      const updated = await db
-        .update(activities)
-        .set(allowed)
-        .where(eq(activities.id, id))
-        .returning();
+      const updated = await db.update(activities).set(allowed).where(eq(activities.id, id)).returning();
       if (!updated.length) return res.status(404).json({ error: "Activity not found" });
       res.json(updated[0]);
     } catch (error: any) {
