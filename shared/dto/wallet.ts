@@ -17,6 +17,7 @@ export const DepositRequestSchema = z.object({
 export type DepositRequestDTO = z.infer<typeof DepositRequestSchema>;
 
 /* ===== Withdraw Request (سحب) ===== */
+/* ملاحظة: السحب يُعالج عادة عبر payouts؛ هذا DTO لطلب السحب فقط */
 export const WithdrawRequestSchema = z.object({
   userId: z.string().uuid(),
   amount: z.string().regex(RE_NUMERIC),
@@ -30,8 +31,10 @@ export type WithdrawRequestDTO = z.infer<typeof WithdrawRequestSchema>;
 export const WalletBalanceSchema = z.object({
   userId: z.string().uuid(),
   username: z.string().nullable().optional(),
-  balance: z.string(),                       // نخليها نص حتى تبقى متوافقة مع DB NUMERIC
+  balance: z.string(),                       // NUMERIC كنص
   currency: Currency,
+  txCount: z.union([z.string(), z.number()]).optional(),
+  lastTx: z.string().nullable().optional(),  // ISO أو null
 });
 export type WalletBalanceDTO = z.infer<typeof WalletBalanceSchema>;
 
@@ -42,7 +45,8 @@ export const WalletLedgerSchema = z.object({
   direction: z.enum(["in", "out"]),          // in = زيادة, out = نقصان
   amount: z.string().regex(RE_NUMERIC),
   currency: Currency,
-  refType: z.enum(["deposit", "order_hold", "order_release", "refund", "withdraw"]),
+  // مطابق لـ walletRefEnum في السكيمة: deposit | order_hold | order_release | refund | adjustment
+  refType: z.enum(["deposit", "order_hold", "order_release", "refund", "adjustment"]),
   refId: z.string().uuid().optional(),
   note: z.string().nullable().optional(),
   createdAt: z.string(),                     // ISO string
