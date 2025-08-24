@@ -10,7 +10,7 @@ export * from "./payouts";
 export * from "./wallet";     // <-- إذا ضايف ملف wallet الجديد
 export * from "./views";
 export * from "./relations";
-export * from "./zod";
+
 
 export type {
   InferInsertModel as InsertModel,
