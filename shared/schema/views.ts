@@ -66,7 +66,7 @@ export const marketActivityView = pgView("market_activity", {
 /* =========================
    Market Listings View
 ========================= */
-export const marketListingsView = pgView("market_listings_view", {
+export const marketListingsView = pgView("market_listings", {
   id: uuid("id"),
   createdAt: timestamp("created_at", { withTimezone: true }),
   platform: varchar("platform", { length: 32 }),
