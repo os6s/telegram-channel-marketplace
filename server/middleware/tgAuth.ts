@@ -1,6 +1,9 @@
 // server/middleware/tgAuth.ts
 import crypto from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
+import { db } from "../db.js";
+import { users } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -68,6 +71,32 @@ function redactInitDataPreview(s: string) {
   return `[len=${Buffer.byteLength(s, "utf8")} "${head}...${tail}"]`;
 }
 
+/** Auto-upsert user in DB (minimal: telegramId + username) */
+async function upsertUser(user: { id: number; username?: string }) {
+  if (!user?.id || !user.username) return;
+
+  const existing = await db.query.users.findFirst({
+    where: eq(users.telegramId, user.id),
+  });
+
+  if (existing) {
+    if (existing.username !== user.username.toLowerCase()) {
+      await db
+        .update(users)
+        .set({ username: user.username.toLowerCase() })
+        .where(eq(users.id, existing.id));
+      dbg("user updated", user.username);
+    }
+  } else {
+    await db.insert(users).values({
+      id: crypto.randomUUID(),
+      telegramId: user.id,
+      username: user.username.toLowerCase(),
+    });
+    dbg("user inserted", user.username);
+  }
+}
+
 /** Required auth: rejects if invalid/missing */
 export function tgAuth(req: Request, res: Response, next: NextFunction) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN || "";
@@ -124,8 +153,8 @@ export function tgAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-/** Optional auth: fills req.telegramUser when valid; never blocks */
-export function tgOptionalAuth(req: Request, _res: Response, next: NextFunction) {
+/** Optional auth: fills req.telegramUser when valid; auto-upserts if username exists */
+export async function tgOptionalAuth(req: Request, _res: Response, next: NextFunction) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN || "";
   const initData = (req.get("x-telegram-init-data") ||
     (req.body && (req.body as any).initData) ||
@@ -152,6 +181,10 @@ export function tgOptionalAuth(req: Request, _res: Response, next: NextFunction)
         auth_date: authDate,
       };
       dbg("optional auth ok", { id: req.telegramUser.id, username: req.telegramUser.username });
+
+      if (req.telegramUser.username) {
+        await upsertUser(req.telegramUser);
+      }
     }
   } catch (e: any) {
     dbg("optional parse_error", e?.message || e);
@@ -159,8 +192,8 @@ export function tgOptionalAuth(req: Request, _res: Response, next: NextFunction)
   next();
 }
 
-/** Required Telegram user + username */
-export function requireTelegramUser(req: Request, res: Response, next: NextFunction) {
+/** Required Telegram user + username (with DB upsert) */
+export async function requireTelegramUser(req: Request, res: Response, next: NextFunction) {
   const user = req.telegramUser;
 
   if (!user?.id) {
@@ -171,6 +204,13 @@ export function requireTelegramUser(req: Request, res: Response, next: NextFunct
   if (!user.username || user.username.trim() === "") {
     dbg("requireTelegramUser: username required");
     return res.status(403).json({ error: "forbidden", detail: "username_required" });
+  }
+
+  try {
+    await upsertUser(user);
+  } catch (e: any) {
+    dbg("requireTelegramUser: db error", e?.message || e);
+    return res.status(500).json({ error: "server_error", detail: "user_upsert_failed" });
   }
 
   next();
