@@ -5,7 +5,7 @@ import { createServer, type Server } from "http";
 import { mountWebhook } from "./routers/webhook";
 import { mountUsers } from "./routers/users";
 import { mountListings } from "./routers/listings";
-import { mountActivities } from "./routers/activities";
+import { mountActivities } from "./routers/activities/index"; // ✅ explicit
 import { mountPayments } from "./routers/payments";
 import { mountDisputes } from "./routers/disputes";
 // import { mountDisputeMessages } from "./routers/messages"; // removed
@@ -20,13 +20,13 @@ import { mountMarketActivity } from "./routers/market-activity";
 
 /* ---------- env & helpers ---------- */
 const WEBAPP_URL = process.env.WEBAPP_URL!;
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || WEBAPP_URL;
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || WEBAPP_URL).replace(/\/+$/, "");
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || process.env.SESSION_SECRET || "";
 
 function webhookUrl() {
-  return `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/webhook/telegram`;
+  return `${PUBLIC_BASE_URL}/webhook/telegram`;
 }
 
 async function ensureWebhook(): Promise<void> {
