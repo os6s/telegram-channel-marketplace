@@ -1,12 +1,38 @@
+// shared/schema/enums.ts
 import { pgEnum } from "drizzle-orm/pg-core";
 
-export const listingKindEnum   = pgEnum("listing_kind", ["channel","username","account","service"]);
-export const platformKindEnum  = pgEnum("platform_kind", ["telegram","twitter","instagram","discord","snapchat","tiktok"]);
-export const paymentStatusEnum = pgEnum("payment_status_enum", ["pending","paid","refunded","cancelled"]);
-export const adminActionEnum   = pgEnum("admin_action_enum", ["none","release","refund","freeze"]);
-export const disputeStatusEnum = pgEnum("dispute_status_enum", ["open","resolved","cancelled"]);
-export const activityTypeEnum  = pgEnum("activity_type_enum", [
-  "listed","buy","sold","buyer_confirm","seller_confirm","admin_release","admin_refund","cancel","updated",
+/* ===== payments ===== */
+export const paymentStatusEnum = pgEnum("payment_status_enum", [
+  "waiting",   // للإيداع قبل التأكد
+  "pending",   // فتح الطلب/الاسكرو
+  "paid",      // تم التأكيد/الإفراج
+  "refunded",  // أرجعنا المبلغ
+  "cancelled", // ألغينا العملية
 ]);
-export const activityStatusEnum = pgEnum("activity_status_enum", ["completed","pending","failed"]);
-export const userRoleEnum       = pgEnum("user_role_enum", ["user","admin","moderator"]);
+
+export const adminActionEnum = pgEnum("admin_action_enum", [
+  "none",
+  "release",
+  "refund",
+  "freeze",
+]);
+
+export const paymentKindEnum = pgEnum("payment_kind_enum", [
+  "order",
+  "deposit",
+]);
+
+/* ===== wallet (ledger) ===== */
+export const walletDirEnum = pgEnum("wallet_dir_enum", [
+  "in",
+  "out",
+]);
+
+export const walletRefEnum = pgEnum("wallet_ref_enum", [
+  "deposit",
+  "order_hold",
+  "order_release",
+  "refund",
+  "adjustment",
+  "withdraw", // نضيفها حتى تتوافق مع الـ DTO
+]);
