@@ -1,7 +1,7 @@
 // server/routers/users.ts
 import type { Express, Request, Response } from "express";
 import { db } from "../db.js";
-import { users, insertUserSchema } from "@shared/schema";
+import { users, insertUserSchema } from "@shared/schema"; // استيراد موحد
 import { eq } from "drizzle-orm";
 import { tgOptionalAuth, requireTelegramUser } from "../middleware/tgAuth.js";
 
@@ -27,7 +27,6 @@ async function getOrCreateCurrent(dbUserReq: Request) {
   const payload = insertUserSchema.parse({
     telegramId: tgIdStr,
     username: normUsername(tg.username),
-    tonWallet: null,
     walletAddress: null,
   });
 
@@ -36,7 +35,6 @@ async function getOrCreateCurrent(dbUserReq: Request) {
     .values({
       telegramId: Number(payload.telegramId),
       username: payload.username ?? null,
-      tonWallet: payload.tonWallet ?? null,
       walletAddress: payload.walletAddress ?? null,
       role: "user",
     })
@@ -101,9 +99,6 @@ export function mountUsers(app: Express) {
 
     if (typeof req.body?.walletAddress === "string") {
       updates.walletAddress = req.body.walletAddress.trim() || null;
-    }
-    if (typeof req.body?.tonWallet === "string") {
-      updates.tonWallet = req.body.tonWallet.trim() || null;
     }
 
     if ("role" in (req.body || {})) {
