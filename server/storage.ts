@@ -1,23 +1,25 @@
 // server/storage.ts
-import { and, ilike, eq, gte, desc, or, sql, inArray } from "drizzle-orm";
+import { and, ilike, eq, gte, desc, or, sql } from "drizzle-orm";
 import {
   users,
   listings,
   activities,
   payments,
   payouts,
-  type User,
-  type InsertUser,
-  type Listing,
-  type InsertListing,
-  type Activity,
-  type InsertActivity,
-  type Payment,
-  type InsertPayment,
-  type Payout,
-  type InsertPayout,
 } from "@shared/schema";
 import { db } from "./db";
+
+/* ---------- Types from Drizzle tables ---------- */
+export type User          = typeof users.$inferSelect;
+export type InsertUser    = typeof users.$inferInsert;
+export type Listing       = typeof listings.$inferSelect;
+export type InsertListing = typeof listings.$inferInsert;
+export type Activity      = typeof activities.$inferSelect;
+export type InsertActivity= typeof activities.$inferInsert;
+export type Payment       = typeof payments.$inferSelect;
+export type InsertPayment = typeof payments.$inferInsert;
+export type Payout        = typeof payouts.$inferSelect;
+export type InsertPayout  = typeof payouts.$inferInsert;
 
 /* ---------- Contract ---------- */
 export interface IStorage {
@@ -37,7 +39,7 @@ export interface IStorage {
     platform?: Listing["platform"];
     channelMode?: Listing["channelMode"];
     serviceType?: Listing["serviceType"];
-    sellerUsername?: string; // يُحوَّل داخليًا إلى sellerId
+    sellerUsername?: string;
     minSubscribers?: number;
     maxPrice?: number;
   }): Promise<Listing[]>;
@@ -48,7 +50,7 @@ export interface IStorage {
   // activities
   getActivity(id: string): Promise<Activity | undefined>;
   getActivitiesByUserId(userId: string): Promise<Activity[]>;
-  getActivitiesByUserUsername(username: string): Promise<Activity[]>; // التفاف
+  getActivitiesByUserUsername(username: string): Promise<Activity[]>;
   getActivitiesByListing(listingId: string): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   updateActivity(id: string, updates: Partial<Activity>): Promise<Activity | undefined>;
@@ -56,7 +58,7 @@ export interface IStorage {
   // payments
   getPayment(id: string): Promise<Payment | undefined>;
   listPaymentsByBuyerId(buyerId: string): Promise<Payment[]>;
-  listPaymentsByBuyerUsername(buyerUsername: string): Promise<Payment[]>; // التفاف
+  listPaymentsByBuyerUsername(buyerUsername: string): Promise<Payment[]>;
   listPaymentsByListing(listingId: string): Promise<Payment[]>;
   createPayment(data: InsertPayment): Promise<Payment>;
   updatePayment(id: string, updates: Partial<Payment>): Promise<Payment | undefined>;
@@ -79,7 +81,7 @@ class PostgreSQLStorage implements IStorage {
     return rows[0];
   }
   async getUserByTelegramId(telegramId: string) {
-    const rows = await db.select().from(users).where(eq(users.telegramId, BigInt(telegramId))).limit(1);
+    const rows = await db.select().from(users).where(eq(users.telegramId, Number(telegramId))).limit(1);
     return rows[0];
   }
   async getUserByUsername(username: string) {
@@ -130,7 +132,7 @@ class PostgreSQLStorage implements IStorage {
 
     if (filters.sellerUsername) {
       const u = await this.getUserByUsername(filters.sellerUsername);
-      if (!u) return []; // لا يوجد بائع بهذا اليوزرنيم
+      if (!u) return [];
       conds.push(eq(listings.sellerId, u.id));
     }
 
@@ -221,7 +223,7 @@ class PostgreSQLStorage implements IStorage {
     const u = await this.getUserByUsername(buyerUsername);
     if (!u) return [];
     return this.listPaymentsByBuyerId(u.id);
-    }
+  }
   async listPaymentsByListing(listingId: string) {
     const rows = await db
       .select()
