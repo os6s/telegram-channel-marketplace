@@ -1,9 +1,11 @@
 // server/routers/profile.ts
 import type { Express, Request, Response } from "express";
 import { db } from "../db.js";
-import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
+
+// استيراد موحّد من الإندكس
+import { users, walletBalancesView } from "@shared/schema";
 
 // Base64url TON addresses (bounceable/non‑bounceable, friendly format)
 const RE_TON_ADDR = /^E[QA][A-Za-z0-9_-]{46,}$/;
@@ -14,17 +16,35 @@ async function getMeByTelegram(req: Request) {
   const tg = (req as any).telegramUser as { id: number } | undefined;
   if (!tg?.id) return null;
   const row = await db.query.users.findFirst({
-    where: eq(users.telegramId, BigInt(tg.id)),
+    where: eq(users.telegramId, Number(tg.id)),
   });
   return row ?? null;
 }
 
 export function mountProfile(app: Express) {
-  // Current user (creates is handled elsewhere; هنا فقط قراءة)
+  // Current user + balance من الفيو wallet_balances
   app.get("/api/me", tgAuth, async (req: Request, res: Response) => {
     const me = await getMeByTelegram(req);
     if (!me) return res.status(404).json({ error: "user_not_found" });
-    return res.json(me);
+
+    // نجيب الرصيد من الفيو (إن وُجد)
+    const balRow = await db
+      .select({
+        balance: walletBalancesView.balance,
+        currency: walletBalancesView.currency,
+      })
+      .from(walletBalancesView)
+      .where(eq(walletBalancesView.userId, me.id))
+      .limit(1);
+
+    const balance = Number(balRow[0]?.balance ?? 0);
+
+    // نرجّع نفس بيانات المستخدم + balance
+    return res.json({
+      ...me,
+      balance: +balance.toFixed(9),
+      balanceCurrency: balRow[0]?.currency ?? "TON",
+    });
   });
 
   // Read payout wallet (wallet_address)
