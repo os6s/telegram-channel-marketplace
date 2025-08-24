@@ -2,43 +2,42 @@
 import type { Express, Request, Response } from "express";
 import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
 import { db } from "../db.js";
-import { users, payments } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { users } from "@shared/schema/users";
 
-type TgUser = { id: number };
-
-function sum(nums: (string | number | null | undefined)[]) {
-  return +nums.reduce((s, v) => s + Number(v || 0), 0).toFixed(9);
-}
-
-async function getMe(req: Request) {
-  const tg = (req as any).telegramUser as TgUser | undefined;
-  if (!tg?.id) return null;
-  // telegram_id هو BIGINT؛ وضعناه كـ number في Drizzle
-  return await db.query.users.findFirst({ where: eq(users.telegramId, Number(tg.id)) });
-}
-
+// لو ما عندك mapping للـ view، نقرأ بالتجميع المباشر:
 export function mountBalance(app: Express) {
   app.get("/api/me/balance", tgAuth, async (req: Request, res: Response) => {
-    const me = await getMe(req);
-    if (!me) return res.status(404).json({ error: "user_not_found" });
+    try {
+      const tg = (req as any).telegramUser as { id: number } | undefined;
+      if (!tg?.id) return res.status(401).json({ error: "unauthorized" });
 
-    const rows = await db.query.payments.findMany({
-      where: eq(payments.buyerId, me.id),
-      columns: {
-        amount: true,
-        kind: true,
-        status: true,
-        locked: true,
-      },
-    });
+      const me = await db.query.users.findFirst({
+        where: eq(users.telegramId, Number(tg.id)),
+        columns: { id: true },
+      });
+      if (!me) return res.status(404).json({ error: "user_not_found" });
 
-    const deposits = sum(rows.filter(r => r.kind === "deposit" && r.status === "paid").map(r => r.amount));
-    const locked   = sum(rows.filter(r =>
-      r.kind === "order" && !!r.locked && (r.status === "pending" || r.status === "paid")
-    ).map(r => r.amount));
-    const balance  = +(deposits - locked).toFixed(9);
+      // تجميع مباشر من جدول wallet_ledger (بدون Drizzle schema: استعلام خام)
+      const row = await db.execute<{
+        balance: string | null;
+      }>(/* sql */`
+        SELECT
+          COALESCE(SUM(CASE WHEN direction='in'  THEN amount ELSE 0 END),0)
+        - COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS balance
+        FROM wallet_ledger
+        WHERE user_id = $1
+      `, [me.id]);
 
-    res.json({ currency: "TON", deposits, locked, balance });
+      const balance = Number(row.rows?.[0]?.balance || 0);
+      res.json({
+        currency: "TON",
+        deposits: undefined,     // (اختياري) تقدر ترجع breakdown إذا تحب
+        locked: undefined,       // لم نعد نحتاج payments.locked
+        balance: +balance.toFixed(9),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || "failed_to_fetch_balance" });
+    }
   });
 }
