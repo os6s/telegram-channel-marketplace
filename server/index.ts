@@ -9,12 +9,6 @@ import { setupVite, serveStatic, log } from "./vite";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Routers
-import { mountUsers } from "./routers/users.js";
-import { mountListings } from "./routers/listings.js";
-import { mountPayments } from "./routers/payments.js";
-import { registerDisputesRoutes } from "./routers/disputes.js";
-
 // Telegram auth (optional injector)
 import { tgOptionalAuth } from "./middleware/tgAuth.js";
 
@@ -123,14 +117,8 @@ app.use((req, res, next) => {
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.WEBAPP_URL || "";
   if (!publicBaseUrl) throw new Error("PUBLIC_BASE_URL or WEBAPP_URL must be set");
 
-  // Core routes (auth/session, config, webhook, etc.)
-  const server = await registerRoutes(app, { publicBaseUrl });
-
-  // App routers (IDs-based, show usernames via JOIN)
-  mountUsers(app);
-  mountListings(app);
-  mountPayments(app);
-  registerDisputesRoutes(app);
+  // All routes are mounted inside registerRoutes (webhook + REST)
+  const server = await registerRoutes(app);
 
   // Error handler
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
