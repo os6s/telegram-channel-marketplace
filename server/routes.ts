@@ -2,7 +2,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 
-import { registerBotRoutes } from "./telegram-bot";
 import { mountWebhook } from "./routers/webhook";
 import { mountUsers } from "./routers/users";
 import { mountListings } from "./routers/listings";
@@ -40,7 +39,7 @@ async function ensureWebhook(): Promise<void> {
 
   try {
     const infoRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo`);
-    const info = await infoRes.json().catch(() => ({}));
+    const info = await infoRes.json().catch(() => ({} as any));
     const curUrl = info?.result?.url as string | undefined;
 
     if (curUrl !== needUrl) {
@@ -49,7 +48,7 @@ async function ensureWebhook(): Promise<void> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: needUrl, ...(needSecret ? { secret_token: needSecret } : {}) }),
       });
-      const j = await r.json().catch(() => ({}));
+      const j = await r.json().catch(() => ({} as any));
       if (!j?.ok) console.error("❌ setWebhook failed:", j);
       return;
     }
@@ -73,8 +72,8 @@ console.log("[routes] WEBAPP_URL =", WEBAPP_URL);
 console.log("[routes] PUBLIC_BASE_URL =", PUBLIC_BASE_URL);
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Webhook only (no polling)
   mountWebhook(app, WEBAPP_URL);
-  registerBotRoutes(app);
 
   // REST
   mountUsers(app);
