@@ -3,10 +3,8 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { desc, eq, or, sql } from "drizzle-orm";
 import { db } from "../db.js";
-import { activities, insertActivitySchema } from "@shared/schema/activities";
-import { listings } from "@shared/schema/listings";
-import { users } from "@shared/schema/users";
-// (payments غير مستخدم هنا، احذفه إن ما تحتاجه)
+import { activities, listings, users } from "@shared/schema";
+import { insertActivitySchema } from "@shared/dto";
 import { ensureBuyerHasFunds } from "../ton-utils";
 
 /* ========= Telegram notify helper ========= */
@@ -185,11 +183,14 @@ export function mountActivities(app: Express) {
         return res.status(400).json({ error: "amount_mismatch_with_listing_price" });
       }
 
-      // funds check for buy (uses walletAddress now)
+      // funds check for buy (uses walletAddress)
       if (type === "buy") {
         if (!buyer.walletAddress) return res.status(400).json({ error: "buyer_wallet_not_set" });
         const priceTON = toNum(listing.price) || 0;
-        await ensureBuyerHasFunds({ userTonAddress: buyer.walletAddress, amountTON: priceTON }).catch((err: any) => {
+        await ensureBuyerHasFunds({
+          userTonAddress: buyer.walletAddress,
+          amountTON: priceTON,
+        }).catch((err: any) => {
           if (err?.code === "INSUFFICIENT_FUNDS") {
             return res.status(402).json({ error: err.message, details: err.details });
           }
@@ -223,7 +224,14 @@ export function mountActivities(app: Express) {
 
       await sendTelegramMessage(
         buyer.telegramId,
-        [`🛒 <b>Purchase Started</b>`, ``, `<b>Item:</b> ${title}`, `<b>Price:</b> ${priceStr} ${ccy}`, ``, `✅ Order placed. Please await seller instructions.`].join("\n")
+        [
+          `🛒 <b>Purchase Started</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Price:</b> ${priceStr} ${ccy}`,
+          ``,
+          `✅ Order placed. Please await seller instructions.`,
+        ].join("\n")
       );
       await sendTelegramMessage(
         seller.telegramId,
@@ -286,7 +294,15 @@ export function mountActivities(app: Express) {
 
       await sendTelegramMessage(
         seller.telegramId,
-        [`✅ <b>Buyer Confirmed Receipt</b>`, ``, `<b>Item:</b> ${title}`, `<b>Price:</b> ${priceStr} ${ccy}`, buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "", ``, `Admin will review and finalize the transaction.`].filter(Boolean).join("\n")
+        [
+          `✅ <b>Buyer Confirmed Receipt</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Price:</b> ${priceStr} ${ccy}`,
+          buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
+          ``,
+          `Admin will review and finalize the transaction.`,
+        ].filter(Boolean).join("\n")
       );
       await sendTelegramMessage(
         buyer.telegramId,
@@ -339,7 +355,15 @@ export function mountActivities(app: Express) {
 
       await sendTelegramMessage(
         buyer.telegramId,
-        [`📦 <b>Seller Confirmed Delivery</b>`, ``, `<b>Item:</b> ${title}`, `<b>Price:</b> ${priceStr} ${ccy}`, seller.username ? `<b>Seller:</b> @${seller.username}` : "", ``, `Please confirm receipt from your side if all is OK.`].filter(Boolean).join("\n")
+        [
+          `📦 <b>Seller Confirmed Delivery</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Price:</b> ${priceStr} ${ccy}`,
+          seller.username ? `<b>Seller:</b> @${seller.username}` : "",
+          ``,
+          `Please confirm receipt from your side if all is OK.`,
+        ].filter(Boolean).join("\n")
       );
       await sendTelegramMessage(
         seller.telegramId,
@@ -358,7 +382,7 @@ export function mountActivities(app: Express) {
       const id = String(req.params.id || "");
       if (!id) return res.status(400).json({ error: "id required" });
 
-      const allowed: Partial<typeof activities.$inferInsert> = {};
+    const allowed: Partial<typeof activities.$inferInsert> = {};
       if (typeof req.body?.status === "string") allowed.status = req.body.status as any;
       if (req.body?.note !== undefined) allowed.note = req.body.note;
 
