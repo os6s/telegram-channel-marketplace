@@ -1,21 +1,22 @@
 // server/routers/listings.ts
 import type { Express, Request, Response } from "express";
 import { db } from "../db.js";
-import { and, desc, eq, ilike, isNull, or } from "drizzle-orm";
+import { and, desc, eq, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { requireTelegramUser } from "../middleware/tgAuth.js";
 
-// استيراد موحد
 import {
   listings,
   users,
-  marketListingsView, // الفيو
+  marketListingsView,
 } from "@shared/schema";
 
 /* ===== Zod: create listing (sellerId from auth, not body) ===== */
 const createListingSchema = z.object({
   kind: z.enum(["channel", "username", "account", "service"]),
-  platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).default("telegram"),
+  platform: z
+    .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
+    .default("telegram"),
   username: z.string().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
@@ -72,7 +73,9 @@ export function mountListings(app: Express) {
         kind: parsed.kind,
         platform: parsed.platform,
         username: unifiedUsername || null,
-        title: (parsed.title?.trim()) || (unifiedUsername ? `@${unifiedUsername}` : `${parsed.platform} ${parsed.kind}`),
+        title:
+          parsed.title?.trim() ||
+          (unifiedUsername ? `@${unifiedUsername}` : `${parsed.platform} ${parsed.kind}`),
         description: parsed.description || null,
         price: S(parsed.price),
         currency: parsed.currency || "TON",
@@ -98,7 +101,7 @@ export function mountListings(app: Express) {
     }
   });
 
-  /** GET /api/listings — يستخدم الفيو market_listings_view */
+  /** GET /api/listings — يستخدم الفيو market_listings */
   app.get("/api/listings", async (req: Request, res: Response) => {
     try {
       const search = (req.query.search as string) || "";
@@ -107,18 +110,26 @@ export function mountListings(app: Express) {
       const onlyActive = req.query.active !== "0"; // default true
       const seller = (req.query.seller as string) || (req.query.sellerUsername as string) || "";
 
-      const whereParts = [
-        search
-          ? or(
-              ilike(marketListingsView.title, `%${search}%`),
-              ilike(marketListingsView.username, `%${search.replace(/^@/, "")}%`)
-            )
-          : undefined,
-        kind ? (eq as any)(marketListingsView.kind, kind) : undefined,
-        platform ? (eq as any)(marketListingsView.platform, platform) : undefined,
-        seller ? ilike(marketListingsView.seller, seller.startsWith("@") ? seller : `@${seller}`) : undefined,
-        onlyActive ? eq(marketListingsView.isActive, true) : undefined,
-      ].filter(Boolean) as any[];
+      const whereParts: any[] = [];
+
+      if (search) {
+        whereParts.push(
+          ilike(marketListingsView.title, `%${search}%`),
+          ilike(marketListingsView.username, `%${search.replace(/^@/, "")}%`)
+        );
+      }
+      if (kind) whereParts.push(eq(marketListingsView.kind, kind));
+      if (platform) whereParts.push(eq(marketListingsView.platform, platform));
+      if (onlyActive) whereParts.push(eq(marketListingsView.isActive, true));
+
+      // seller filter (يُضاف فقط عند وجود قيمة)
+      if (seller && seller.trim() !== "") {
+        const s = seller.trim().replace(/^@/, "").toLowerCase();
+        // تطابق تام
+        whereParts.push(eq(marketListingsView.seller, s));
+        // لو تريد contains بدلًا من التطابق التام، استبدل بالسطر التالي:
+        // whereParts.push(ilike(marketListingsView.seller, `%${s}%`));
+      }
 
       const rows = await db
         .select()
@@ -132,7 +143,7 @@ export function mountListings(app: Express) {
     }
   });
 
-  /** GET /api/listings/:id — single (نحتاج sellerId لذا نقرأ من الجدول مع join) */
+  /** GET /api/listings/:id — single (join للحصول على sellerUsername) */
   app.get("/api/listings/:id", async (req: Request, res: Response) => {
     const id = String(req.params.id || "");
     if (!id) return res.status(400).json({ error: "id required" });
