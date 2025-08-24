@@ -1,398 +1,256 @@
-// server/routers/activities.ts
+// server/routers/disputes.ts
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { desc, eq, or, sql } from "drizzle-orm";
+import { eq, desc, or } from "drizzle-orm";
 import { db } from "../db.js";
-import { activities, listings, users } from "@shared/schema";
-import { insertActivitySchema } from "@shared/dto";
-import { ensureBuyerHasFunds } from "../ton-utils";
+import { tgOptionalAuth } from "../middleware/tgAuth.js";
+import {
+  disputes,
+  disputesView,
+  messages,
+  listings,
+  payments,
+  users,
+} from "@shared/schema";
 
-/* ========= Telegram notify helper ========= */
-async function sendTelegramMessage(
-  telegramId: string | number | null | undefined,
-  text: string,
-  replyMarkup?: any
-) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return;
-  const chatId = Number(telegramId);
-  if (!Number.isFinite(chatId)) return;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: "HTML",
-        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-      }),
-    });
-    await res.json().catch(() => null);
-  } catch {}
-}
-
-/* ========= helpers ========= */
-const listQuery = z.object({
-  username: z.string().min(1).optional(),
-  listingId: z.string().uuid().optional(),
+/* ========================= Schemas ========================= */
+const idParam = z.object({ id: z.string().uuid() });
+const createDisputeSchema = z.object({
+  paymentId: z.string().uuid(),
+  reason: z.string().optional(),
+  evidence: z.string().optional(),
 });
 
-const S = (v: unknown) => (v == null ? "" : String(v));
-
-async function getUserByUsernameInsensitive(username: string) {
-  const u = await db.query.users.findFirst({
-    where: sql`lower(${users.username}) = ${username.toLowerCase()}`,
-  });
-  return u || null;
+/* ========================= Helpers ========================= */
+async function getCurrentUser(req: Request) {
+  const tg = (req as any).telegramUser as { id?: number; username?: string } | undefined;
+  if (tg?.id) {
+    const byTg = await db.query.users.findFirst({ where: eq(users.telegramId, Number(tg.id)) });
+    if (byTg) return byTg;
+  }
+  if (tg?.username) {
+    const u = await db.query.users.findFirst({
+      where: eq(users.username, tg.username.toLowerCase()),
+    });
+    if (u) return u;
+  }
+  return null;
 }
+const isAdminUser = (u: any | null) => !!u && (u.role === "admin" || u.role === "moderator");
 
-async function getListingOr404(id: string) {
-  const l = await db.query.listings.findFirst({ where: eq(listings.id, id) });
-  return l || null;
-}
+/* ========================= Routes ========================= */
+export function mountDisputes(app: Express) {
+  // يملأ req.telegramUser إذا موجود initData
+  app.use("/api/disputes", tgOptionalAuth);
 
-function toNum(v: unknown): number | null {
-  if (v == null || S(v).trim() === "") return null;
-  const n = Number(S(v).replace(",", "."));
-  return Number.isFinite(n) ? n : null;
-}
-
-/* ========= Router ========= */
-export function mountActivities(app: Express) {
-  // List activities by username or listing
-  app.get("/api/activities", async (req: Request, res: Response) => {
+  /** GET /api/disputes */
+  app.get("/api/disputes", async (req: Request, res: Response) => {
     try {
-      const q = listQuery.safeParse(req.query);
-      if (!q.success || (!q.data.username && !q.data.listingId)) {
-        return res.status(400).json({ error: "username or listingId required" });
+      const me = await getCurrentUser(req);
+      const amAdmin = isAdminUser(me);
+
+      if (amAdmin) {
+        const list = await db.select().from(disputesView).orderBy(desc(disputesView.createdAt));
+        return res.json(list);
       }
 
-      let whereExp;
-      if (q.data.username) {
-        const u = await getUserByUsernameInsensitive(q.data.username);
-        if (!u) return res.json([]);
-        whereExp = or(eq(activities.buyerId, u.id), eq(activities.sellerId, u.id));
-      } else {
-        whereExp = eq(activities.listingId, q.data.listingId!);
-      }
+      const onlyMe = req.query.me === "1" || req.query.me === "true";
+      if (!onlyMe || !me) return res.status(403).json({ error: "forbidden" });
 
-      const rows = await db
-        .select({
-          id: activities.id,
-          listingId: activities.listingId,
-          buyerId: activities.buyerId,
-          sellerId: activities.sellerId,
-          paymentId: activities.paymentId,
-          type: activities.type,
-          status: activities.status,
-          amount: activities.amount,
-          currency: activities.currency,
-          txHash: activities.txHash,
-          note: activities.note,
-          createdAt: activities.createdAt,
-          buyerUsername: users.username,
-          sellerUsername: users.username, // راح يرجع آخر join (seller)
-          title: listings.title,
-          handle: listings.username,
-        })
-        .from(activities)
-        .leftJoin(users, eq(users.id, activities.buyerId))
-        .leftJoin(users, eq(users.id, activities.sellerId))
-        .leftJoin(listings, eq(listings.id, activities.listingId))
-        .where(whereExp)
-        .orderBy(desc(activities.createdAt));
+      const list = await db
+        .select()
+        .from(disputesView)
+        .where(or(eq(disputesView.buyerId, me.id), eq(disputesView.sellerId, me.id)))
+        .orderBy(desc(disputesView.createdAt));
 
-      res.json(rows);
-    } catch (error: any) {
-      res.status(500).json({ error: error?.message || "Unknown error" });
+      return res.json(list);
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 
-  // Get activity by id
-  app.get("/api/activities/:id", async (req: Request, res: Response) => {
+  /** POST /api/disputes */
+  app.post("/api/disputes", async (req: Request, res: Response) => {
     try {
-      const id = String(req.params.id || "");
-      if (!id) return res.status(400).json({ error: "id required" });
+      const body = createDisputeSchema.parse(req.body ?? {});
+
+      const p = await db
+        .select({
+          id: payments.id,
+          listingId: payments.listingId,
+          buyerId: payments.buyerId,
+          sellerId: payments.sellerId,
+        })
+        .from(payments)
+        .where(eq(payments.id, body.paymentId))
+        .limit(1);
+
+      if (!p.length) return res.status(404).json({ error: "payment_not_found" });
+      const pay = p[0];
+
+      const inserted = await db
+        .insert(disputes)
+        .values({
+          paymentId: body.paymentId,
+          buyerId: pay.buyerId,
+          sellerId: pay.sellerId,
+          reason: body.reason ?? null,
+          evidence: body.evidence ?? null,
+          status: "open",
+        })
+        .returning();
+
+      // listing title (اختياري)
+      let listingTitle: string | null = null;
+      if (pay.listingId) {
+        const l = await db
+          .select({ title: listings.title })
+          .from(listings)
+          .where(eq(listings.id, pay.listingId))
+          .limit(1);
+        listingTitle = l[0]?.title ?? null;
+      }
+
+      // نرجع من الفيو للاتساق
+      const row = await db
+        .select()
+        .from(disputesView)
+        .where(eq(disputesView.id, inserted[0].id))
+        .limit(1);
+
+      return res.status(201).json({ ...row[0], listingTitle });
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** GET /api/disputes/:id */
+  app.get("/api/disputes/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = idParam.parse(req.params);
+
+      const rows = await db.select().from(disputesView).where(eq(disputesView.id, id)).limit(1);
+      if (!rows.length) return res.status(404).json({ error: "not_found" });
+      const d = rows[0];
+
+      const me = await getCurrentUser(req);
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin && me && me.id !== d.buyerId && me.id !== d.sellerId) {
+        return res.status(403).json({ error: "forbidden" });
+      }
+
+      return res.json(d);
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** GET /api/disputes/:id/messages */
+  app.get("/api/disputes/:id/messages", async (req: Request, res: Response) => {
+    try {
+      const { id } = idParam.parse(req.params);
+
+      const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!d.length) return res.status(404).json({ error: "dispute_not_found" });
+
+      const me = await getCurrentUser(req);
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin && me && me.id !== d[0].buyerId && me.id !== d[0].sellerId) {
+        return res.status(403).json({ error: "forbidden" });
+      }
+
+      const list = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.disputeId, id))
+        .orderBy(desc(messages.createdAt));
+
+      return res.json(list);
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** POST /api/disputes/:id/messages */
+  app.post("/api/disputes/:id/messages", async (req: Request, res: Response) => {
+    try {
+      const { id } = idParam.parse(req.params);
+      const text = z.string().min(1).parse(req.body?.text);
+
+      const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!d.length) return res.status(404).json({ error: "dispute_not_found" });
+
+      const me = await getCurrentUser(req);
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin && (!me || (me.id !== d[0].buyerId && me.id !== d[0].sellerId))) {
+        return res.status(403).json({ error: "forbidden" });
+      }
 
       const row = await db
-        .select({
-          id: activities.id,
-          listingId: activities.listingId,
-          buyerId: activities.buyerId,
-          sellerId: activities.sellerId,
-          paymentId: activities.paymentId,
-          type: activities.type,
-          status: activities.status,
-          amount: activities.amount,
-          currency: activities.currency,
-          txHash: activities.txHash,
-          note: activities.note,
-          createdAt: activities.createdAt,
-          buyerUsername: users.username,
-          sellerUsername: users.username,
-          title: listings.title,
-          handle: listings.username,
-        })
-        .from(activities)
-        .leftJoin(users, eq(users.id, activities.buyerId))
-        .leftJoin(users, eq(users.id, activities.sellerId))
-        .leftJoin(listings, eq(listings.id, activities.listingId))
-        .where(eq(activities.id, id));
-
-      if (!row.length) return res.status(404).json({ error: "Activity not found" });
-      res.json(row[0]);
-    } catch (error: any) {
-      res.status(500).json({ error: error?.message || "Unknown error" });
-    }
-  });
-
-  // Create activity (buy / …)
-  app.post("/api/activities", async (req: Request, res: Response) => {
-    try {
-      const body = { ...(req.body || {}) };
-
-      const listingId = String(body.listingId || "");
-      const buyerUsername = S(body.buyerUsername || body.buyer_username).toLowerCase();
-      const sellerUsername = S(body.sellerUsername || body.seller_username).toLowerCase();
-
-      if (!listingId) return res.status(400).json({ error: "listingId required" });
-      if (!buyerUsername) return res.status(400).json({ error: "buyerUsername required" });
-      if (!sellerUsername) return res.status(400).json({ error: "sellerUsername required" });
-
-      const listing = await getListingOr404(listingId);
-      if (!listing || !listing.isActive) {
-        return res.status(400).json({ error: "Listing not found or inactive" });
-      }
-
-      const buyer = await getUserByUsernameInsensitive(buyerUsername);
-      const seller = await getUserByUsernameInsensitive(sellerUsername);
-      if (!buyer) return res.status(404).json({ error: "buyer_user_not_found" });
-      if (!seller) return res.status(404).json({ error: "seller_user_not_found" });
-      if (buyer.id === seller.id) return res.status(400).json({ error: "seller_cannot_buy_own_listing" });
-
-      const type = (S(body.type) || "buy") as typeof activities.$inferInsert.type;
-      const amount = S(body.amount) || S(listing.price);
-      const currency = S(body.currency) || S(listing.currency || "TON");
-
-      const a = toNum(amount);
-      const p = toNum(listing.price);
-      if (a != null && p != null && a !== p) {
-        return res.status(400).json({ error: "amount_mismatch_with_listing_price" });
-      }
-
-      // funds check for buy (uses walletAddress)
-      if (type === "buy") {
-        if (!buyer.walletAddress) return res.status(400).json({ error: "buyer_wallet_not_set" });
-        const priceTON = toNum(listing.price) || 0;
-        await ensureBuyerHasFunds({
-          userTonAddress: buyer.walletAddress,
-          amountTON: priceTON,
-        }).catch((err: any) => {
-          if (err?.code === "INSUFFICIENT_FUNDS") {
-            return res.status(402).json({ error: err.message, details: err.details });
-          }
-          return res.status(400).json({ error: err?.message || "balance_check_failed" });
-        });
-      }
-
-      const payload = insertActivitySchema.parse({
-        listingId,
-        buyerId: buyer.id,
-        sellerId: seller.id,
-        paymentId: S(body.paymentId) || undefined,
-        type,
-        status: body.status || "pending",
-        amount,
-        currency,
-        txHash: S(body.txHash) || undefined,
-        note: body.note ?? undefined,
-      });
-
-      const created = await db.insert(activities).values(payload).returning();
-      const activity = created[0];
-
-      if (type === "buy" && listing.kind !== "service" && listing.isActive) {
-        await db.update(listings).set({ isActive: false, updatedAt: new Date() }).where(eq(listings.id, listing.id));
-      }
-
-      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
-      const priceStr = S(activity.amount || listing.price);
-      const ccy = S(activity.currency || listing.currency || "TON");
-
-      await sendTelegramMessage(
-        buyer.telegramId,
-        [
-          `🛒 <b>Purchase Started</b>`,
-          ``,
-          `<b>Item:</b> ${title}`,
-          `<b>Price:</b> ${priceStr} ${ccy}`,
-          ``,
-          `✅ Order placed. Please await seller instructions.`,
-        ].join("\n")
-      );
-      await sendTelegramMessage(
-        seller.telegramId,
-        [
-          `📩 <b>New Order Received</b>`,
-          ``,
-          `<b>Item:</b> ${title}`,
-          `<b>Price:</b> ${priceStr} ${ccy}`,
-          buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
-          ``,
-          `Please proceed with delivery and communicate in-app if needed.`,
-        ].filter(Boolean).join("\n")
-      );
-
-      res.status(201).json(activity);
-    } catch (error: any) {
-      if (!res.headersSent) {
-        res.status(400).json({ error: error?.message || "Invalid payload" });
-      }
-    }
-  });
-
-  // Buyer confirms receipt
-  app.post("/api/activities/confirm/buyer", async (req: Request, res: Response) => {
-    try {
-      const listingId = S(req.body?.listingId);
-      const buyerUsername = S(req.body?.buyerUsername || req.body?.buyer_username).toLowerCase();
-      const sellerUsername = S(req.body?.sellerUsername || req.body?.seller_username).toLowerCase();
-      const paymentId = S(req.body?.paymentId) || null;
-
-      if (!listingId || !buyerUsername || !sellerUsername) {
-        return res.status(400).json({ error: "listingId, buyerUsername, sellerUsername required" });
-      }
-
-      const listing = await getListingOr404(listingId);
-      if (!listing) return res.status(404).json({ error: "listing_not_found" });
-
-      const buyer = await getUserByUsernameInsensitive(buyerUsername);
-      const seller = await getUserByUsernameInsensitive(sellerUsername);
-      if (!buyer || !seller) return res.status(404).json({ error: "user_not_found" });
-
-      const created = await db
-        .insert(activities)
+        .insert(messages)
         .values({
-          listingId,
-          buyerId: buyer.id,
-          sellerId: seller.id,
-          paymentId: paymentId || undefined,
-          type: "buyer_confirm",
-          status: "completed",
-          amount: S(listing.price),
-          currency: S(listing.currency || "TON"),
-          note: { tag: "buyer_confirm" } as any,
+          disputeId: id,
+          content: text,
+          senderId: me?.id ?? null,
+          senderUsername: amAdmin ? (me?.username || "admin").toLowerCase() : (me?.username || "").toLowerCase(),
         })
         .returning();
 
-      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
-      const priceStr = S(listing.price);
-      const ccy = S(listing.currency || "TON");
-
-      await sendTelegramMessage(
-        seller.telegramId,
-        [
-          `✅ <b>Buyer Confirmed Receipt</b>`,
-          ``,
-          `<b>Item:</b> ${title}`,
-          `<b>Price:</b> ${priceStr} ${ccy}`,
-          buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
-          ``,
-          `Admin will review and finalize the transaction.`,
-        ].filter(Boolean).join("\n")
-      );
-      await sendTelegramMessage(
-        buyer.telegramId,
-        [`📝 <b>Your confirmation was recorded</b>`, ``, `<b>Item:</b> ${title}`, `<b>Status:</b> Waiting for admin finalization`].join("\n")
-      );
-
-      res.status(201).json(created[0]);
+      return res.status(201).json(row[0]);
     } catch (e: any) {
-      res.status(400).json({ error: e?.message || "Failed to confirm (buyer)" });
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 
-  // Seller confirms delivery
-  app.post("/api/activities/confirm/seller", async (req: Request, res: Response) => {
+  /** POST /api/disputes/:id/resolve */
+  app.post("/api/disputes/:id/resolve", async (req: Request, res: Response) => {
     try {
-      const listingId = S(req.body?.listingId);
-      const buyerUsername = S(req.body?.buyerUsername || req.body?.buyer_username).toLowerCase();
-      const sellerUsername = S(req.body?.sellerUsername || req.body?.seller_username).toLowerCase();
-      const paymentId = S(req.body?.paymentId) || null;
+      const { id } = idParam.parse(req.params);
 
-      if (!listingId || !buyerUsername || !sellerUsername) {
-        return res.status(400).json({ error: "listingId, buyerUsername, sellerUsername required" });
+      const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!d.length) return res.status(404).json({ error: "not_found" });
+
+      const me = await getCurrentUser(req);
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin && (!me || (me.id !== d[0].buyerId && me.id !== d[0].sellerId))) {
+        return res.status(403).json({ error: "forbidden" });
       }
 
-      const listing = await getListingOr404(listingId);
-      if (!listing) return res.status(404).json({ error: "listing_not_found" });
-
-      const buyer = await getUserByUsernameInsensitive(buyerUsername);
-      const seller = await getUserByUsernameInsensitive(sellerUsername);
-      if (!buyer || !seller) return res.status(404).json({ error: "user_not_found" });
-
-      const created = await db
-        .insert(activities)
-        .values({
-          listingId,
-          buyerId: buyer.id,
-          sellerId: seller.id,
-          paymentId: paymentId || undefined,
-          type: "seller_confirm",
-          status: "completed",
-          amount: S(listing.price),
-          currency: S(listing.currency || "TON"),
-          note: { tag: "seller_confirm" } as any,
-        })
+      const updated = await db
+        .update(disputes)
+        .set({ status: "resolved", resolvedAt: new Date() })
+        .where(eq(disputes.id, id))
         .returning();
 
-      const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
-      const priceStr = S(listing.price);
-      const ccy = S(listing.currency || "TON");
-
-      await sendTelegramMessage(
-        buyer.telegramId,
-        [
-          `📦 <b>Seller Confirmed Delivery</b>`,
-          ``,
-          `<b>Item:</b> ${title}`,
-          `<b>Price:</b> ${priceStr} ${ccy}`,
-          seller.username ? `<b>Seller:</b> @${seller.username}` : "",
-          ``,
-          `Please confirm receipt from your side if all is OK.`,
-        ].filter(Boolean).join("\n")
-      );
-      await sendTelegramMessage(
-        seller.telegramId,
-        [`📝 <b>Your delivery confirmation was recorded</b>`, ``, `<b>Item:</b> ${title}`, `<b>Status:</b> Waiting for buyer / admin`].join("\n")
-      );
-
-      res.status(201).json(created[0]);
+      return res.json(updated[0]);
     } catch (e: any) {
-      res.status(400).json({ error: e?.message || "Failed to confirm (seller)" });
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 
-  // Update activity (status / note)
-  app.patch("/api/activities/:id", async (req: Request, res: Response) => {
+  /** POST /api/disputes/:id/cancel */
+  app.post("/api/disputes/:id/cancel", async (req: Request, res: Response) => {
     try {
-      const id = String(req.params.id || "");
-      if (!id) return res.status(400).json({ error: "id required" });
+      const { id } = idParam.parse(req.params);
 
-      const allowed: Partial<typeof activities.$inferInsert> = {};
-      if (typeof req.body?.status === "string") allowed.status = req.body.status as any;
-      if (req.body?.note !== undefined) allowed.note = req.body.note;
+      const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!d.length) return res.status(404).json({ error: "not_found" });
 
-      if (Object.keys(allowed).length === 0) {
-        return res.status(400).json({ error: "no_updates" });
+      const me = await getCurrentUser(req);
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin && (!me || (me.id !== d[0].buyerId && me.id !== d[0].sellerId))) {
+        return res.status(403).json({ error: "forbidden" });
       }
 
-      const updated = await db.update(activities).set(allowed).where(eq(activities.id, id)).returning();
-      if (!updated.length) return res.status(404).json({ error: "Activity not found" });
-      res.json(updated[0]);
-    } catch (error: any) {
-      res.status(500).json({ error: error?.message || "Unknown error" });
+      const updated = await db
+        .update(disputes)
+        .set({ status: "cancelled" })
+        .where(eq(disputes.id, id))
+        .returning();
+
+      return res.json(updated[0]);
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 }
