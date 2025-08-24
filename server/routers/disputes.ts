@@ -3,7 +3,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { eq, desc, or } from "drizzle-orm";
 import { db } from "../db.js";
-import { tgOptionalAuth } from "../middleware/tgAuth.js";
+import { tgOptionalAuth, requireTelegramUser } from "../middleware/tgAuth.js";
 import {
   disputes,
   disputesView,
@@ -40,22 +40,19 @@ const isAdminUser = (u: any | null) => !!u && (u.role === "admin" || u.role === 
 
 /* ========================= Routes ========================= */
 export function mountDisputes(app: Express) {
-  // يملأ req.telegramUser إذا موجود initData
   app.use("/api/disputes", tgOptionalAuth);
 
   /** GET /api/disputes */
   app.get("/api/disputes", async (req: Request, res: Response) => {
     try {
       const me = await getCurrentUser(req);
-      const amAdmin = isAdminUser(me);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
 
+      const amAdmin = isAdminUser(me);
       if (amAdmin) {
         const list = await db.select().from(disputesView).orderBy(desc(disputesView.createdAt));
         return res.json(list);
       }
-
-      const onlyMe = req.query.me === "1" || req.query.me === "true";
-      if (!onlyMe || !me) return res.status(403).json({ error: "forbidden" });
 
       const list = await db
         .select()
@@ -65,13 +62,16 @@ export function mountDisputes(app: Express) {
 
       return res.json(list);
     } catch (e: any) {
-      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+      return res.status(500).json({ error: e?.message ?? "server_error" });
     }
   });
 
   /** POST /api/disputes */
-  app.post("/api/disputes", async (req: Request, res: Response) => {
+  app.post("/api/disputes", requireTelegramUser, async (req: Request, res: Response) => {
     try {
+      const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
       const body = createDisputeSchema.parse(req.body ?? {});
 
       const p = await db
@@ -88,6 +88,11 @@ export function mountDisputes(app: Express) {
       if (!p.length) return res.status(404).json({ error: "payment_not_found" });
       const pay = p[0];
 
+      // ✅ Only buyer or seller of this payment can create dispute
+      if (me.id !== pay.buyerId && me.id !== pay.sellerId) {
+        return res.status(403).json({ error: "forbidden", detail: "not_participant" });
+      }
+
       const inserted = await db
         .insert(disputes)
         .values({
@@ -100,7 +105,6 @@ export function mountDisputes(app: Express) {
         })
         .returning();
 
-      // listing title (اختياري)
       let listingTitle: string | null = null;
       if (pay.listingId) {
         const l = await db
@@ -111,7 +115,6 @@ export function mountDisputes(app: Express) {
         listingTitle = l[0]?.title ?? null;
       }
 
-      // نرجع من الفيو للاتساق
       const row = await db
         .select()
         .from(disputesView)
@@ -128,14 +131,15 @@ export function mountDisputes(app: Express) {
   app.get("/api/disputes/:id", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
-
       const rows = await db.select().from(disputesView).where(eq(disputesView.id, id)).limit(1);
       if (!rows.length) return res.status(404).json({ error: "not_found" });
       const d = rows[0];
 
       const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
       const amAdmin = isAdminUser(me);
-      if (!amAdmin && me && me.id !== d.buyerId && me.id !== d.sellerId) {
+      if (!amAdmin && me.id !== d.buyerId && me.id !== d.sellerId) {
         return res.status(403).json({ error: "forbidden" });
       }
 
@@ -149,13 +153,14 @@ export function mountDisputes(app: Express) {
   app.get("/api/disputes/:id/messages", async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
-
       const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!d.length) return res.status(404).json({ error: "dispute_not_found" });
 
       const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
       const amAdmin = isAdminUser(me);
-      if (!amAdmin && me && me.id !== d[0].buyerId && me.id !== d[0].sellerId) {
+      if (!amAdmin && me.id !== d[0].buyerId && me.id !== d[0].sellerId) {
         return res.status(403).json({ error: "forbidden" });
       }
 
@@ -172,7 +177,7 @@ export function mountDisputes(app: Express) {
   });
 
   /** POST /api/disputes/:id/messages */
-  app.post("/api/disputes/:id/messages", async (req: Request, res: Response) => {
+  app.post("/api/disputes/:id/messages", requireTelegramUser, async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
       const text = z.string().min(1).parse(req.body?.text);
@@ -181,8 +186,10 @@ export function mountDisputes(app: Express) {
       if (!d.length) return res.status(404).json({ error: "dispute_not_found" });
 
       const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
       const amAdmin = isAdminUser(me);
-      if (!amAdmin && (!me || (me.id !== d[0].buyerId && me.id !== d[0].sellerId))) {
+      if (!amAdmin && me.id !== d[0].buyerId && me.id !== d[0].sellerId) {
         return res.status(403).json({ error: "forbidden" });
       }
 
@@ -190,9 +197,9 @@ export function mountDisputes(app: Express) {
         .insert(messages)
         .values({
           disputeId: id,
-          content: text,
-          senderId: me?.id ?? null,
-          senderUsername: amAdmin ? (me?.username || "admin").toLowerCase() : (me?.username || "").toLowerCase(),
+          content: text.trim(),
+          senderId: me.id,
+          senderUsername: me.username?.toLowerCase() || "unknown",
         })
         .returning();
 
@@ -203,16 +210,17 @@ export function mountDisputes(app: Express) {
   });
 
   /** POST /api/disputes/:id/resolve */
-  app.post("/api/disputes/:id/resolve", async (req: Request, res: Response) => {
+  app.post("/api/disputes/:id/resolve", requireTelegramUser, async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
-
       const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!d.length) return res.status(404).json({ error: "not_found" });
 
       const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
       const amAdmin = isAdminUser(me);
-      if (!amAdmin && (!me || (me.id !== d[0].buyerId && me.id !== d[0].sellerId))) {
+      if (!amAdmin && me.id !== d[0].buyerId && me.id !== d[0].sellerId) {
         return res.status(403).json({ error: "forbidden" });
       }
 
@@ -229,16 +237,17 @@ export function mountDisputes(app: Express) {
   });
 
   /** POST /api/disputes/:id/cancel */
-  app.post("/api/disputes/:id/cancel", async (req: Request, res: Response) => {
+  app.post("/api/disputes/:id/cancel", requireTelegramUser, async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
-
       const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!d.length) return res.status(404).json({ error: "not_found" });
 
       const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
       const amAdmin = isAdminUser(me);
-      if (!amAdmin && (!me || (me.id !== d[0].buyerId && me.id !== d[0].sellerId))) {
+      if (!amAdmin && me.id !== d[0].buyerId && me.id !== d[0].sellerId) {
         return res.status(403).json({ error: "forbidden" });
       }
 
