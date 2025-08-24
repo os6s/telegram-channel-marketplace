@@ -5,11 +5,17 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { tgAuth } from "../middleware/tgAuth";
 import { storage } from "../storage";
 
-// سكيمة مقسّمة
-import { users, type User } from "@shared/schema/users";
-import { listings } from "@shared/schema/listings";
-import { payments } from "@shared/schema/payments";
-import { activities } from "@shared/schema/activities";
+// استيراد موحّد من index
+import {
+  users,
+  listings,
+  payments,
+  activities,
+  type SelectModel,
+} from "@shared/schema";
+
+// نعرّف نوع User من السكيمة الموحّدة
+type User = SelectModel<typeof users>;
 
 /* ---------- admin auth (via Telegram) ---------- */
 const ADMIN_TG = new Set(
@@ -49,13 +55,13 @@ async function notify(telegramId: number | string | null | undefined, text: stri
 
 export function mountAdmin(app: Express) {
   /* =========================
-     GET /api/admin/payments  (قائمة الطلبات)
+     GET /api/admin/orders
   ========================= */
   app.get("/api/admin/orders", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
-    // ملاحظة: ما عدنا عمود kind في payments — نعرض كل الدفعات أحدث أولاً
+    // نعرض كل الدفعات أحدث أولاً
     const rows = await db.select().from(payments).orderBy(desc(payments.createdAt));
     if (!rows.length) return res.json([]);
 
@@ -105,7 +111,7 @@ export function mountAdmin(app: Express) {
 
   /* =========================
      POST /api/admin/payments/:id/release
-     -> يغيّر الحالة إلى paid و adminAction=release
+     -> status=paid, adminAction=release
   ========================= */
   app.post("/api/admin/payments/:id/release", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
@@ -145,7 +151,7 @@ export function mountAdmin(app: Express) {
 
   /* =========================
      POST /api/admin/payments/:id/refund
-     -> يغيّر الحالة إلى refunded و adminAction=refund
+     -> status=refunded, adminAction=refund
   ========================= */
   app.post("/api/admin/payments/:id/refund", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
