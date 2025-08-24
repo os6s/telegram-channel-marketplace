@@ -1,6 +1,10 @@
+// shared/schema/views.ts
 import { pgView, uuid, timestamp, varchar, numeric, boolean } from "drizzle-orm/pg-core";
 
-// اربط أعمدة الفيوهات الموجودة مسبقاً في DB
+/* =========================
+   Existing Views (from DB)
+========================= */
+
 export const activitiesView = pgView("activities_view", {
   id: uuid("id"),
   createdAt: timestamp("created_at", { withTimezone: true }),
@@ -78,4 +82,14 @@ export const paymentsView = pgView("payments_view", {
   adminAction: varchar("admin_action", { length: 16 }),
   escrowAddress: varchar("escrow_address", { length: 128 }),
   txHash: varchar("tx_hash", { length: 128 }),
+}).existing();
+
+/* =========================
+   New View: wallet_balances
+========================= */
+export const walletBalancesView = pgView("wallet_balances", {
+  userId: uuid("user_id"),
+  username: varchar("username", { length: 64 }),
+  balance: numeric("balance", { precision: 18, scale: 8 }),
+  currency: varchar("currency", { length: 8 }),
 }).existing();
