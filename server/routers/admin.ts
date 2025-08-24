@@ -1,8 +1,8 @@
 // server/routers/admin.ts
 import type { Express, Request } from "express";
-import { db } from "../db";
+import { db } from "../db.js";
 import { desc, eq, inArray } from "drizzle-orm";
-import { tgAuth } from "../middleware/tgAuth";
+import { tgAuth } from "../middleware/tgAuth.js";
 import { storage } from "../storage";
 
 // استيراد موحّد من index
@@ -11,11 +11,10 @@ import {
   listings,
   payments,
   activities,
-  type SelectModel,
 } from "@shared/schema";
 
-// نعرّف نوع User من السكيمة الموحّدة
-type User = SelectModel<typeof users>;
+// نوع User من Drizzle مباشرة
+type User = typeof users.$inferSelect;
 
 /* ---------- admin auth (via Telegram) ---------- */
 const ADMIN_TG = new Set(
@@ -61,7 +60,6 @@ export function mountAdmin(app: Express) {
     const actor = await resolveActor(req);
     if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
 
-    // نعرض كل الدفعات أحدث أولاً
     const rows = await db.select().from(payments).orderBy(desc(payments.createdAt));
     if (!rows.length) return res.json([]);
 
@@ -97,8 +95,8 @@ export function mountAdmin(app: Express) {
           createdAt: r.createdAt as unknown as string,
           amount: String(r.amount),
           currency: (r.currency as string) || "TON",
-          status: r.status,              // "pending" | "paid" | "refunded" | "cancelled"
-          adminAction: r.adminAction,    // "none" | "release" | "refund" | "freeze"
+          status: r.status,
+          adminAction: r.adminAction,
           buyer: { id: r.buyerId, username: buyer?.username ?? null },
           seller: { id: r.sellerId, username: seller?.username ?? null },
           escrowAddress: r.escrowAddress ?? null,
@@ -111,7 +109,6 @@ export function mountAdmin(app: Express) {
 
   /* =========================
      POST /api/admin/payments/:id/release
-     -> status=paid, adminAction=release
   ========================= */
   app.post("/api/admin/payments/:id/release", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
@@ -151,7 +148,6 @@ export function mountAdmin(app: Express) {
 
   /* =========================
      POST /api/admin/payments/:id/refund
-     -> status=refunded, adminAction=refund
   ========================= */
   app.post("/api/admin/payments/:id/refund", tgAuth, async (req, res) => {
     const actor = await resolveActor(req);
