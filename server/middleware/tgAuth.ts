@@ -22,7 +22,6 @@ const DEBUG = String(process.env.DEBUG_TG_AUTH || "").toLowerCase() === "true";
 
 function dbg(...args: any[]) {
   if (!DEBUG) return;
-  // استخدم console.debug لتفريقها عن الأخطاء
   console.debug("[tgAuth]", ...args);
 }
 
@@ -64,7 +63,6 @@ function parseTelegramUser(initData: string) {
 
 function redactInitDataPreview(s: string) {
   if (!s) return "";
-  // نعرض الطول + أول/آخر 16 حرف فقط
   const head = s.slice(0, 16);
   const tail = s.slice(-16);
   return `[len=${Buffer.byteLength(s, "utf8")} "${head}...${tail}"]`;
@@ -161,10 +159,19 @@ export function tgOptionalAuth(req: Request, _res: Response, next: NextFunction)
   next();
 }
 
+/** Required Telegram user + username */
 export function requireTelegramUser(req: Request, res: Response, next: NextFunction) {
-  if (!req.telegramUser?.id) {
+  const user = req.telegramUser;
+
+  if (!user?.id) {
     dbg("requireTelegramUser: missing telegramUser");
-    return res.status(401).json({ error: "unauthorized" });
+    return res.status(401).json({ error: "unauthorized", detail: "user_required" });
   }
+
+  if (!user.username || user.username.trim() === "") {
+    dbg("requireTelegramUser: username required");
+    return res.status(403).json({ error: "forbidden", detail: "username_required" });
+  }
+
   next();
 }
