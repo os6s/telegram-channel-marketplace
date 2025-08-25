@@ -12,6 +12,7 @@ import { ListingsTab } from "@/components/profile/ListingsTab";
 import { ActivityTab } from "@/components/profile/ActivityTab";
 import { ActivityDialog } from "@/components/profile/ActivityDialog";
 import { DisputesTab } from "@/components/profile/DisputesTab";
+import { WalletTab } from "@/components/profile/WalletTab"; // ✅ new
 import {
   useMe,
   useMyListings,
@@ -28,7 +29,7 @@ const N = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
 export default function ProfilePage() {
   const { t } = useLanguage();
   const { toast } = useToast();
-  const { wallet, getBalance } = useTon();
+  const { wallet } = useTon();
 
   const [showSettings, setShowSettings] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -173,10 +174,11 @@ export default function ProfilePage() {
         <StatsCards activeCount={stats.activeCount} totalValue={stats.totalValue} totalSubs={stats.totalSubs} />
 
         <Tabs defaultValue="listings" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="listings">{t("profilePage.tabs.listings") || "My Listings"}</TabsTrigger>
             <TabsTrigger value="activity">{t("profilePage.tabs.activity")}</TabsTrigger>
             <TabsTrigger value="disputes">{t("profilePage.tabs.disputes") || "Disputes"}</TabsTrigger>
+            <TabsTrigger value="wallet">{t("profilePage.tabs.wallet") || "Wallet"}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="listings" className="space-y-4">
@@ -194,6 +196,10 @@ export default function ProfilePage() {
 
           <TabsContent value="disputes" className="space-y-4">
             <DisputesTab disputes={myDisputes as any} isLoading={disputesLoading} />
+          </TabsContent>
+
+          <TabsContent value="wallet" className="space-y-4">
+            <WalletTab />
           </TabsContent>
         </Tabs>
       </div>
