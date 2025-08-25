@@ -11,7 +11,6 @@ import {
   listings,
   payments,
   users,
-  walletLedger,
 } from "@shared/schema";
 
 /* ========================= Schemas ========================= */
@@ -96,7 +95,6 @@ export function mountDisputes(app: Express) {
       if (!p.length) return res.status(404).json({ error: "payment_not_found" });
       const pay = p[0];
 
-      // only buyer or seller can create
       if (me.id !== pay.buyerId && me.id !== pay.sellerId) {
         return res.status(403).json({ error: "forbidden", detail: "not_participant" });
       }
@@ -217,10 +215,11 @@ export function mountDisputes(app: Express) {
     }
   });
 
-  /** POST /api/disputes/:id/resolve (admin only) */
+  /** POST /api/disputes/:id/resolve (admin only, delegates to wallet) */
   app.post("/api/disputes/:id/resolve", requireTelegramUser, async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
+      const action = String(req.body?.action || "release");
 
       const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!d.length) return res.status(404).json({ error: "not_found" });
@@ -230,74 +229,25 @@ export function mountDisputes(app: Express) {
       const amAdmin = isAdminUser(me);
       if (!amAdmin) return res.status(403).json({ error: "forbidden" });
 
-      const pay = await db.query.payments.findFirst({ where: eq(payments.id, d[0].paymentId) });
-      if (!pay || pay.status !== "escrow") {
-        return res.status(404).json({ error: "payment_not_in_escrow" });
-      }
+      // delegate to central wallet resolver
+      const r = await fetch(`${process.env.BASE_URL || ""}/api/wallet/resolve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-telegram-init-data": req.get("x-telegram-init-data") || "",
+        },
+        body: JSON.stringify({ paymentId: d[0].paymentId, action }),
+      });
+      const out = await r.json();
 
-      const action = String(req.body?.action || "release");
-      if (!["release", "refund"].includes(action)) {
-        return res.status(400).json({ error: "bad_request" });
-      }
-
-      const amount = Number(pay.amount);
-      if (action === "release") {
-        const fee = +(amount * 0.05).toFixed(9);
-        const sellerAmount = +(amount - fee).toFixed(9);
-
-        await db.insert(walletLedger).values([
-          {
-            userId: pay.sellerId,
-            direction: "in",
-            amount: String(sellerAmount),
-            currency: "TON",
-            refType: "payout",
-            refId: pay.id,
-            note: "Released to seller",
-          },
-          {
-            userId: me.id, // admin user
-            direction: "in",
-            amount: String(fee),
-            currency: "TON",
-            refType: "fee",
-            refId: pay.id,
-            note: "Admin fee",
-          },
-        ]);
-
-        await db.update(payments).set({
-          feePercent: "5",
-          feeAmount: String(fee),
-          sellerAmount: String(sellerAmount),
-          status: "released",
-          adminAction: "release",
-        }).where(eq(payments.id, pay.id));
-      }
-
-      if (action === "refund") {
-        await db.insert(walletLedger).values({
-          userId: pay.buyerId,
-          direction: "in",
-          amount: String(amount),
-          currency: "TON",
-          refType: "refund",
-          refId: pay.id,
-          note: "Refunded to buyer",
-        });
-
-        await db.update(payments).set({
-          status: "refunded",
-          adminAction: "refund",
-        }).where(eq(payments.id, pay.id));
-      }
+      if (!r.ok) return res.status(r.status).json(out);
 
       const updated = await db.update(disputes).set({
         status: "resolved",
         resolvedAt: new Date(),
       }).where(eq(disputes.id, id)).returning();
 
-      return res.json({ ok: true, dispute: updated[0], action });
+      return res.json({ ok: true, dispute: updated[0], wallet: out });
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
