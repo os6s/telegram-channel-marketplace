@@ -18,6 +18,8 @@ import { useToast } from "@/hooks/use-toast";
 import { telegramWebApp } from "@/lib/telegram";
 import { apiRequest } from "@/lib/queryClient";
 import { useLanguage } from "@/contexts/language-context";
+import { useQuery } from "@tanstack/react-query";
+
 import UsernameForm from "./parts/UsernameForm";
 import AccountForm from "./parts/AccountForm";
 import ChannelForm from "./parts/ChannelForm";
@@ -61,6 +63,14 @@ export default function SellPage() {
     } catch {}
   }, []);
 
+  // ✅ 1. جلب المستخدم الحالي (me)
+  const { data: me } = useQuery({
+    queryKey: ["/api/me"],
+    queryFn: async () => await apiRequest("GET", "/api/me"),
+    staleTime: 0,
+    retry: false,
+  });
+
   const schema = useMemo(() => getSchema(kind || ""), [kind]);
 
   const form = useForm<any>({
@@ -81,7 +91,7 @@ export default function SellPage() {
       // account
       createdAt: "",
       followersCount: "",
-      // channel (link فقط – لا يوجد channelUsername)
+      // channel
       channelMode: "subscribers",
       link: "",
       subscribersCount: "",
@@ -118,17 +128,12 @@ export default function SellPage() {
     if (!isNumber && !allowed.includes(e.key)) e.preventDefault();
   };
 
+  // ✅ 2. تعديل submit لإرسال sellerId و sellerUsername
   const submit = async (data: any) => {
-    // نستخدم يوزرنيم صاحب الحساب من تيليجرام كبائع
-    const sellerUsername = (telegramWebApp?.user?.username || "")
-      .trim()
-      .toLowerCase();
-
-    if (!sellerUsername) {
+    if (!me?.id || !me?.username) {
       toast({
         title: t("toast.error") || "Error",
-        description:
-          "لازم تفتح الميني-أب من داخل تيليجرام وبحساب بيه username حتى نربط الإعلان",
+        description: "لازم تدخل من تيليجرام حتى نربط الإعلان بحسابك",
         variant: "destructive"
       });
       return;
@@ -144,7 +149,6 @@ export default function SellPage() {
       return;
     }
 
-    // القناة الآن تستعمل link فقط لاستخراج اليوزر
     let username = data.username;
     if (data.type === "channel") {
       username = normUsername(data.link || "");
@@ -165,7 +169,8 @@ export default function SellPage() {
         : `${data.serviceType || "service"} ${data.target || ""}`.trim());
 
     const basePayload: any = {
-      sellerUsername,
+      sellerId: me.id,                // ✅
+      sellerUsername: me.username,    // ✅
       kind: data.type || kind || "channel",
       platform: data.platform || platform || "telegram",
       channelMode: data.channelMode || "subscribers",
@@ -177,25 +182,20 @@ export default function SellPage() {
       isActive: true
     };
 
-    // إضافات حسب النوع
     if (basePayload.kind === "channel") {
-      basePayload.subscribersCount = data.subscribersCount
-        ? Number(data.subscribersCount)
-        : undefined;
+      basePayload.subscribersCount = data.subscribersCount ? Number(data.subscribersCount) : undefined;
       basePayload.giftsCount = data.giftsCount ? Number(data.giftsCount) : undefined;
       basePayload.giftKind = data.giftKind || "regular";
     }
     if (basePayload.kind === "account") {
-      basePayload.followersCount = data.followersCount
-        ? Number(data.followersCount)
-        : undefined;
-      basePayload.createdAt = data.createdAt || undefined; // السيرفر يحولها لـ accountCreatedAt
+      basePayload.followersCount = data.followersCount ? Number(data.followersCount) : undefined;
+      basePayload.createdAt = data.createdAt || undefined;
       basePayload.tgUserType = data.tgUserType || undefined;
     }
     if (basePayload.kind === "service") {
       basePayload.serviceType = data.serviceType || "followers";
       basePayload.target = data.target || "instagram";
-      basePayload.count = data.count ? Number(data.count) : undefined; // السيرفر يحولها لـ serviceCount
+      basePayload.count = data.count ? Number(data.count) : undefined;
     }
     if (basePayload.kind === "username") {
       basePayload.tgUserType = data.tgUserType || undefined;
@@ -242,7 +242,7 @@ export default function SellPage() {
     );
   }
 
-  // الخطوة 2: اختيار المنصّة لليوزر/الحساب
+  // الخطوة 2: اختيار المنصة
   if ((kind === "username" || kind === "account") && !platform) {
     const list = ["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"];
     return (
@@ -271,10 +271,7 @@ export default function SellPage() {
 
   return (
     <Form key={`form-${kind || "none"}`} {...form}>
-      <form
-        onSubmit={form.handleSubmit(submit)}
-        className="space-y-4 min-h-screen p-4"
-      >
+      <form onSubmit={form.handleSubmit(submit)} className="space-y-4 min-h-screen p-4">
         <Card className="p-4 space-y-3">
           <div className="flex gap-2">
             <Button
