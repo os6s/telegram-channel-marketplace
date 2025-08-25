@@ -38,31 +38,21 @@ export async function listListings(req: Request, res: Response) {
 
     if (!rows.length) return res.json([]);
 
-    // ✅ هنانا نجيب sellers details
+    // ✅ sellers usernames
     const sellerIds = Array.from(new Set(rows.map((r) => r.sellerId).filter(Boolean) as string[]));
     let sellers: any[] = [];
     if (sellerIds.length) {
       sellers = await db
-        .select({
-          id: users.id,
-          username: users.username,
-          name: users.name,
-        })
+        .select({ id: users.id, username: users.username })
         .from(users)
         .where(inArray(users.id, sellerIds));
     }
-    const sellersMap = new Map(sellers.map((u) => [u.id, u]));
+    const sellersMap = new Map(sellers.map((u) => [u.id, u.username]));
 
-    // ✅ نبني الريسبونس بنفس الـ shape
+    // ✅ response: نرجّع sellerUsername فقط
     const out = rows.map((r) => ({
       ...r,
-      seller: r.sellerId
-        ? {
-            id: r.sellerId,
-            username: sellersMap.get(r.sellerId)?.username ?? null,
-            name: sellersMap.get(r.sellerId)?.name ?? null,
-          }
-        : null,
+      sellerUsername: r.sellerId ? sellersMap.get(r.sellerId) ?? null : null,
     }));
 
     res.json(out);
