@@ -1,3 +1,4 @@
+// client/src/components/profile/WalletTab.tsx
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,38 +23,47 @@ export default function WalletTab() {
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
 
-  // ✅ حفظ أو حذف المحفظة عند التغيير
+  // ✅ العنوان المخزون في الباك
+  const { data: walletInfo } = useQuery({
+    queryKey: ["/api/wallet/address"],
+    queryFn: async () => await apiRequest("GET", "/api/wallet/address"),
+  });
+
+  // ✅ sync بين TonConnect والباك
   useEffect(() => {
-    async function saveWallet() {
+    async function syncWallet() {
       try {
-        const address = wallet?.account.address || "";
-        if (address) {
-          await apiRequest("POST", "/api/wallet/address", { walletAddress: address });
+        const tonAddr = wallet?.account.address || "";
+        const dbAddr = walletInfo?.walletAddress || "";
+
+        if (tonAddr && tonAddr !== dbAddr) {
+          await apiRequest("POST", "/api/wallet/address", { walletAddress: tonAddr });
           toast({
             title: "Wallet linked",
-            description: `Connected: ${address.slice(0, 6)}…${address.slice(-4)}`,
+            description: `Connected: ${tonAddr.slice(0, 6)}…${tonAddr.slice(-4)}`,
           });
-        } else {
+          qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
+        }
+
+        if (!tonAddr && dbAddr) {
           await apiRequest("DELETE", "/api/wallet/address");
           toast({ title: "Wallet unlinked", description: "Disconnected from Ton wallet" });
+          qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
         }
-        qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
       } catch (e: any) {
-        toast({
-          title: "Failed to save wallet",
-          description: e?.message || "",
-          variant: "destructive",
-        });
+        toast({ title: "Wallet sync failed", description: e?.message || "", variant: "destructive" });
       }
     }
-    saveWallet();
-  }, [wallet?.account.address]);
+    syncWallet();
+  }, [wallet?.account.address, walletInfo?.walletAddress]);
 
+  // ✅ الرصيد
   const { data: balance } = useQuery({
     queryKey: ["/api/wallet/balance"],
     queryFn: async () => await apiRequest("GET", "/api/wallet/balance"),
   });
 
+  // ✅ المعاملات
   const { data: ledger = [] } = useQuery({
     queryKey: ["/api/wallet/ledger"],
     queryFn: async () => await apiRequest("GET", "/api/wallet/ledger"),
@@ -72,8 +82,6 @@ export default function WalletTab() {
       if (wallet) {
         await tonConnectUI.sendTransaction(r.txPayload);
         toast({ title: "Please confirm deposit in your wallet…" });
-      } else {
-        window.open(r.fallbackDeeplinks?.tonkeeper, "_blank");
       }
 
       const check = async () => {
@@ -89,22 +97,6 @@ export default function WalletTab() {
       setTimeout(check, 5000);
     } catch (e: any) {
       toast({ title: "Deposit failed", description: e?.message || "", variant: "destructive" });
-    }
-  }
-
-  /** ✅ Unlink Wallet */
-  async function handleUnlinkWallet() {
-    try {
-      await apiRequest("DELETE", "/api/wallet/address");
-      await tonConnectUI.disconnect();
-      toast({ title: "Wallet unlinked", description: "Disconnected from Ton wallet" });
-      qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
-    } catch (e: any) {
-      toast({
-        title: "Failed to unlink wallet",
-        description: e?.message || "",
-        variant: "destructive",
-      });
     }
   }
 
@@ -124,13 +116,8 @@ export default function WalletTab() {
             <TonConnectButton />
 
             {wallet && (
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>
-                  Connected: {wallet.account.address.slice(0, 6)}…{wallet.account.address.slice(-4)}
-                </span>
-                <Button variant="destructive" size="xs" onClick={handleUnlinkWallet}>
-                  Unlink
-                </Button>
+              <div className="text-xs text-muted-foreground">
+                Connected: {wallet.account.address.slice(0, 6)}…{wallet.account.address.slice(-4)}
               </div>
             )}
 
