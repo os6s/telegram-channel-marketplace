@@ -80,7 +80,6 @@ export function mountDisputes(app: Express) {
       if (!me) return res.status(401).json({ error: "unauthorized" });
 
       const body = createDisputeSchema.parse(req.body ?? {});
-
       const p = await db
         .select({
           id: payments.id,
@@ -215,11 +214,15 @@ export function mountDisputes(app: Express) {
     }
   });
 
-  /** POST /api/disputes/:id/resolve (admin only, delegates to wallet) */
+  /** POST /api/disputes/:id/resolve (admin only, notification only) */
   app.post("/api/disputes/:id/resolve", requireTelegramUser, async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
-      const action = String(req.body?.action || "release");
+      const action = String(req.body?.action || "");
+
+      if (!["seller_wins", "buyer_wins"].includes(action)) {
+        return res.status(400).json({ error: "bad_request" });
+      }
 
       const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!d.length) return res.status(404).json({ error: "not_found" });
@@ -229,25 +232,24 @@ export function mountDisputes(app: Express) {
       const amAdmin = isAdminUser(me);
       if (!amAdmin) return res.status(403).json({ error: "forbidden" });
 
-      // delegate to central wallet resolver
-      const r = await fetch(`${process.env.BASE_URL || ""}/api/wallet/resolve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-telegram-init-data": req.get("x-telegram-init-data") || "",
-        },
-        body: JSON.stringify({ paymentId: d[0].paymentId, action }),
-      });
-      const out = await r.json();
-
-      if (!r.ok) return res.status(r.status).json(out);
-
       const updated = await db.update(disputes).set({
         status: "resolved",
         resolvedAt: new Date(),
       }).where(eq(disputes.id, id)).returning();
 
-      return res.json({ ok: true, dispute: updated[0], wallet: out });
+      const noteText =
+        action === "seller_wins"
+          ? "⚖️ Dispute resolved in favor of the seller. Admin will handle payout manually."
+          : "⚖️ Dispute resolved in favor of the buyer. Admin will handle refund manually.";
+
+      await db.insert(messages).values({
+        disputeId: id,
+        content: noteText,
+        senderId: me.id,
+        senderUsername: "admin",
+      });
+
+      return res.json({ ok: true, dispute: updated[0], action });
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
@@ -257,7 +259,6 @@ export function mountDisputes(app: Express) {
   app.post("/api/disputes/:id/cancel", requireTelegramUser, async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
-
       const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!d.length) return res.status(404).json({ error: "not_found" });
 
