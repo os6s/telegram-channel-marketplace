@@ -5,18 +5,19 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { tgAuth } from "../middleware/tgAuth.js";
 import { storage } from "../storage";
 
-// استيراد موحّد من index
+// استيراد من الإندكس
 import {
   users,
   listings,
   payments,
   activities,
+  payouts,
 } from "@shared/schema";
 
-// نوع User من Drizzle مباشرة
+// نوع User
 type User = typeof users.$inferSelect;
 
-/* ---------- admin auth (via Telegram) ---------- */
+/* ---------- admin auth ---------- */
 const ADMIN_TG = new Set(
   (process.env.ADMIN_TG_IDS || "")
     .split(",")
@@ -37,7 +38,15 @@ function isAdmin(u?: Pick<User, "role" | "telegramId" | "username">) {
   return ok || (u.username || "").toLowerCase() === "os6s7";
 }
 
-/* ---------- Telegram notify helper ---------- */
+/* ---------- mapper for payout statuses ---------- */
+function mapPayoutStatus(s: string): "queued" | "sent" | "confirmed" | "failed" {
+  if (s === "pending") return "queued";
+  if (s === "processing") return "sent";
+  if (s === "completed") return "confirmed";
+  return "failed";
+}
+
+/* ---------- notify helper ---------- */
 async function notify(telegramId: number | string | null | undefined, text: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
@@ -75,13 +84,9 @@ export function mountAdmin(app: Express) {
     const out = await Promise.all(
       rows.map(async (r) => {
         let listingTitle: string | null = null;
-        let listingUsername: string | null = null;
         if (r.listingId) {
           const l = (await db.select().from(listings).where(eq(listings.id, r.listingId)).limit(1))[0];
-          if (l) {
-            listingTitle = l.title ?? null;
-            listingUsername = l.username ?? null;
-          }
+          if (l) listingTitle = l.title ?? null;
         }
 
         const buyer = buyersMap.get(r.buyerId);
@@ -91,7 +96,6 @@ export function mountAdmin(app: Express) {
           id: r.id,
           listingId: r.listingId,
           listingTitle,
-          listingUsername,
           createdAt: r.createdAt as unknown as string,
           amount: String(r.amount),
           currency: (r.currency as string) || "TON",
@@ -99,7 +103,6 @@ export function mountAdmin(app: Express) {
           adminAction: r.adminAction,
           buyer: { id: r.buyerId, username: buyer?.username ?? null },
           seller: { id: r.sellerId, username: seller?.username ?? null },
-          escrowAddress: r.escrowAddress ?? null,
         };
       })
     );
@@ -120,28 +123,11 @@ export function mountAdmin(app: Express) {
 
     await db
       .update(payments)
-      .set({ status: "paid", adminAction: "release", confirmedAt: new Date() })
+      .set({ status: "released", adminAction: "release", confirmedAt: new Date() })
       .where(eq(payments.id, pid));
 
-    if (pay.listingId && pay.sellerId) {
-      await db.insert(activities).values({
-        listingId: pay.listingId,
-        buyerId: pay.buyerId,
-        sellerId: pay.sellerId,
-        paymentId: pay.id,
-        type: "admin_release",
-        status: "completed",
-        amount: pay.amount,
-        currency: pay.currency,
-        note: { tag: "admin_release" } as any,
-      });
-    }
-
-    const buyer = (await db.select().from(users).where(eq(users.id, pay.buyerId)).limit(1))[0];
-    const seller = (await db.select().from(users).where(eq(users.id, pay.sellerId)).limit(1))[0];
-
-    await notify(buyer?.telegramId, `✅ <b>Order Released</b>\nYour payment was released to the seller.`);
-    await notify(seller?.telegramId, `✅ <b>Payout Approved</b>\nAdmin has released the funds to your wallet.`);
+    await notify(pay.buyerId, `✅ Order Released`);
+    await notify(pay.sellerId, `✅ Payout Released`);
 
     res.json({ ok: true });
   });
@@ -162,26 +148,78 @@ export function mountAdmin(app: Express) {
       .set({ status: "refunded", adminAction: "refund", confirmedAt: new Date() })
       .where(eq(payments.id, pid));
 
-    if (pay.listingId && pay.sellerId) {
-      await db.insert(activities).values({
-        listingId: pay.listingId,
-        buyerId: pay.buyerId,
-        sellerId: pay.sellerId,
-        paymentId: pay.id,
-        type: "admin_refund",
-        status: "completed",
-        amount: pay.amount,
-        currency: pay.currency,
-        note: { tag: "admin_refund" } as any,
-      });
-    }
-
-    const buyer = (await db.select().from(users).where(eq(users.id, pay.buyerId)).limit(1))[0];
-    const seller = (await db.select().from(users).where(eq(users.id, pay.sellerId)).limit(1))[0];
-
-    await notify(buyer?.telegramId, `↩️ <b>Refund Approved</b>\nAdmin has refunded your payment.`);
-    await notify(seller?.telegramId, `⚠️ <b>Order Refunded</b>\nAdmin refunded the buyer for this order.`);
+    await notify(pay.buyerId, `↩️ Order Refunded`);
+    await notify(pay.sellerId, `⚠️ Order Refunded`);
 
     res.json({ ok: true });
+  });
+
+  /* =========================
+     GET /api/admin/payouts
+  ========================= */
+  app.get("/api/admin/payouts", tgAuth, async (req, res) => {
+    const actor = await resolveActor(req);
+    if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
+
+    const rows = await db.select().from(payouts).orderBy(desc(payouts.createdAt));
+
+    const sellerIds = rows.map((r) => r.sellerId);
+    const sellers = sellerIds.length ? await db.select().from(users).where(inArray(users.id, sellerIds)) : [];
+    const sellersMap = new Map(sellers.map((u) => [u.id, u]));
+
+    const out = rows.map((p) => ({
+      id: p.id,
+      paymentId: p.paymentId,
+      sellerId: p.sellerId,
+      toAddress: p.toAddress,
+      amount: String(p.amount),
+      currency: p.currency,
+      status: mapPayoutStatus(p.status),
+      txHash: p.txHash,
+      createdAt: p.createdAt as unknown as string,
+      sentAt: p.sentAt as unknown as string,
+      confirmedAt: p.confirmedAt as unknown as string,
+      seller: { id: p.sellerId, username: sellersMap.get(p.sellerId)?.username ?? null },
+    }));
+
+    res.json(out);
+  });
+
+  /* =========================
+     POST /api/admin/payouts/:id/sent
+  ========================= */
+  app.post("/api/admin/payouts/:id/sent", tgAuth, async (req, res) => {
+    const actor = await resolveActor(req);
+    if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
+
+    const id = req.params.id;
+    const [p] = await db
+      .update(payouts)
+      .set({ status: "processing", sentAt: new Date() })
+      .where(eq(payouts.id, id))
+      .returning();
+
+    if (!p) return res.status(404).json({ error: "Payout not found" });
+
+    res.json({ ...p, status: mapPayoutStatus(p.status) });
+  });
+
+  /* =========================
+     POST /api/admin/payouts/:id/confirm
+  ========================= */
+  app.post("/api/admin/payouts/:id/confirm", tgAuth, async (req, res) => {
+    const actor = await resolveActor(req);
+    if (!actor || !isAdmin(actor)) return res.status(403).json({ error: "Admin only" });
+
+    const id = req.params.id;
+    const [p] = await db
+      .update(payouts)
+      .set({ status: "completed", confirmedAt: new Date() })
+      .where(eq(payouts.id, id))
+      .returning();
+
+    if (!p) return res.status(404).json({ error: "Payout not found" });
+
+    res.json({ ...p, status: mapPayoutStatus(p.status) });
   });
 }
