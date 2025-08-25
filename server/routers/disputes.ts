@@ -302,4 +302,30 @@ export function mountDisputes(app: Express) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
+
+  /** POST /api/disputes/:id/cancel */
+  app.post("/api/disputes/:id/cancel", requireTelegramUser, async (req: Request, res: Response) => {
+    try {
+      const { id } = idParam.parse(req.params);
+
+      const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!d.length) return res.status(404).json({ error: "not_found" });
+
+      const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
+      const dispute = d[0];
+      if (me.id !== dispute.buyerId && me.id !== dispute.sellerId) {
+        return res.status(403).json({ error: "forbidden" });
+      }
+
+      const updated = await db.update(disputes).set({
+        status: "cancelled",
+      }).where(eq(disputes.id, id)).returning();
+
+      return res.json({ ok: true, dispute: updated[0], action: "closed_only" });
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
 }
