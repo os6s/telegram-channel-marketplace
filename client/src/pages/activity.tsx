@@ -17,8 +17,8 @@ type ApiActivity = {
   buyer?: string | null;
 };
 
-const S = (v: unknown) => (v == null ? "" : String(v));
-const has = (v: unknown) => v !== null && v !== undefined && S(v).trim() !== "";
+const S = (v: unknown) => (v == null ? "" : String(v).trim());
+const has = (v: unknown) => v !== null && v !== undefined && S(v) !== "";
 
 export default function Activity() {
   const { t } = useLanguage();
@@ -30,6 +30,7 @@ export default function Activity() {
       return Array.isArray(res) ? res : [];
     },
     refetchOnWindowFocus: true,
+    refetchInterval: 10_000, // 🔄 auto-refresh every 10s
     retry: false,
   });
 
@@ -40,11 +41,13 @@ export default function Activity() {
       const tag =
         has(item.username) ? `@${S(item.username)}` : has(item.title) ? S(item.title) : "Listing";
       const price =
-        has(item.price) && has(item.currency) ? `${S(item.price)} ${S(item.currency)}` : undefined;
-      const seller = has(item.seller) ? `@${S(item.seller)}` : undefined;
+        has(item.price) && has(item.currency) ? `${S(item.price)} ${S(item.currency)}` : "—";
+      const seller = has(item.seller) ? `@${S(item.seller)}` : t("activityPage.unknownSeller") || "Unknown seller";
+
+      const created = new Date(item.createdAt).toLocaleString();
 
       if (item.kind === "sold") {
-        const buyer = has(item.buyer) ? `@${S(item.buyer)}` : undefined;
+        const buyer = has(item.buyer) ? `@${S(item.buyer)}` : t("activityPage.unknownBuyer") || "Unknown buyer";
         const subtitleParts = [seller, buyer, price].filter(Boolean) as string[];
 
         return {
@@ -52,7 +55,7 @@ export default function Activity() {
           type: "SOLD",
           title: t("activityPage.soldTitle", { tag }) || `Sold ${tag}`,
           subtitle: subtitleParts.join(" • "),
-          createdAt: S(item.createdAt),
+          createdAt: created,
         };
       }
 
@@ -62,10 +65,13 @@ export default function Activity() {
         type: "LISTED",
         title: t("activityPage.listedTitle", { tag }) || `Listed ${tag}`,
         subtitle: subtitleParts.join(" • "),
-        createdAt: S(item.createdAt),
+        createdAt: created,
       };
     });
   }, [data, t]);
+
+  const errMsg =
+    (error as any)?.message || (error as any)?.error || t("activityPage.loadFailed") || "Failed to load activity";
 
   return (
     <div className="min-h-screen px-4 py-6">
@@ -81,9 +87,7 @@ export default function Activity() {
       {isLoading ? (
         <div className="text-sm text-muted-foreground">Loading…</div>
       ) : error ? (
-        <div className="text-sm text-red-500">
-          {(error as Error).message || "Failed to load activity"}
-        </div>
+        <div className="text-sm text-red-500">{errMsg}</div>
       ) : (
         <ActivityTimeline
           events={events}
