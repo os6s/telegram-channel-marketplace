@@ -7,6 +7,8 @@ import { Eye, ShoppingCart, Users, Zap, CheckCircle, X } from "lucide-react";
 import { AdminControls } from "@/components/admin-controls";
 import { type Listing as Channel } from "@shared/schema";
 import { useLanguage } from "@/contexts/language-context";
+import { apiRequest } from "@/lib/queryClient";
+import { EditListingDialog } from "@/components/EditListingDialog";
 
 interface ListingCardProps {
   listing: Channel & {
@@ -37,6 +39,7 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
   const { t } = useLanguage();
   const [showInfo, setShowInfo] = useState(false);
   const [showBuyConfirm, setShowBuyConfirm] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const title = S(listing.title) || S(listing.username) || `${S(listing.platform) || "item"}:${S(listing.kind) || "listing"}`;
   const uname = S(listing.username);
@@ -181,7 +184,7 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
                   size="sm"
                   disabled={priceNum <= 0}
                   onClick={() => setShowBuyConfirm(true)}
-                  className="bg-telegram-500 hover:bg-telegram-600 text-white"
+                  className="bg-green-500 hover:bg-green-600 text-white"
                 >
                   <ShoppingCart className="w-4 h-4 mr-1" /> {t("channel.buyNow")}
                 </Button>
@@ -189,57 +192,35 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
             </div>
           </div>
 
+          {/* أدوات المالك */}
+          {isOwner && (
+            <div className="flex gap-2 mt-3">
+              <Button size="sm" variant="secondary" onClick={() => setEditOpen(true)}>
+                ✏️ {t("channel.edit") || "Edit"}
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={async () => {
+                  if (confirm("Are you sure you want to delete this listing?")) {
+                    await apiRequest("DELETE", `/api/listings/${listing.id}`);
+                    window.location.reload();
+                  }
+                }}
+              >
+                🗑 {t("channel.delete") || "Delete"}
+              </Button>
+            </div>
+          )}
+
+          {/* أدوات الإدارة: للإدمن */}
           {isAdmin ? <AdminControls channel={listing as any} currentUser={currentUser} /> : null}
         </CardContent>
       </Card>
 
-      {/* Info Modal */}
-      {showInfo && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
-          <div className="bg-card border border-border rounded-lg max-w-md w-full p-6 relative shadow-lg">
-            <button
-              onClick={() => setShowInfo(false)}
-              className="absolute top-3 right-3 text-muted-foreground hover:text-foreground"
-              aria-label="Close"
-            >
-              <X className="w-6 h-6" />
-            </button>
-            <h2 className="text-xl font-bold mb-4 text-foreground">{t("channel.giftsInfo")}</h2>
-
-            {kind === "channel" ? (
-              <>
-                <p className="mb-2 text-foreground">🎯 {t("channel.mode")}: <strong>{S((listing as any).channelMode) || "—"}</strong></p>
-                <p className="mb-2 text-foreground">👥 {t("channel.subscribers")}: <strong>{formatNumber(subsCount)}</strong></p>
-                <p className="mb-2 text-foreground">🎁 {t("gift.kind")}: <strong>{giftKind || "—"}</strong></p>
-                <p className="mb-2 text-foreground">🎁 {t("gift.count")}: <strong>{formatNumber(giftsCount)}</strong></p>
-              </>
-            ) : kind === "account" ? (
-              <>
-                <p className="mb-2 text-foreground">👥 {t("account.followers")}: <strong>{formatNumber(followers)}</strong></p>
-                <p className="mb-2 text-foreground">📅 {t("account.createdAt")}: <strong>{accCreatedAt || "—"}</strong></p>
-              </>
-            ) : kind === "service" ? (
-              <>
-                <p className="mb-2 text-foreground">🛠 {t("service.type")}: <strong>{serviceType || "—"}</strong></p>
-                <p className="mb-2 text-foreground">🎯 {t("service.target")}: <strong>{target || "—"}</strong></p>
-                <p className="mb-2 text-foreground">🔢 {t("service.count")}: <strong>{formatNumber(serviceCount)}</strong></p>
-              </>
-            ) : (
-              <>
-                <p className="mb-2 text-foreground">👤 {t("username.type")}: <strong>{S((listing as any).tgUserType) || "—"}</strong></p>
-              </>
-            )}
-
-            {uname ? (
-              <p className="text-foreground">
-                {t("channel.username")}:{" "}
-                <a href={`https://t.me/${uname}`} target="_blank" rel="noopener noreferrer" className="underline">
-                  @{uname}
-                </a>
-              </p>
-            ) : null}
-          </div>
-        </div>
+      {/* Edit Dialog */}
+      {isOwner && (
+        <EditListingDialog open={editOpen} onOpenChange={setEditOpen} listing={listing} />
       )}
 
       {/* Buy Confirmation */}
@@ -279,7 +260,7 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
               <Button
                 disabled={priceNum <= 0}
                 onClick={() => { setShowBuyConfirm(false); onBuyNow(listing); }}
-                className="bg-telegram-500 hover:bg-telegram-600 text-white"
+                className="bg-green-500 hover:bg-green-600 text-white"
               >
                 {t("common.confirm")}
               </Button>
