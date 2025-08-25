@@ -1,18 +1,18 @@
 // client/src/pages/marketplace.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Search, Filter, AtSign, Hash, Sparkles, User2, Users, Gift, Megaphone, Rocket,
+  Filter, AtSign, Hash, Sparkles, User2, Users, Gift, Megaphone, Rocket,
 } from "lucide-react";
 import { ListingCard } from "@/components/ListingCard";
 import { useLanguage } from "@/contexts/language-context";
 import { onListingsChange, listLocalListings, type AnyListing } from "@/store/listings";
 import { apiRequest } from "@/lib/queryClient";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type Kind = "username" | "account" | "channel" | "service" | "";
 type Platform = "telegram" | "twitter" | "instagram" | "discord" | "snapchat" | "tiktok" | "";
@@ -32,38 +32,13 @@ const LABELS = (t: (k: string) => string) => ({
   salesCountLabel: t("market.salesCountLabel") || "Sales Count",
   salesVolumeLabel: t("market.salesVolumeLabel") || "Sales Volume",
   activeListingsLabel: t("market.activeListingsLabel") || "Active Listings",
-  username: t("sell.username") || "Sell Username",
-  account: t("sell.account") || "Sell Account",
-  channel: t("sell.channel") || "Sell",
-  service: t("sell.service") || "Sell Service",
-  modeSubscribers: t("sell.modeSubscribers") || "Subscribers channel",
-  modeGifts: t("sell.modeGifts") || "Gifts channel",
-  serviceFollowers: t("market.type.serviceFollowers") || "Followers Service",
-  serviceSubscribers: t("market.type.serviceSubscribers") || "Subscribers Service",
-  boostCh: t("sell.boostCh") || "Boost Telegram Channel",
-  boostGp: t("sell.boostGp") || "Boost Telegram Group",
 });
-
-const ICON: Record<string, JSX.Element> = {
-  telegram: <AtSign className="w-4 h-4" />,
-  instagram: <Sparkles className="w-4 h-4" />,
-  twitter: <Hash className="w-4 h-4" />,
-  discord: <User2 className="w-4 h-4" />,
-  snapchat: <User2 className="w-4 h-4" />,
-  tiktok: <User2 className="w-4 h-4" />,
-  subscribers: <Users className="w-4 h-4" />,
-  gifts: <Gift className="w-4 h-4" />,
-  followers: <Users className="w-4 h-4" />,
-  members: <Users className="w-4 h-4" />,
-  boost_channel: <Megaphone className="w-4 h-4" />,
-  boost_group: <Rocket className="w-4 h-4" />,
-};
 
 export default function Marketplace() {
   const { t } = useLanguage();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const L = useMemo(() => LABELS(t), [t]);
-  const containerCls = "min-h-screen bg-background text-foreground";
 
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState<Kind>("");
@@ -72,8 +47,10 @@ export default function Marketplace() {
   const [serviceType, setServiceType] = useState<ServiceType>("");
 
   const [sortAsc, setSortAsc] = useState(true);
-
   const [showStats, setShowStats] = useState(true);
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
   useEffect(() => {
     const onScroll = () => setShowStats(window.scrollY < 80);
     onScroll();
@@ -171,10 +148,31 @@ export default function Marketplace() {
     }
   }
 
+  // ===== Delete handler =====
+  async function handleDelete(listingId: string) {
+    // Optimistic UI: حذف مباشر من الواجهة
+    setLocalListings((prev) => prev.filter((l) => l.id !== listingId));
+    try {
+      await apiRequest("DELETE", `/api/listings/${listingId}`);
+      await queryClient.invalidateQueries({ queryKey: ["/api/listings"] });
+      toast({ title: "Deleted", description: "Listing deleted successfully." });
+    } catch (e: any) {
+      toast({
+        title: "❌ Error",
+        description: e?.message || "Failed to delete listing",
+        variant: "destructive",
+      });
+      // رجع الإعلان إذا فشل الحذف
+      await queryClient.invalidateQueries({ queryKey: ["/api/listings"] });
+    } finally {
+      setConfirmDeleteId(null);
+    }
+  }
+
   const currentUser = me ? { id: me.id, username: me.username, role: me.role } : undefined;
 
   return (
-    <div className={containerCls}>
+    <div className="min-h-screen bg-background text-foreground">
       <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="px-4 py-2">
           <div className="flex items-center justify-between">
@@ -183,32 +181,8 @@ export default function Marketplace() {
               <p className="text-[11px] text-muted-foreground">{L.subtitle}</p>
             </div>
           </div>
-
-          {!statsLoading && (
-            <div className={["transition-all duration-300 overflow-hidden", showStats ? "max-h-24 opacity-100 mt-2" : "max-h-0 opacity-0 mt-0 pointer-events-none"].join(" ")}>
-              <div className="grid grid-cols-3 gap-2">
-                <Card><CardContent className="px-3 py-2 text-center">
-                  <div className="text-base font-bold text-foreground">{(stats as any)?.totalSales ?? 0}</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesCountLabel}</div>
-                </CardContent></Card>
-                <Card><CardContent className="px-3 py-2 text-center">
-                  <div className="text-base font-bold text-foreground">{(stats as any)?.totalVolume ?? 0} TON</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesVolumeLabel}</div>
-                </CardContent></Card>
-                <Card><CardContent className="px-3 py-2 text-center">
-                  <div className="text-base font-bold text-foreground">{(stats as any)?.activeListings ?? 0}</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.activeListingsLabel}</div>
-                </CardContent></Card>
-              </div>
-            </div>
-          )}
         </div>
       </header>
-
-      {/* Filters */}
-      <div className="bg-card px-4 py-3 border-b border-border">
-        {/* ... filters code نفس ما عندك ... */}
-      </div>
 
       <div className="px-4 py-6">
         <div className="flex items-center justify-between mb-4">
@@ -220,7 +194,6 @@ export default function Marketplace() {
         </div>
 
         {listingsLoading ? (
-          /* skeletons */
           <div>Loading…</div>
         ) : sorted.length === 0 ? (
           <Card><CardContent className="p-8 text-center">
@@ -237,19 +210,31 @@ export default function Marketplace() {
                 currentUser={currentUser as any}
                 onViewDetails={() => console.log("View", listing.id)}
                 onBuyNow={() => handleBuy(listing)}
+                onDelete={() => setConfirmDeleteId(listing.id)}
               />
             ))}
           </div>
         )}
+      </div>
 
-        {!listingsLoading && sorted.length > 0 && (
-          <div className="text-center mt-6">
-            <Button variant="outline" className="px-6" disabled>
-              {L.loadMore} (pagination not implemented yet)
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!confirmDeleteId} onOpenChange={() => setConfirmDeleteId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Delete</DialogTitle>
+          </DialogHeader>
+          <p>Are you sure you want to delete this listing?</p>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => handleDelete(confirmDeleteId!)}
+            >
+              Delete
             </Button>
           </div>
-        )}
-      </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
