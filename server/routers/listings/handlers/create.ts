@@ -1,3 +1,4 @@
+// server/routers/listings/handlers/create.ts
 import type { Request, Response } from "express";
 import { db } from "../../../db.js";
 import { eq } from "drizzle-orm";
@@ -6,14 +7,9 @@ import { listings, users } from "@shared/schema";
 
 const createListingSchema = z.object({
   kind: z.enum(["channel", "username", "account", "service"]),
-  platform: z.enum([
-    "telegram",
-    "twitter",
-    "instagram",
-    "discord",
-    "snapchat",
-    "tiktok",
-  ]).default("telegram"),
+  platform: z
+    .enum(["telegram", "twitter", "instagram", "discord", "snapchat", "tiktok"])
+    .default("telegram"),
   username: z.string().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
@@ -48,10 +44,9 @@ async function me(req: Request) {
   return (
     (await db.query.users.findFirst({
       where: eq(users.telegramId, Number(tg.id)),
-    })) ?? null
+    }))!
   );
 }
-
 const toNumOrNull = (v?: string | number | null) => {
   const s = S(v).trim();
   if (!s) return null;
@@ -62,8 +57,7 @@ const toNumOrNull = (v?: string | number | null) => {
 export async function createListing(req: Request, res: Response) {
   try {
     const user = await me(req);
-    if (!user?.id)
-      return res.status(401).json({ error: "unauthorized" });
+    if (!user?.id) return res.status(401).json({ error: "unauthorized" });
 
     const p = createListingSchema.parse(req.body ?? {});
     const unified = p.kind === "service" ? undefined : normHandle(p.username);
@@ -74,9 +68,7 @@ export async function createListing(req: Request, res: Response) {
       kind: p.kind,
       platform: p.platform,
       username: unified || null,
-      title:
-        p.title?.trim() ||
-        (unified ? `@${unified}` : `${p.platform} ${p.kind}`),
+      title: p.title?.trim() || (unified ? `@${unified}` : `${p.platform} ${p.kind}`),
       description: p.description || null,
       price: S(p.price),
       currency: p.currency || "TON",
@@ -97,14 +89,17 @@ export async function createListing(req: Request, res: Response) {
 
     const [row] = await db.insert(listings).values(insert).returning();
 
-    // ✅ رجّع الإعلان مع معلومات البائع
+    // 🟢 نجيب بيانات البائع كاملة
+    const seller = {
+      id: user.id,
+      username: user.username,
+      telegramId: user.telegramId,
+    };
+
+    // 🟢 نرجّع الاستجابة مع seller
     res.status(201).json({
       ...row,
-      seller: {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-      },
+      seller,
     });
   } catch (e: any) {
     res.status(400).json({ error: e?.message || "invalid_payload" });
