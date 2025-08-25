@@ -31,7 +31,10 @@ async function getMe(req: Request) {
   return me ?? null;
 }
 
-const ADMIN_USER_ID = process.env.ADMIN_USER_ID || ""; // UUID of admin user in DB
+const ADMIN_TG_IDS = (process.env.ADMIN_TG_IDS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 export function mountWallet(app: Express) {
   /** 1) Initiate deposit */
@@ -242,8 +245,8 @@ export function mountWallet(app: Express) {
   /** 5) Admin resolve escrow (release or refund) */
   app.post("/api/wallet/resolve", tgAuth, async (req: Request, res: Response) => {
     try {
-      const me = await getMe(req);
-      if (!me || me.id !== ADMIN_USER_ID) {
+      const tg = (req as any).telegramUser;
+      if (!tg?.id || !ADMIN_TG_IDS.includes(String(tg.id))) {
         return res.status(403).json({ error: "forbidden" });
       }
 
@@ -279,7 +282,7 @@ export function mountWallet(app: Express) {
             note: "Released to seller",
           },
           {
-            userId: ADMIN_USER_ID,
+            userId: 0,
             direction: "in",
             amount: String(fee),
             currency: "TON",
