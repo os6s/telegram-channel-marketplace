@@ -5,23 +5,17 @@ import { ActivityTimeline, type ActivityEvent } from "@/components/activity-time
 import { useLanguage } from "@/contexts/language-context";
 import { apiRequest } from "@/lib/queryClient";
 
-type ApiActivityListed = {
-  kind: "listed";
+type ApiActivity = {
   id: string;
+  kind: "listed" | "sold";
   createdAt: string;
   title: string | null;
   username: string | null;
   price: string | number | null;
   currency: string | null;
   seller: string | null;
+  buyer?: string | null;
 };
-
-type ApiActivitySold = ApiActivityListed & {
-  kind: "sold";
-  buyer: string | null;
-};
-
-type ApiActivity = ApiActivityListed | ApiActivitySold;
 
 const S = (v: unknown) => (v == null ? "" : String(v));
 const has = (v: unknown) => v !== null && v !== undefined && S(v).trim() !== "";
@@ -30,40 +24,33 @@ export default function Activity() {
   const { t } = useLanguage();
 
   const { data, isLoading, error } = useQuery<ApiActivity[]>({
-    queryKey: ["/api/market-activity", { limit: 50 }],
-    queryFn: async ({ queryKey }) => {
-      // لا تفكك بشكل صارم لتجنّب أخطاء "cannot convert"
-      const qk = queryKey as unknown[];
-      const params = (qk[1] as { limit?: number }) || {};
-      const limit = Number.isFinite(params?.limit as number) ? (params!.limit as number) : 50;
-
-      const res = (await apiRequest(
-        "GET",
-        `/api/market-activity?limit=${encodeURIComponent(String(limit))}`
-      )) as ApiActivity[] | unknown;
-
+    queryKey: ["/api/market-activity"],
+    queryFn: async () => {
+      const res = (await apiRequest("GET", `/api/market-activity?limit=50`)) as ApiActivity[] | unknown;
       return Array.isArray(res) ? res : [];
     },
-    staleTime: 0,
     refetchOnWindowFocus: true,
     retry: false,
   });
 
   const events: ActivityEvent[] = useMemo(() => {
     if (!Array.isArray(data)) return [];
+
     return data.map((item) => {
-      const tag = has(item.username) ? `@${S(item.username)}` : has(item.title) ? S(item.title) : "Listing";
+      const tag =
+        has(item.username) ? `@${S(item.username)}` : has(item.title) ? S(item.title) : "Listing";
       const price =
         has(item.price) && has(item.currency) ? `${S(item.price)} ${S(item.currency)}` : undefined;
       const seller = has(item.seller) ? `@${S(item.seller)}` : undefined;
 
       if (item.kind === "sold") {
-        const buyer = has((item as ApiActivitySold).buyer) ? `@${S((item as ApiActivitySold).buyer)}` : undefined;
+        const buyer = has(item.buyer) ? `@${S(item.buyer)}` : undefined;
         const subtitleParts = [seller, buyer, price].filter(Boolean) as string[];
+
         return {
           id: S(item.id),
           type: "SOLD",
-          title: `Sold ${tag}`,
+          title: t("activityPage.soldTitle", { tag }) || `Sold ${tag}`,
           subtitle: subtitleParts.join(" • "),
           createdAt: S(item.createdAt),
         };
@@ -73,12 +60,12 @@ export default function Activity() {
       return {
         id: S(item.id),
         type: "LISTED",
-        title: `Listed ${tag}`,
+        title: t("activityPage.listedTitle", { tag }) || `Listed ${tag}`,
         subtitle: subtitleParts.join(" • "),
         createdAt: S(item.createdAt),
       };
     });
-  }, [data]);
+  }, [data, t]);
 
   return (
     <div className="min-h-screen px-4 py-6">
