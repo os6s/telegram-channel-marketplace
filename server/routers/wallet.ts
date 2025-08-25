@@ -330,4 +330,23 @@ export function mountWallet(app: Express) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
+
+  /** 6) Ledger (transaction history for current user) */
+  app.get("/api/wallet/ledger", tgAuth, async (req: Request, res: Response) => {
+    try {
+      const me = await getMe(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
+      const rows = await db
+        .select()
+        .from(walletLedger)
+        .where(eq(walletLedger.userId, me.id))
+        .orderBy(desc(walletLedger.createdAt))
+        .limit(50);
+
+      res.json(rows);
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message ?? "failed_to_fetch_ledger" });
+    }
+  });
 }
