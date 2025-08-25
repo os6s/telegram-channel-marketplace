@@ -1,120 +1,103 @@
-// server/routers/payouts.ts
-import type { Express } from "express";
-import { tgAuth } from "../middleware/tgAuth.js";
-import { storage } from "../storage";
+import type { Express, Request, Response } from "express";
+import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
 import { db } from "../db.js";
-import { eq /*, and*/ } from "drizzle-orm";
+import { payouts, walletBalancesView, walletLedger } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import { notifyUser } from "../telegram-bot.js";
 
-// استيراد موحّد من الإنديكس
-import { users, walletBalancesView } from "@shared/schema";
+const ADMIN_TG_IDS: number[] = (process.env.ADMIN_TG_IDS || "")
+  .split(",")
+  .map((x) => Number(x.trim()))
+  .filter((x) => Number.isFinite(x));
 
-/** حساب الرصيد المتاح من الفيو wallet_balances */
-async function computeBalanceByUserId(userId: string, currency = "TON") {
-  const row = await db
-    .select({ balance: walletBalancesView.balance /*, cur: walletBalancesView.currency */ })
-    .from(walletBalancesView)
-    .where(
-      // لو عندك multi-currency وتريد تقيّد بالعملة، فعّل السطر التالي بدل الحالي:
-      // and(eq(walletBalancesView.userId, userId as any), eq(walletBalancesView.currency, currency))
-      eq(walletBalancesView.userId, userId as any)
-    )
-    .limit(1);
-
-  return Number(row[0]?.balance ?? 0);
+async function getMe(req: Request) {
+  return (req as any).telegramUser;
 }
 
-const MIN_WITHDRAW = Number(process.env.MIN_WITHDRAW || "0"); // 0 = بدون حد أدنى
-const MAX_WITHDRAW = Number(process.env.MAX_WITHDRAW || "0"); // 0 = بدون حد أعلى
-
 export function mountPayouts(app: Express) {
-  /** إنشاء طلب سحب — يخزّن IDs فقط ويرجع sellerUsername في الـresponse */
-  app.post("/api/payouts/request", tgAuth, async (req, res) => {
+  /** 1) يطلب المستخدم سحب */
+  app.post("/api/payouts", tgAuth, async (req: Request, res: Response) => {
     try {
-      const me = await storage.getUserByTelegramId(String((req as any).telegramUser.id));
-      if (!me) return res.status(404).json({ error: "user_not_found" });
-      if ((me as any).isBanned) return res.status(403).json({ error: "user_banned" });
+      const me = await getMe(req);
+      if (!me?.id) return res.status(401).json({ error: "unauthorized" });
 
-      const uname = (me.username || "").trim();
-      if (!uname) return res.status(400).json({ error: "username_required" });
+      const { amount, address } = req.body || {};
+      const amt = Number(amount);
+      if (!amt || amt <= 0) return res.status(400).json({ error: "invalid_amount" });
+      if (!address) return res.status(400).json({ error: "address_required" });
 
-      const addr = me.walletAddress;
-      if (!addr) return res.status(400).json({ error: "wallet_required" });
+      // تحقق من الرصيد
+      const row = await db
+        .select()
+        .from(walletBalancesView)
+        .where(eq(walletBalancesView.userId, me.id))
+        .limit(1);
 
-      const rawAmount = String(req.body?.amount ?? "");
-      const amount = Number(rawAmount.replace(",", "."));
-      if (!Number.isFinite(amount) || amount <= 0) {
-        return res.status(400).json({ error: "invalid_amount" });
-      }
-      if (MIN_WITHDRAW > 0 && amount < MIN_WITHDRAW) {
-        return res.status(400).json({ error: "below_min_withdraw", min: MIN_WITHDRAW });
-      }
-      if (MAX_WITHDRAW > 0 && amount > MAX_WITHDRAW) {
-        return res.status(400).json({ error: "above_max_withdraw", max: MAX_WITHDRAW });
+      const balanceNum = Number(row[0]?.balance ?? 0);
+      if (balanceNum < amt) {
+        return res.status(400).json({ error: "insufficient_balance" });
       }
 
-      // الرصيد من الـ view الجديدة
-      const balance = await computeBalanceByUserId(me.id, "TON");
-      if (amount > balance) {
-        return res.status(400).json({ error: "insufficient_balance", balance });
-      }
+      // نسجل payout
+      const [payout] = await db
+        .insert(payouts)
+        .values({
+          userId: me.id,
+          amount: String(amt),
+          currency: "TON",
+          address,
+          status: "pending",
+        })
+        .returning();
 
-      // امنع وجود queued سابق
-      const existing = await storage.listPayoutsBySellerId(me.id);
-      if (existing.some((p) => p.status === "queued")) {
-        return res.status(409).json({ error: "payout_already_queued" });
-      }
-
-      const created = await storage.createPayout({
-        paymentId: null,
-        sellerId: me.id,
-        toAddress: addr,
-        amount: amount.toFixed(9),
+      // نقص من الـ ledger
+      await db.insert(walletLedger).values({
+        userId: me.id,
+        direction: "out",
+        amount: String(amt),
         currency: "TON",
-        status: "queued",
-        note: "user_withdrawal",
-        txHash: null,
+        refType: "payout",
+        refId: payout.id,
+        note: "Withdraw request",
       });
 
-      res.status(201).json({ ...created, sellerUsername: me.username ?? null });
+      // إشعار للأدمن
+      for (const adminId of ADMIN_TG_IDS) {
+        await notifyUser(
+          adminId,
+          `💸 <b>New Payout Request</b>\n\nUser: ${me.username || me.id}\nAmount: ${amt} TON\nAddress: ${address}\n\n/status ${payout.id}`
+        );
+      }
+
+      res.json({ ok: true, payout });
     } catch (e: any) {
-      res.status(500).json({ error: e?.message || "payout_request_failed" });
+      res.status(500).json({ error: e?.message || "payout_failed" });
     }
   });
 
-  /** قائمة طلبات السحب الخاصة بي — IDs في DB، ونعرض sellerUsername عبر join */
-  app.get("/api/payouts/my", tgAuth, async (req, res) => {
+  /** 2) الأدمن يحدّث حالة السحب */
+  app.post("/api/payouts/:id/status", tgAuth, async (req: Request, res: Response) => {
     try {
-      const me = await storage.getUserByTelegramId(String((req as any).telegramUser.id));
-      if (!me) return res.status(404).json({ error: "user_not_found" });
+      const me = await getMe(req);
+      if (!me?.id || !ADMIN_TG_IDS.includes(Number(me.id))) {
+        return res.status(403).json({ error: "forbidden" });
+      }
 
-      const rows = await storage.listPayoutsBySellerId(me.id);
-      const out = rows
-        .sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime())
-        .map((p) => ({ ...p, sellerUsername: me.username ?? null }));
+      const { id } = req.params;
+      const { status } = req.body || {};
+      if (!["completed", "failed"].includes(status)) {
+        return res.status(400).json({ error: "bad_status" });
+      }
 
-      res.json(out);
+      const updated = await db
+        .update(payouts)
+        .set({ status, updatedAt: new Date() })
+        .where(eq(payouts.id, id))
+        .returning();
+
+      res.json({ ok: true, payout: updated[0] });
     } catch (e: any) {
-      res.status(500).json({ error: e?.message || "payouts_fetch_failed" });
-    }
-  });
-
-  /** جلب payout مفرد وإضافة sellerUsername بالـresponse */
-  app.get("/api/payouts/:id", tgAuth, async (req, res) => {
-    try {
-      const p = await storage.getPayout(req.params.id);
-      if (!p) return res.status(404).json({ error: "not_found" });
-
-      const u = p.sellerId
-        ? (await db
-            .select({ username: users.username })
-            .from(users)
-            .where(eq(users.id, p.sellerId))
-            .limit(1))[0]
-        : undefined;
-
-      return res.json({ ...p, sellerUsername: u?.username ?? null });
-    } catch (e: any) {
-      res.status(500).json({ error: e?.message || "payout_fetch_failed" });
+      res.status(500).json({ error: e?.message || "payout_update_failed" });
     }
   });
 }
