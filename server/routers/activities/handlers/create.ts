@@ -1,91 +1,138 @@
 import type { Request, Response } from "express";
-import { db } from "../../../db.js";
 import { eq } from "drizzle-orm";
-import { z } from "zod";
-import { listings, users } from "@shared/schema";
-import { addMarketActivity } from "../market-activity/addMarketActivity.js"; // ✅ استدعاء
+import { db } from "../../../db.js";
+import { activities, listings } from "@shared/schema";
+import { ensureBuyerHasFunds } from "../../../ton-utils";
+import { 
+  S, 
+  toNum, 
+  getListingOrNull, 
+  getUserByUsernameInsensitive, 
+  sendTelegramMessage 
+} from "./_utils.js";
+import { addMarketActivity } from "../addMarketActivity.js";  // ✅ الإمبورت الصحيح
 
-const createListingSchema = z.object({
-  kind: z.enum(["channel","username","account","service"]),
-  platform: z.enum(["telegram","twitter","instagram","discord","snapchat","tiktok"]).default("telegram"),
-  username: z.string().optional(),
-  title: z.string().optional(),
-  description: z.string().optional(),
-  price: z.string().regex(/^[0-9]+(\.[0-9]+)?$/),
-  currency: z.string().default("TON"),
-  channelMode: z.string().optional(),
-  subscribersCount: z.union([z.string(), z.number()]).optional(),
-  giftsCount: z.union([z.string(), z.number()]).optional(),
-  giftKind: z.string().optional(),
-  tgUserType: z.string().optional(),
-  followersCount: z.union([z.string(), z.number()]).optional(),
-  accountCreatedAt: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
-  serviceType: z.string().optional(),
-  target: z.string().optional(),
-  serviceCount: z.union([z.string(), z.number()]).optional(),
-});
-
-const S = (v: unknown) => (v == null ? "" : String(v));
-const normHandle = (v?: string) =>
-  (v || "").trim().replace(/^@/,"")
-  .replace(/^https?:\/\/t\.me\//i,"").replace(/^t\.me\//i,"").toLowerCase();
-
-async function me(req: Request) {
-  const tg = req.telegramUser!;
-  return (await db.query.users.findFirst({ where: eq(users.telegramId, Number(tg.id)) }))!;
-}
-const toNumOrNull = (v?: string|number|null) => {
-  const s = S(v).trim(); if(!s) return null;
-  const n = Number(s); return Number.isFinite(n)? n : null;
-};
-
-export async function createListing(req: Request, res: Response) {
+export async function createActivity(req: Request, res: Response) {
   try {
-    const user = await me(req);
-    if (!user?.id) return res.status(401).json({ error: "unauthorized" });
+    const body = createActivitySchema.parse(req.body || {});
+    console.log("createActivity body:", body);
 
-    const p = createListingSchema.parse(req.body ?? {});
-    const unified = p.kind === "service" ? undefined : normHandle(p.username);
+    const listing = await getListingOrNull(body.listingId);
+    if (!listing || !listing.isActive) {
+      console.warn("Listing not found or inactive:", body.listingId);
+      return res.status(400).json({ error: "Listing not found or inactive" });
+    }
 
-    const insert = {
-      sellerId: user.id,
-      buyerId: null,
-      kind: p.kind,
-      platform: p.platform,
-      username: unified || null,
-      title: p.title?.trim() || (unified ? `@${unified}` : `${p.platform} ${p.kind}`),
-      description: p.description || null,
-      price: S(p.price),
-      currency: p.currency || "TON",
-      channelMode: p.channelMode || null,
-      subscribersCount: toNumOrNull(p.subscribersCount) as any,
-      giftsCount: toNumOrNull(p.giftsCount) as any,
-      giftKind: p.giftKind || null,
-      tgUserType: p.tgUserType || null,
-      followersCount: toNumOrNull(p.followersCount) as any,
-      accountCreatedAt: p.accountCreatedAt || null,
-      serviceType: p.serviceType || null,
-      target: p.target || null,
-      serviceCount: toNumOrNull(p.serviceCount) as any,
-      isActive: true,
-      removedByAdmin: false,
-      removedReason: null,
-    } satisfies typeof listings.$inferInsert;
+    const buyer = await getUserByUsernameInsensitive(body.buyerUsername);
+    const seller = await getUserByUsernameInsensitive(body.sellerUsername);
 
-    const [row] = await db.insert(listings).values(insert).returning();
+    if (!buyer) return res.status(404).json({ error: "buyer_user_not_found" });
+    if (!seller) return res.status(404).json({ error: "seller_user_not_found" });
+    if (buyer.id === seller.id) return res.status(400).json({ error: "seller_cannot_buy_own_listing" });
 
-    // ✅ إضافة نشاط للسوق (list)
-    await addMarketActivity({
-      listingId: row.id,
-      kind: "list",
-      sellerId: user.id,
-      amount: row.price,
-      currency: row.currency,
-    });
-    console.log("Market activity (list) recorded for listing:", row.id);
+    console.log("Buyer:", buyer.id, buyer.username, "Seller:", seller.id, seller.username);
 
-    res.status(201).json(row);
-  } catch (e: any) {
-    res.status(400).json({ error: e?.message || "invalid_payload" });
+    const amount = S(body.amount || listing.price);
+    const currency = S(body.currency || listing.currency || "TON");
+
+    // تطابق السعر
+    const a = toNum(amount);
+    const p = toNum(listing.price);
+    if (a != null && p != null && a !== p) {
+      return res.status(400).json({ error: "amount_mismatch_with_listing_price" });
+    }
+
+    // تحقق الرصيد
+    if (body.type === "buy") {
+      if (!buyer.walletAddress) return res.status(400).json({ error: "buyer_wallet_not_set" });
+      const priceTON = toNum(listing.price) || 0;
+      try {
+        await ensureBuyerHasFunds({ userTonAddress: buyer.walletAddress, amountTON: priceTON });
+      } catch (err: any) {
+        console.error("ensureBuyerHasFunds failed:", err);
+        if (err?.code === "INSUFFICIENT_FUNDS") {
+          return res.status(402).json({ error: err.message, details: err.details });
+        }
+        return res.status(400).json({ error: err?.message || "balance_check_failed" });
+      }
+    }
+
+    // إدخال النشاط (خاص بالـ activities العادي)
+    const [created] = await db
+      .insert(activities)
+      .values({
+        listingId: listing.id,
+        buyerId: buyer.id,
+        sellerId: seller.id,
+        paymentId: body.paymentId,
+        type: body.type,
+        status: body.type === "buy" ? "processing" : "pending",
+        amount,
+        currency,
+        txHash: body.txHash,
+        note: body.note as any,
+      })
+      .returning();
+
+    console.log("Activity created:", created);
+
+    // تحديث حالة الإعلان فقط إذا شراء
+    if (body.type === "buy" && listing.kind !== "service" && listing.isActive) {
+      await db.update(listings).set({ isActive: false, updatedAt: new Date() }).where(eq(listings.id, listing.id));
+      console.log("Listing marked inactive:", listing.id);
+    }
+
+    // ✨ تسجيل داخل الـ market_activity العام
+    if (body.type === "buy") {
+      await addMarketActivity({
+        listingId: listing.id,
+        kind: "sold",
+        sellerId: seller.id,
+        buyerId: buyer.id,
+        amount,
+        currency,
+      });
+    }
+
+    // إشعارات التلكرام (مع چيك الـ telegramId)
+    const title = listing.title || (listing.username ? `@${listing.username}` : `${listing.platform} ${listing.kind}`);
+    const priceStr = S(created.amount || listing.price);
+    const ccy = S(created.currency || listing.currency || "TON");
+
+    if (buyer.telegramId) {
+      await sendTelegramMessage(
+        buyer.telegramId,
+        [
+          `🛒 <b>Purchase Started</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Price:</b> ${priceStr} ${ccy}`,
+          ``,
+          `✅ Order placed. Please await seller instructions.`
+        ].join("\n")
+      );
+    }
+
+    if (seller.telegramId) {
+      await sendTelegramMessage(
+        seller.telegramId,
+        [
+          `📩 <b>New Order Received</b>`,
+          ``,
+          `<b>Item:</b> ${title}`,
+          `<b>Price:</b> ${priceStr} ${ccy}`,
+          buyer.username ? `<b>Buyer:</b> @${buyer.username}` : "",
+          ``,
+          `Please proceed with delivery and communicate in-app if needed.`
+        ].filter(Boolean).join("\n")
+      );
+    }
+
+    res.status(201).json(created);
+  } catch (error: any) {
+    console.error("createActivity error:", error);
+    if (!res.headersSent) {
+      res.status(400).json({ error: error?.message || "Invalid payload" });
+    }
   }
 }
