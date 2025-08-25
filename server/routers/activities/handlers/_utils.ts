@@ -1,27 +1,36 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, and, ilike, sql } from "drizzle-orm";
 import { db } from "../../../db.js";
 import { listings, users } from "@shared/schema";
 
+/** safe stringify */
 export const S = (v: unknown) => (v == null ? "" : String(v));
 
-export function toNum(v: unknown): number | null {
-  if (v == null || S(v).trim() === "") return null;
+/** يحوّل إلى رقم أو undefined */
+export function toNum(v: unknown): number | undefined {
+  if (v == null || S(v).trim() === "") return undefined;
   const n = Number(S(v).replace(",", "."));
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) ? n : undefined;
 }
 
+/** البحث عن يوزر باليوزرنيم (case-insensitive) */
 export async function getUserByUsernameInsensitive(username: string) {
+  if (!username) return null;
   const u = await db.query.users.findFirst({
-    where: sql`lower(${users.username}) = ${username.toLowerCase()}`,
+    where: ilike(users.username, username), // ilike = case-insensitive
   });
   return u || null;
 }
 
+/** يرجع listing إذا موجود وفعال */
 export async function getListingOrNull(id: string) {
-  const l = await db.query.listings.findFirst({ where: eq(listings.id, id) });
+  if (!id) return null;
+  const l = await db.query.listings.findFirst({
+    where: and(eq(listings.id, id), eq(listings.isActive, true)),
+  });
   return l || null;
 }
 
+/** إرسال رسالة تيليجرام */
 export async function sendTelegramMessage(
   telegramId: string | number | null | undefined,
   text: string,
@@ -42,5 +51,7 @@ export async function sendTelegramMessage(
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
     });
-  } catch {}
+  } catch (e: any) {
+    console.error("sendTelegramMessage error:", e?.message || e);
+  }
 }
