@@ -1,4 +1,3 @@
-// server/routers/wallet.ts
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
 import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
@@ -39,7 +38,7 @@ const ADMIN_TG_IDS = (process.env.ADMIN_TG_IDS || "")
   .filter(Boolean);
 
 export function mountWallet(app: Express) {
-  /** 1) Initiate deposit */
+  /** 1) Initiate deposit (TonConnect support) */
   app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
     const escrow = (process.env.ESCROW_WALLET || "").trim();
     if (!escrow) return res.status(500).json({ error: "ESCROW_WALLET not set" });
@@ -54,7 +53,6 @@ export function mountWallet(app: Express) {
 
     const code = genCode();
     const amountNano = toNano(amountTon);
-    const text = encodeURIComponent(code);
 
     await db.insert(payments).values({
       listingId: null,
@@ -64,7 +62,7 @@ export function mountWallet(app: Express) {
       locked: false,
       amount: String(amountTon),
       currency: "TON",
-      feePercent: "0",   // always zero for deposit
+      feePercent: "0",   // no fee for deposit
       feeAmount: "0",
       sellerAmount: "0",
       escrowAddress: escrow,
@@ -76,17 +74,32 @@ export function mountWallet(app: Express) {
       adminAction: "none",
     });
 
-    const ton = `ton://transfer/${escrow}?amount=${amountNano}&text=${text}`;
-    const tonkeeper = `tonkeeper://transfer/${escrow}?amount=${amountNano}&text=${text}`;
-    const tonkeeperWeb = `https://app.tonkeeper.com/transfer/${escrow}?amount=${amountNano}&text=${text}`;
-    const tonhub = `tonhub://transfer/${escrow}?amount=${amountNano}&text=${text}`;
+    // ✅ TonConnect payload (transaction request)
+    const tonConnectPayload = {
+      validUntil: Math.floor(Date.now() / 1000) + 600, // expires in 10min
+      messages: [
+        {
+          address: escrow,
+          amount: amountNano,
+          stateInit: undefined,
+          payload: code, // التعليق كـ payload
+        },
+      ],
+    };
+
+    // ✅ Legacy deeplinks (fallback)
+    const ton = `ton://transfer/${escrow}?amount=${amountNano}&text=${encodeURIComponent(code)}`;
+    const tonkeeper = `tonkeeper://transfer/${escrow}?amount=${amountNano}&text=${encodeURIComponent(code)}`;
+    const tonkeeperWeb = `https://app.tonkeeper.com/transfer/${escrow}?amount=${amountNano}&text=${encodeURIComponent(code)}`;
+    const tonhub = `tonhub://transfer/${escrow}?amount=${amountNano}&text=${encodeURIComponent(code)}`;
 
     res.status(201).json({
       code,
       escrowAddress: escrow,
       amountTon,
       amountNano,
-      deeplinks: { ton, tonkeeper, tonkeeperWeb, tonhub },
+      tonConnectPayload,   // ✅ جديد: TonConnect payload
+      deeplinks: { ton, tonkeeper, tonkeeperWeb, tonhub }, // fallback
     });
   });
 
@@ -175,7 +188,7 @@ export function mountWallet(app: Express) {
     });
   });
 
-  /** 4) Pay for a listing (lock funds in escrow) */
+  /** 4) Pay for a listing (escrow) */
   app.post("/api/wallet/pay", tgAuth, async (req: Request, res: Response) => {
     try {
       const me = await getMe(req);
@@ -215,9 +228,9 @@ export function mountWallet(app: Express) {
           locked: true,
           amount: String(price),
           currency: "TON",
-          feePercent: "5",   // reserved for later
-          feeAmount: "0",    // initially zero
-          sellerAmount: "0", // initially zero
+          feePercent: "5",
+          feeAmount: "0",
+          sellerAmount: "0",
           escrowAddress: process.env.ESCROW_WALLET || "",
           comment: null,
           txHash: null,
@@ -244,7 +257,7 @@ export function mountWallet(app: Express) {
     }
   });
 
-  /** 5) Admin resolve escrow (release or refund) */
+  /** 5) Admin resolve escrow */
   app.post("/api/wallet/resolve", tgAuth, async (req: Request, res: Response) => {
     try {
       const tg = (req as any).telegramUser;
@@ -284,7 +297,7 @@ export function mountWallet(app: Express) {
             note: "Released to seller",
           },
           {
-            userId: 0, // admin/system account
+            userId: 0,
             direction: "in",
             amount: String(fee),
             currency: "TON",
@@ -331,7 +344,7 @@ export function mountWallet(app: Express) {
     }
   });
 
-  /** 6) Ledger (transaction history for current user) */
+  /** 6) Ledger */
   app.get("/api/wallet/ledger", tgAuth, async (req: Request, res: Response) => {
     try {
       const me = await getMe(req);
