@@ -1,4 +1,3 @@
-// server/routers/wallet.ts
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
 import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
@@ -63,8 +62,8 @@ export function mountWallet(app: Express) {
       amount: String(amountTon),
       currency: "TON",
       feePercent: "0",
-      feeAmount: "0",
-      sellerAmount: "0",
+      feeAmount: null,       // ✅ fix: null not "0"
+      sellerAmount: null,    // ✅ fix: null not "0"
       escrowAddress: escrow,
       comment: code,
       txHash: null,
@@ -326,36 +325,6 @@ export function mountWallet(app: Express) {
       }
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
-    }
-  });
-
-  /** 6) Wallet Ledger (transactions history) */
-  app.get("/api/wallet/ledger", tgAuth, async (req: Request, res: Response) => {
-    try {
-      const me = await getMe(req);
-      if (!me) return res.status(401).json({ error: "unauthorized" });
-
-      const rows = await db
-        .select()
-        .from(walletLedger)
-        .where(eq(walletLedger.userId, me.id))
-        .orderBy(desc(walletLedger.createdAt))
-        .limit(50);
-
-      res.json(
-        rows.map((r) => ({
-          id: r.id,
-          direction: r.direction,
-          amount: r.amount,
-          currency: r.currency,
-          refType: r.refType,
-          refId: r.refId,
-          note: r.note,
-          createdAt: r.createdAt,
-        }))
-      );
-    } catch (e: any) {
-      res.status(500).json({ error: e?.message ?? "failed_to_fetch_ledger" });
     }
   });
 }
