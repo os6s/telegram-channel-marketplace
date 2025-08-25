@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
-import { db } from "../../../db.js";
 import { eq } from "drizzle-orm";
+import { db } from "../../../db.js";
 import { listings, users } from "@shared/schema";
 
 export async function getListing(req: Request, res: Response) {
@@ -20,7 +20,8 @@ export async function getListing(req: Request, res: Response) {
       isActive: listings.isActive,
       createdAt: listings.createdAt,
       sellerId: listings.sellerId,
-      sellerUsername: users.username,
+      sellerUsername: users.username,       // 👈 يوزر البائع
+      sellerTelegramId: users.telegramId,   // 👈 تيليجرام آي دي
     })
     .from(listings)
     .leftJoin(users, eq(users.id, listings.sellerId))
