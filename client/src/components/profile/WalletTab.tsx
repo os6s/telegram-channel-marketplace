@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
 import { useLanguage } from "@/contexts/language-context";
 import { useToast } from "@/hooks/use-toast";
@@ -10,80 +10,93 @@ import { useToast } from "@/hooks/use-toast";
 export default function WalletTab() {
   const { t } = useLanguage();
   const { toast } = useToast();
+  const qc = useQueryClient();
 
   const [depositAmount, setDepositAmount] = useState("");
-  const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [withdrawAddress, setWithdrawAddress] = useState("");
+  const [payoutAmount, setPayoutAmount] = useState("");
+  const [payoutAddress, setPayoutAddress] = useState("");
 
-  // === Queries ===
-  const { data: balance, refetch: refetchBalance } = useQuery({
+  const { data: balance } = useQuery({
     queryKey: ["/api/wallet/balance"],
     queryFn: async () => await apiRequest("GET", "/api/wallet/balance"),
   });
 
-  const { data: ledger = [], refetch: refetchLedger } = useQuery({
+  const { data: ledger = [] } = useQuery({
     queryKey: ["/api/wallet/ledger"],
     queryFn: async () => await apiRequest("GET", "/api/wallet/ledger"),
   });
 
-  // === Mutations ===
+  const { data: payouts = [] } = useQuery({
+    queryKey: ["/api/payouts/me"],
+    queryFn: async () => await apiRequest("GET", "/api/payouts/me"),
+  });
+
+  // ====== Deposit ======
   const depositMutation = useMutation({
-    mutationFn: async (amountTon: number) =>
-      await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon }),
-    onSuccess: (r, amt) => {
+    mutationFn: async () => {
+      const amt = Number(depositAmount);
+      if (!amt || amt <= 0) throw new Error("Invalid amount");
+      const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
       const url = r.deeplinks?.tonkeeperWeb || r.deeplinks?.ton;
-      if (url) {
-        window.open(url, "_blank");
-        toast({ title: t("wallet.confirmDeposit") || "Confirm deposit in your wallet" });
-
-        const check = async () => {
-          const status = await apiRequest("POST", "/api/wallet/deposit/status", { code: r.code, minTon: amt });
-          if (status.status === "paid") {
-            toast({ title: t("wallet.depositConfirmed") || "Deposit confirmed ✅" });
-            refetchBalance();
-            refetchLedger();
-          } else {
-            setTimeout(check, 5000);
-          }
-        };
-        setTimeout(check, 5000);
-      }
+      if (!url) throw new Error("No deposit link");
+      window.open(url, "_blank");
+      return r;
     },
-    onError: (e: any) =>
-      toast({ title: t("wallet.depositFailed") || "Deposit failed", description: e?.message || "", variant: "destructive" }),
+    onSuccess: (r, vars) => {
+      toast({ title: t("toast.confirmDeposit") || "Confirm deposit in your wallet" });
+      // Poll status
+      const amt = Number(depositAmount);
+      const check = async () => {
+        const status = await apiRequest("POST", "/api/wallet/deposit/status", {
+          code: r.code,
+          minTon: amt,
+        });
+        if (status.status === "paid") {
+          toast({ title: t("toast.depositConfirmed") || "Deposit confirmed ✅" });
+          qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
+          qc.invalidateQueries({ queryKey: ["/api/wallet/ledger"] });
+        } else {
+          setTimeout(check, 5000);
+        }
+      };
+      setTimeout(check, 5000);
+    },
+    onError: (e: any) => {
+      toast({
+        title: t("toast.depositFailed") || "Deposit failed",
+        description: e?.message || "",
+        variant: "destructive",
+      });
+    },
   });
 
-  const withdrawMutation = useMutation({
-    mutationFn: async ({ address, amount }: { address: string; amount: number }) =>
-      await apiRequest("POST", "/api/payouts/request", { toAddress: address, amount }),
+  // ====== Payout ======
+  const payoutMutation = useMutation({
+    mutationFn: async () => {
+      const amt = Number(payoutAmount);
+      if (!amt || amt <= 0) throw new Error("Invalid amount");
+      if (!payoutAddress) throw new Error("Address required");
+      return await apiRequest("POST", "/api/payouts", {
+        amount: amt,
+        toAddress: payoutAddress,
+      });
+    },
     onSuccess: () => {
-      toast({ title: t("wallet.withdrawRequested") || "Withdrawal request sent ✅" });
-      setWithdrawAmount("");
-      setWithdrawAddress("");
-      refetchLedger();
+      toast({ title: t("toast.success") || "Payout request submitted" });
+      setPayoutAmount("");
+      setPayoutAddress("");
+      qc.invalidateQueries({ queryKey: ["/api/payouts/me"] });
+      qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
+      qc.invalidateQueries({ queryKey: ["/api/wallet/ledger"] });
     },
-    onError: (e: any) =>
-      toast({ title: t("wallet.withdrawFailed") || "Withdraw failed", description: e?.message || "", variant: "destructive" }),
+    onError: (e: any) => {
+      toast({
+        title: t("toast.error") || "Error",
+        description: e?.message || "Failed to request payout",
+        variant: "destructive",
+      });
+    },
   });
-
-  // === Handlers ===
-  function handleDeposit() {
-    const amt = Number(depositAmount);
-    if (!amt || amt <= 0) {
-      toast({ title: t("wallet.invalidAmount") || "Invalid amount", variant: "destructive" });
-      return;
-    }
-    depositMutation.mutate(amt);
-  }
-
-  function handleWithdraw() {
-    const amt = Number(withdrawAmount);
-    if (!amt || amt <= 0 || !withdrawAddress.trim()) {
-      toast({ title: t("wallet.invalidWithdraw") || "Enter valid address and amount", variant: "destructive" });
-      return;
-    }
-    withdrawMutation.mutate({ address: withdrawAddress.trim(), amount: amt });
-  }
 
   return (
     <div className="space-y-4">
@@ -99,40 +112,44 @@ export default function WalletTab() {
 
       {/* Deposit */}
       <Card>
-        <CardContent className="p-4 space-y-3">
+        <CardContent className="p-4 space-y-2">
           <div className="font-semibold">{t("wallet.deposit") || "Deposit"}</div>
           <div className="flex gap-2">
             <Input
-              placeholder={t("wallet.depositPlaceholder") || "Enter amount TON"}
+              placeholder={t("wallet.enterAmount") || "Enter amount"}
               value={depositAmount}
               onChange={(e) => setDepositAmount(e.target.value)}
             />
-            <Button onClick={handleDeposit} disabled={depositMutation.isPending}>
+            <Button
+              onClick={() => depositMutation.mutate()}
+              disabled={depositMutation.isPending}
+            >
               {t("wallet.deposit") || "Deposit"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Withdraw */}
+      {/* Request Payout */}
       <Card>
-        <CardContent className="p-4 space-y-3">
-          <div className="font-semibold">{t("wallet.withdraw") || "Withdraw"}</div>
+        <CardContent className="p-4 space-y-2">
+          <div className="font-semibold">{t("wallet.payout") || "Request Payout"}</div>
           <Input
-            placeholder={t("wallet.withdrawAddress") || "Destination TON Address"}
-            value={withdrawAddress}
-            onChange={(e) => setWithdrawAddress(e.target.value)}
+            placeholder={t("wallet.enterAmount") || "Enter amount"}
+            value={payoutAmount}
+            onChange={(e) => setPayoutAmount(e.target.value)}
           />
-          <div className="flex gap-2 mt-2">
-            <Input
-              placeholder={t("wallet.withdrawAmount") || "Enter amount TON"}
-              value={withdrawAmount}
-              onChange={(e) => setWithdrawAmount(e.target.value)}
-            />
-            <Button onClick={handleWithdraw} disabled={withdrawMutation.isPending}>
-              {t("wallet.withdraw") || "Withdraw"}
-            </Button>
-          </div>
+          <Input
+            placeholder={t("wallet.enterAddress") || "Enter TON wallet address"}
+            value={payoutAddress}
+            onChange={(e) => setPayoutAddress(e.target.value)}
+          />
+          <Button
+            onClick={() => payoutMutation.mutate()}
+            disabled={payoutMutation.isPending}
+          >
+            {t("wallet.requestPayout") || "Request Payout"}
+          </Button>
         </CardContent>
       </Card>
 
@@ -163,6 +180,48 @@ export default function WalletTab() {
               </div>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      {/* Payout Requests */}
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div className="font-semibold">{t("wallet.payouts") || "My Payout Requests"}</div>
+          {payouts.length === 0 && (
+            <div className="text-muted-foreground text-sm">
+              {t("wallet.noPayouts") || "No payout requests yet."}
+            </div>
+          )}
+          {payouts.map((p: any) => {
+            let statusColor = "text-yellow-500"; // pending
+            let statusIcon = "⏳";
+            if (p.status === "completed") {
+              statusColor = "text-green-600";
+              statusIcon = "✅";
+            } else if (p.status === "failed") {
+              statusColor = "text-red-600";
+              statusIcon = "❌";
+            } else if (p.status === "processing") {
+              statusColor = "text-blue-600";
+              statusIcon = "🔄";
+            }
+
+            return (
+              <div key={p.id} className="flex justify-between items-center border-b py-2">
+                <div>
+                  <div className="text-sm font-medium">
+                    {p.amount} {p.currency}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {p.toAddress} • <span className={statusColor}>{statusIcon} {p.status}</span>
+                  </div>
+                </div>
+                <div className="text-right text-xs opacity-70">
+                  {new Date(p.createdAt).toLocaleString()}
+                </div>
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
     </div>
