@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,23 @@ export default function WalletTab() {
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
 
+  // ✅ حفظ العنوان في الباك إذا ربط المستخدم المحفظة
+  useEffect(() => {
+    async function saveWallet() {
+      try {
+        const address = wallet?.account.address || "";
+        await apiRequest("POST", "/api/me/wallet", { address });
+        toast({
+          title: "Wallet updated",
+          description: address ? `Connected: ${address.slice(0, 6)}…${address.slice(-4)}` : "Disconnected",
+        });
+      } catch (e: any) {
+        toast({ title: "Failed to save wallet", description: e?.message || "", variant: "destructive" });
+      }
+    }
+    saveWallet();
+  }, [wallet?.account.address]);
+
   const { data: balance } = useQuery({
     queryKey: ["/api/wallet/balance"],
     queryFn: async () => await apiRequest("GET", "/api/wallet/balance"),
@@ -43,11 +60,9 @@ export default function WalletTab() {
       const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
 
       if (wallet) {
-        // TonConnect
         await tonConnectUI.sendTransaction(r.txPayload);
         toast({ title: "Please confirm deposit in your wallet…" });
       } else {
-        // fallback deeplink
         window.open(r.fallbackDeeplinks?.tonkeeper, "_blank");
       }
 
