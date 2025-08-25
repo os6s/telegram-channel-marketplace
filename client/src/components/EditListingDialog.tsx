@@ -12,9 +12,10 @@ interface EditListingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   listing: Listing;
+  onUpdated?: (updated: Listing) => void; // ✅ Callback لتحديث الواجهة مباشرة
 }
 
-export function EditListingDialog({ open, onOpenChange, listing }: EditListingDialogProps) {
+export function EditListingDialog({ open, onOpenChange, listing, onUpdated }: EditListingDialogProps) {
   const { toast } = useToast();
 
   const [title, setTitle] = useState(listing.title || "");
@@ -25,15 +26,15 @@ export function EditListingDialog({ open, onOpenChange, listing }: EditListingDi
   async function handleSave() {
     try {
       setSaving(true);
-      await apiRequest("PUT", `/api/listings/${listing.id}`, {
+      const updated = await apiRequest("PATCH", `/api/listings/${listing.id}`, {
         title: title.trim(),
         description: description.trim(),
         price: price.trim(),
       });
 
       toast({ title: "✅ Saved", description: "Listing updated successfully" });
+      if (onUpdated) onUpdated(updated as Listing); // ✅ تحديث state بالواجهة
       onOpenChange(false);
-      window.location.reload();
     } catch (e: any) {
       toast({
         title: "❌ Error",
@@ -88,7 +89,7 @@ export function EditListingDialog({ open, onOpenChange, listing }: EditListingDi
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
+            <Button onClick={handleSave} disabled={saving} className="bg-blue-500 text-white">
               {saving ? "Saving..." : "Save"}
             </Button>
           </div>
