@@ -21,14 +21,57 @@ function toNano(ton: number): string {
 async function getMe(req: Request) {
   const tg = (req as any).telegramUser as TgUser | undefined;
   if (!tg?.id) return null;
-  const me = await db.query.users.findFirst({
+  return await db.query.users.findFirst({
     where: eq(users.telegramId, BigInt(tg.id)),
   });
-  return me ?? null;
+}
+
+function isValidTonAddress(addr: string): boolean {
+  return /^([UuEeQq]{1}[A-Za-z0-9_-]{47,63})$/.test(addr.trim());
 }
 
 export function mountWallet(app: Express) {
-  /** ✅ 1) Initiate deposit (TonConnect payload) */
+  /** ✅ 1) Wallet Address APIs */
+  app.get("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
+    const me = await getMe(req);
+    if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
+
+    res.json({ ok: true, walletAddress: (me as any).wallet_address ?? null });
+  });
+
+  app.post("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
+    const me = await getMe(req);
+    if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
+
+    const addr = String(req.body?.walletAddress || "").trim();
+    if (!isValidTonAddress(addr)) {
+      return res.status(400).json({ ok: false, error: "invalid_address" });
+    }
+
+    const [updated] = await db
+      .update(users)
+      .set({ wallet_address: addr, updatedAt: new Date() })
+      .where(eq(users.id, me.id))
+      .returning({ id: users.id, wallet_address: users.wallet_address });
+
+    console.log(`✅ Wallet linked for user ${me.id}: ${addr}`);
+    res.json({ ok: true, walletAddress: updated.wallet_address });
+  });
+
+  app.delete("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
+    const me = await getMe(req);
+    if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
+
+    await db
+      .update(users)
+      .set({ wallet_address: null, updatedAt: new Date() })
+      .where(eq(users.id, me.id));
+
+    console.log(`❌ Wallet unlinked for user ${me.id}`);
+    res.json({ ok: true, walletAddress: null });
+  });
+
+  /** ✅ 2) Deposit Initiate */
   app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
     try {
       const escrow = (process.env.ESCROW_WALLET || "").trim();
@@ -65,9 +108,8 @@ export function mountWallet(app: Express) {
         adminAction: "none",
       }).returning();
 
-      // ✅ TonConnect payload
       const payload = {
-        validUntil: Math.floor(Date.now() / 1000) + 300, // 5 min
+        validUntil: Math.floor(Date.now() / 1000) + 300,
         messages: [
           {
             address: escrow,
@@ -94,7 +136,7 @@ export function mountWallet(app: Express) {
     }
   });
 
-  /** ✅ 2) Verify deposit */
+  /** ✅ 3) Verify deposit */
   app.post("/api/wallet/deposit/status", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ error: "unauthorized" });
@@ -144,7 +186,7 @@ export function mountWallet(app: Express) {
     res.json({ status: "paid", amount: Number(updated.amount), txHash: updated.txHash, id: updated.id });
   });
 
-  /** ✅ 3) Balance */
+  /** ✅ 4) Balance */
   app.get("/api/wallet/balance", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ error: "unauthorized" });
@@ -156,7 +198,7 @@ export function mountWallet(app: Express) {
     });
   });
 
-  /** ✅ 4) Ledger */
+  /** ✅ 5) Ledger */
   app.get("/api/wallet/ledger", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ error: "unauthorized" });
