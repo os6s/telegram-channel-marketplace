@@ -122,7 +122,13 @@
       "title": "معاملة قناة",
       "amount": "المبلغ:",
       "hash": "TX Hash:"
-    }
+    },
+    "locked": "الأموال محجوزة في الضمان",
+    "released": "تمت الموافقة على الإفراج عن الأموال",
+    "refunded": "تم استرجاع/إلغاء الطلب",
+    "unauthorized": "⚠️ لازم تفتح التطبيق من تيليجرام.",
+    "empty": "ماكو نشاط بعد",
+    "updated": "نشاط"
   },
 
   "profilePage": {
@@ -130,6 +136,10 @@
     "subtitle": "إدارة حسابك وإعلاناتك",
     "memberSince": "عضو منذ {year}",
     "tonWallet": "محفظة TON",
+    "wallet": "المحفظة",
+    "balance": "الرصيد",
+    "deposit": "إيداع",
+    "depositPlaceholder": "اكتب المبلغ",
     "stats": {
       "activeListings": "العروض النشطة",
       "totalValueTon": "القيمة الكلية (TON)",
@@ -137,14 +147,18 @@
     },
     "tabs": {
       "listings": "إعلاناتي",
-      "activity": "النشاط"
+      "activity": "النشاط",
+      "disputes": "النزاعات"
     },
     "listingsHeader": "إعلاناتي",
     "listChannel": "أضف قناة",
     "emptyTitle": "ماكو إعلانات بعد",
     "emptyDesc": "إبدي تبيع بالسوق",
     "listFirst": "أضف إعلانك الأول",
-    "openActivity": "فتح صفحة النشاط"
+    "openActivity": "فتح صفحة النشاط",
+    "cta": {
+      "list": "أضف للبيع"
+    }
   },
 
   "toast": {
@@ -153,7 +167,11 @@
     "somethingWrong": "صار خطأ، حاول مرة ثانية.",
     "openFromTelegram": "افتح التطبيق من تيليجرام.",
     "saved": "تم الحفظ",
-    "published": "تم إرسال الإعلان"
+    "published": "تم إرسال الإعلان",
+    "invalidAmount": "مبلغ غير صالح",
+    "confirmDeposit": "أكد الإيداع من محفظتك",
+    "depositConfirmed": "تم تأكيد الإيداع ✅",
+    "depositFailed": "فشل الإيداع"
   },
 
   "notFound": {
