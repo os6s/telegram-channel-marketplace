@@ -1,32 +1,55 @@
+// server/routers/listings/handlers/getOne.ts
 import type { Request, Response } from "express";
-import { eq } from "drizzle-orm";
 import { db } from "../../../db.js";
+import { eq } from "drizzle-orm";
 import { listings, users } from "@shared/schema";
 
 export async function getListing(req: Request, res: Response) {
-  const id = String(req.params.id || "");
-  if (!id) return res.status(400).json({ error: "id required" });
+  try {
+    const id = String(req.params.id || "");
+    if (!id) return res.status(400).json({ error: "id required" });
 
-  const row = await db
-    .select({
-      id: listings.id,
-      kind: listings.kind,
-      platform: listings.platform,
-      username: listings.username,
-      title: listings.title,
-      description: listings.description,
-      price: listings.price,
-      currency: listings.currency,
-      isActive: listings.isActive,
-      createdAt: listings.createdAt,
-      sellerId: listings.sellerId,
-      sellerUsername: users.username,       // 👈 يوزر البائع
-      sellerTelegramId: users.telegramId,   // 👈 تيليجرام آي دي
-    })
-    .from(listings)
-    .leftJoin(users, eq(users.id, listings.sellerId))
-    .where(eq(listings.id, id));
+    // 🟢 جلب الإعلان
+    const rows = await db
+      .select({
+        id: listings.id,
+        kind: listings.kind,
+        platform: listings.platform,
+        username: listings.username,
+        title: listings.title,
+        description: listings.description,
+        price: listings.price,
+        currency: listings.currency,
+        isActive: listings.isActive,
+        createdAt: listings.createdAt,
+        sellerId: listings.sellerId,
+      })
+      .from(listings)
+      .where(eq(listings.id, id));
 
-  if (!row.length) return res.status(404).json({ error: "not_found" });
-  res.json(row[0]);
+    if (!rows.length) return res.status(404).json({ error: "not_found" });
+
+    const listing = rows[0];
+
+    // 🟢 جلب بيانات البائع
+    let seller: { id: string; username: string | null; telegramId: string | null } | null = null;
+    if (listing.sellerId) {
+      const [u] = await db
+        .select({ id: users.id, username: users.username, telegramId: users.telegramId })
+        .from(users)
+        .where(eq(users.id, listing.sellerId));
+      if (u) {
+        seller = { id: u.id, username: u.username, telegramId: u.telegramId };
+      }
+    }
+
+    // 🟢 تجهيز الاستجابة
+    res.json({
+      ...listing,
+      seller,
+    });
+  } catch (error: any) {
+    console.error("getListing error:", error);
+    res.status(500).json({ error: error?.message || "Unknown error" });
+  }
 }
