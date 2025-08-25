@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
+import { TonConnectUI, useTonConnectUI } from "@tonconnect/ui-react";
 
 export default function WalletTab() {
   const { t } = useLanguage();
@@ -29,6 +30,9 @@ export default function WalletTab() {
     queryFn: async () => await apiRequest("GET", "/api/wallet/ledger"),
   });
 
+  // TonConnect hook
+  const [tonConnectUI] = useTonConnectUI();
+
   /** Deposit handler */
   async function handleDeposit() {
     try {
@@ -37,26 +41,46 @@ export default function WalletTab() {
         toast({ title: t("toast.invalidAmount") || "Invalid amount", variant: "destructive" });
         return;
       }
-      const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
-      const url = r.deeplinks?.tonkeeperWeb || r.deeplinks?.ton;
-      if (url) {
-        window.open(url, "_blank");
-        toast({ title: t("toast.confirmDeposit") || "Confirm deposit in your wallet" });
 
-        const check = async () => {
-          const status = await apiRequest("POST", "/api/wallet/deposit/status", { code: r.code, minTon: amt });
-          if (status.status === "paid") {
-            toast({ title: t("toast.depositConfirmed") || "Deposit confirmed ✅" });
-            qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
-            qc.invalidateQueries({ queryKey: ["/api/wallet/ledger"] });
-          } else {
-            setTimeout(check, 5000);
-          }
-        };
-        setTimeout(check, 5000);
-      }
+      // 1) نطلب من الباك تسجيل العملية pending
+      const { txPayload } = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
+
+      // 2) نفتح واجهة TonConnect الرسمية
+      await tonConnectUI.sendTransaction({
+        validUntil: Math.floor(Date.now() / 1000) + 300, // 5 دقائق
+        messages: [
+          {
+            address: txPayload.toAddress, // عنوان منصة الاستلام
+            amount: String(Math.floor(amt * 1e9)), // بالـ nanotons
+          },
+        ],
+      });
+
+      // 3) نعرض تنبيه انتظار التأكيد
+      toast({ title: t("toast.confirmDeposit") || "Confirm deposit in your wallet" });
+
+      // 4) polling للتأكد من وصول التحويل
+      const check = async () => {
+        const status = await apiRequest("POST", "/api/wallet/deposit/status", { code: txPayload.code });
+        if (status.status === "paid") {
+          toast({ title: t("toast.depositConfirmed") || "Deposit confirmed ✅" });
+          qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
+          qc.invalidateQueries({ queryKey: ["/api/wallet/ledger"] });
+        } else {
+          setTimeout(check, 5000);
+        }
+      };
+      setTimeout(check, 5000);
     } catch (e: any) {
-      toast({ title: t("toast.depositFailed") || "Deposit failed", description: e?.message || "", variant: "destructive" });
+      if (e?.message?.includes("User reject")) {
+        toast({ title: "❌ Cancelled", description: "You cancelled the transaction." });
+      } else {
+        toast({
+          title: t("toast.depositFailed") || "Deposit failed",
+          description: e?.message || "",
+          variant: "destructive",
+        });
+      }
     }
   }
 
@@ -82,6 +106,9 @@ export default function WalletTab() {
 
   return (
     <div className="space-y-4">
+      {/* TonConnect UI Widget */}
+      <TonConnectUI />
+
       {/* Balance + Deposit/Withdraw */}
       <Card>
         <CardHeader>
@@ -98,7 +125,9 @@ export default function WalletTab() {
               value={depositAmount}
               onChange={(e) => setDepositAmount(e.target.value)}
             />
-            <Button onClick={handleDeposit}>{t("profilePage.deposit") || "Deposit"}</Button>
+            <Button onClick={handleDeposit} className="bg-green-500 hover:bg-green-600 text-white">
+              {t("profilePage.deposit") || "Deposit via TON"}
+            </Button>
             <Button variant="secondary" onClick={() => setWithdrawOpen(true)}>
               {t("wallet.withdraw") || "Withdraw"}
             </Button>
