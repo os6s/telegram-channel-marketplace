@@ -1,8 +1,8 @@
+// client/src/pages/profile.tsx
 import { useMemo, useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SettingsModal } from "@/components/settings-modal";
 import { telegramWebApp } from "@/lib/telegram";
-import { useTon, type TonWallet } from "@/lib/ton-connect";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
@@ -19,6 +19,7 @@ import {
 } from "@/hooks/use-me";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/queryClient";
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
@@ -27,12 +28,10 @@ const N = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
 export default function ProfilePage() {
   const { t } = useLanguage();
   const { toast } = useToast();
-  const { wallet } = useTon();
 
   const [showSettings, setShowSettings] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogActivityId, setDialogActivityId] = useState<string | null>(null);
-  const [connectedWallet, setConnectedWallet] = useState<TonWallet | null>(null);
 
   const [balance, setBalance] = useState<number>(0);
   const [depositAmount, setDepositAmount] = useState("");
@@ -46,15 +45,8 @@ export default function ProfilePage() {
   const { data: myDisputes = [], isLoading: disputesLoading } = useMyDisputes(uname || undefined);
 
   useEffect(() => {
-    (async () => {
-      if (wallet?.address) {
-        const bal = await fetchBalance();
-        setConnectedWallet({ address: wallet.address, network: wallet.network, balance: bal.toFixed(3) });
-      } else {
-        setConnectedWallet(null);
-      }
-    })();
-  }, [wallet?.address]);
+    fetchBalance();
+  }, []);
 
   async function fetchBalance() {
     try {
@@ -155,20 +147,24 @@ export default function ProfilePage() {
 
       <div className="px-4 py-6 space-y-6">
         {/* Wallet Section */}
-        <div className="p-4 border rounded bg-card space-y-2">
-          <div className="text-sm">{t("profilePage.wallet") || "Wallet"}: {connectedWallet?.address || "Not connected"}</div>
-          <div className="text-lg font-semibold">
-            {t("profilePage.balance") || "Balance"}: {balance.toFixed(3)} TON
-          </div>
-          <div className="flex gap-2">
-            <Input
-              placeholder={t("profilePage.depositPlaceholder") || "Enter amount"}
-              value={depositAmount}
-              onChange={(e) => setDepositAmount(e.target.value)}
-            />
-            <Button onClick={handleDeposit}>{t("profilePage.deposit") || "Deposit"}</Button>
-          </div>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("profilePage.wallet") || "Wallet"}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="text-lg font-semibold">
+              {t("profilePage.balance") || "Balance"}: {balance.toFixed(3)} TON
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder={t("profilePage.depositPlaceholder") || "Enter amount"}
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+              />
+              <Button onClick={handleDeposit}>{t("profilePage.deposit") || "Deposit"}</Button>
+            </div>
+          </CardContent>
+        </Card>
 
         <StatsCards activeCount={stats.activeCount} totalValue={stats.totalValue} totalSubs={stats.totalSubs} />
 
