@@ -1,4 +1,3 @@
-// client/src/pages/profile.tsx
 import { useMemo, useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SettingsModal } from "@/components/settings-modal";
@@ -12,7 +11,6 @@ import { ListingsTab } from "@/components/profile/ListingsTab";
 import { ActivityTab } from "@/components/profile/ActivityTab";
 import { ActivityDialog } from "@/components/profile/ActivityDialog";
 import { DisputesTab } from "@/components/profile/DisputesTab";
-import { WalletTab } from "@/components/profile/WalletTab"; // ✅ new
 import {
   useMe,
   useMyListings,
@@ -74,20 +72,19 @@ export default function ProfilePage() {
     try {
       const amt = Number(depositAmount);
       if (!amt || amt <= 0) {
-        toast({ title: "Invalid amount", variant: "destructive" });
+        toast({ title: t("toast.invalidAmount") || "Invalid amount", variant: "destructive" });
         return;
       }
       const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
       const url = r.deeplinks?.tonkeeperWeb || r.deeplinks?.ton;
       if (url) {
         window.open(url, "_blank");
-        toast({ title: "Confirm deposit in your wallet" });
+        toast({ title: t("toast.confirmDeposit") || "Confirm deposit in your wallet" });
 
-        // poll until paid
         const check = async () => {
           const status = await apiRequest("POST", "/api/wallet/deposit/status", { code: r.code, minTon: amt });
           if (status.status === "paid") {
-            toast({ title: "Deposit confirmed ✅" });
+            toast({ title: t("toast.depositConfirmed") || "Deposit confirmed ✅" });
             fetchBalance();
           } else {
             setTimeout(check, 5000);
@@ -96,7 +93,7 @@ export default function ProfilePage() {
         setTimeout(check, 5000);
       }
     } catch (e: any) {
-      toast({ title: "Deposit failed", description: e?.message || "", variant: "destructive" });
+      toast({ title: t("toast.depositFailed") || "Deposit failed", description: e?.message || "", variant: "destructive" });
     }
   }
 
@@ -118,16 +115,16 @@ export default function ProfilePage() {
     return (myActivities || []).slice(0, 20).map((a: any) => {
       const amt = `${S(a.currency) || "TON"} ${S(a.amount) || ""}`.trim();
       let type: "UPDATED" | "SOLD" | "RELEASED" | "CANCELLED" = "UPDATED";
-      let title = "Activity";
+      let title = t("activityPage.updated") || "Activity";
       if (a.type === "buy") {
         type = "SOLD";
-        title = "Order paid to escrow";
+        title = t("activityPage.locked") || "Funds locked in escrow";
       } else if (["buyer_confirm", "seller_confirm", "admin_release"].includes(a.type)) {
         type = "RELEASED";
-        title = "Funds release approved";
+        title = t("activityPage.released") || "Funds release approved";
       } else if (["admin_refund", "cancel"].includes(a.type)) {
         type = "CANCELLED";
-        title = "Order refunded/cancelled";
+        title = t("activityPage.refunded") || "Order refunded/cancelled";
       }
       return {
         id: a.id,
@@ -137,12 +134,12 @@ export default function ProfilePage() {
         createdAt: a.createdAt || new Date().toISOString(),
       };
     });
-  }, [myActivities]);
+  }, [myActivities, t]);
 
   if (!tgUser?.id && !user?.id) {
     return (
       <div className="p-6 text-center text-red-500">
-        {t("profilePage.unauthorized") || "⚠️ Please open this app from Telegram."}
+        {t("activityPage.unauthorized") || "⚠️ Please open this app from Telegram."}
       </div>
     );
   }
@@ -159,26 +156,27 @@ export default function ProfilePage() {
       <div className="px-4 py-6 space-y-6">
         {/* Wallet Section */}
         <div className="p-4 border rounded bg-card space-y-2">
-          <div className="text-sm">Wallet: {connectedWallet?.address || "Not connected"}</div>
-          <div className="text-lg font-semibold">Balance: {balance.toFixed(3)} TON</div>
+          <div className="text-sm">{t("profilePage.wallet") || "Wallet"}: {connectedWallet?.address || "Not connected"}</div>
+          <div className="text-lg font-semibold">
+            {t("profilePage.balance") || "Balance"}: {balance.toFixed(3)} TON
+          </div>
           <div className="flex gap-2">
             <Input
-              placeholder="Enter amount"
+              placeholder={t("profilePage.depositPlaceholder") || "Enter amount"}
               value={depositAmount}
               onChange={(e) => setDepositAmount(e.target.value)}
             />
-            <Button onClick={handleDeposit}>Deposit</Button>
+            <Button onClick={handleDeposit}>{t("profilePage.deposit") || "Deposit"}</Button>
           </div>
         </div>
 
         <StatsCards activeCount={stats.activeCount} totalValue={stats.totalValue} totalSubs={stats.totalSubs} />
 
         <Tabs defaultValue="listings" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="listings">{t("profilePage.tabs.listings") || "My Listings"}</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="listings">{t("profilePage.tabs.listings")}</TabsTrigger>
             <TabsTrigger value="activity">{t("profilePage.tabs.activity")}</TabsTrigger>
-            <TabsTrigger value="disputes">{t("profilePage.tabs.disputes") || "Disputes"}</TabsTrigger>
-            <TabsTrigger value="wallet">{t("profilePage.tabs.wallet") || "Wallet"}</TabsTrigger>
+            <TabsTrigger value="disputes">{t("profilePage.tabs.disputes")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="listings" className="space-y-4">
@@ -186,20 +184,16 @@ export default function ProfilePage() {
               listings={myListings as any}
               isLoading={listingsLoading}
               currentUsername={uname || undefined}
-              ctaLabel={t("profilePage.cta.list") || "List for sale"}
+              ctaLabel={t("profilePage.cta.list")}
             />
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-4">
-            <ActivityTab events={events as any} emptyText={t("activityPage.empty") || "No activity yet"} />
+            <ActivityTab events={events as any} emptyText={t("activityPage.empty")} />
           </TabsContent>
 
           <TabsContent value="disputes" className="space-y-4">
             <DisputesTab disputes={myDisputes as any} isLoading={disputesLoading} />
-          </TabsContent>
-
-          <TabsContent value="wallet" className="space-y-4">
-            <WalletTab />
           </TabsContent>
         </Tabs>
       </div>
