@@ -19,6 +19,7 @@ interface ListingCardProps {
   };
   onViewDetails: (l: Channel) => void;
   onBuyNow: (l: Channel) => void;
+  onDeleteListing?: (id: string) => void;   // ✅ جديد
   currentUser?: { id?: string; username?: string; role?: "user" | "admin" };
 }
 
@@ -35,9 +36,8 @@ const formatNumber = (num: number): string =>
   num >= 1_000_000 ? (num / 1_000_000).toFixed(1) + "M" :
   num >= 1_000 ? (num / 1_000).toFixed(1) + "K" : String(Math.trunc(num));
 
-export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: ListingCardProps) {
+export function ListingCard({ listing, onViewDetails, onBuyNow, onDeleteListing, currentUser }: ListingCardProps) {
   const { t } = useLanguage();
-  const [showInfo, setShowInfo] = useState(false);
   const [showBuyConfirm, setShowBuyConfirm] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -105,67 +105,6 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
             </div>
           </div>
 
-          {/* Metrics */}
-          <div className="grid grid-cols-3 gap-4 mt-4 py-3 bg-muted rounded-lg">
-            {showSubs ? (
-              <>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-lg font-semibold text-foreground">
-                    <Users className="w-4 h-4" /><span>{formatNumber(subsCount)}</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">{t("channel.subscribers")}</div>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-lg font-semibold text-foreground">
-                    <Zap className="w-4 h-4" /><span>{giftKind || "-"}</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">{t("gift.kind") || "gift kind"}</div>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-lg font-semibold text-foreground">
-                    <Zap className="w-4 h-4" /><span>{formatNumber(giftsCount)}</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">{t("gift.count") || "gifts"}</div>
-                </div>
-              </>
-            ) : kind === "account" ? (
-              <>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-lg font-semibold text-foreground">
-                    <Users className="w-4 h-4" /><span>{formatNumber(followers)}</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">{t("account.followers") || "followers"}</div>
-                </div>
-                <div className="text-center col-span-2">
-                  <div className="text-lg font-semibold text-foreground">{accCreatedAt || "—"}</div>
-                  <div className="text-xs text-muted-foreground">{t("account.createdAt") || "created at (YYYY-MM)"}</div>
-                </div>
-              </>
-            ) : kind === "service" ? (
-              <>
-                <div className="text-center">
-                  <div className="text-lg font-semibold text-foreground">{serviceType || "—"}</div>
-                  <div className="text-xs text-muted-foreground">{t("service.type") || "service type"}</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-semibold text-foreground">{target || "—"}</div>
-                  <div className="text-xs text-muted-foreground">{t("service.target") || "target"}</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-semibold text-foreground">{formatNumber(serviceCount)}</div>
-                  <div className="text-xs text-muted-foreground">{t("service.count") || "count"}</div>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-center col-span-3">
-                  <div className="text-lg font-semibold text-foreground">{S((listing as any).tgUserType) || "—"}</div>
-                  <div className="text-xs text-muted-foreground">{t("username.type") || "user type"}</div>
-                </div>
-              </>
-            )}
-          </div>
-
           {/* Price + Actions */}
           <div className="flex items-center justify-between mt-4">
             <div>
@@ -179,6 +118,7 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
                 <Eye className="w-4 h-4 mr-1" /> {t("channel.info")}
               </Button>
 
+              {/* زر الشراء (يظهر فقط لغير المالك) */}
               {!isOwner && (
                 <Button
                   size="sm"
@@ -203,8 +143,12 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
                 variant="destructive"
                 onClick={async () => {
                   if (confirm("Are you sure you want to delete this listing?")) {
-                    await apiRequest("DELETE", `/api/listings/${listing.id}`);
-                    window.location.reload();
+                    if (onDeleteListing) {
+                      await onDeleteListing(listing.id);
+                    } else {
+                      await apiRequest("DELETE", `/api/listings/${listing.id}`);
+                      window.location.reload();
+                    }
                   }
                 }}
               >
@@ -213,7 +157,29 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
             </div>
           )}
 
-          {/* أدوات الإدارة: للإدمن */}
+          {/* زر الحذف للأدمن فقط */}
+          {isAdmin && !isOwner && (
+            <div className="mt-3">
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={async () => {
+                  if (confirm("Admin: Delete this listing?")) {
+                    if (onDeleteListing) {
+                      await onDeleteListing(listing.id);
+                    } else {
+                      await apiRequest("DELETE", `/api/listings/${listing.id}`);
+                      window.location.reload();
+                    }
+                  }
+                }}
+              >
+                🗑 {t("channel.delete") || "Delete"}
+              </Button>
+            </div>
+          )}
+
+          {/* أدوات الإدارة (إضافية) */}
           {isAdmin ? <AdminControls channel={listing as any} currentUser={currentUser} /> : null}
         </CardContent>
       </Card>
@@ -237,13 +203,6 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
             <h2 className="text-xl font-bold mb-4 text-foreground">{t("channel.confirmPurchase")}</h2>
             <p className="mb-2 text-foreground">{t("channel.confirmQuestion")}</p>
 
-            {kind === "channel" && (
-              <>
-                <p className="mb-2 text-foreground">👥 {t("channel.subscribers")}: <strong>{formatNumber(subsCount)}</strong></p>
-                <p className="mb-2 text-foreground">🎁 {t("gift.kind")}: <strong>{giftKind || "—"}</strong></p>
-                <p className="mb-4 text-foreground">🎁 {t("gift.count")}: <strong>{formatNumber(giftsCount)}</strong></p>
-              </>
-            )}
             {uname ? (
               <p className="mb-4 text-foreground">
                 {t("channel.username")}:{" "}
