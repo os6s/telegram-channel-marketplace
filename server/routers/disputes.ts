@@ -11,6 +11,7 @@ import {
   listings,
   payments,
   users,
+  walletLedger,
 } from "@shared/schema";
 
 /* ========================= Schemas ========================= */
@@ -36,7 +37,14 @@ async function getCurrentUser(req: Request) {
   }
   return null;
 }
-const isAdminUser = (u: any | null) => !!u && (u.role === "admin" || u.role === "moderator");
+
+const ADMIN_TG_IDS: number[] = (process.env.ADMIN_TG_IDS || "")
+  .split(",")
+  .map((x) => Number(x.trim()))
+  .filter((x) => Number.isFinite(x));
+
+const isAdminUser = (u: any | null) =>
+  !!u && (u.role === "admin" || u.role === "moderator" || ADMIN_TG_IDS.includes(Number(u.telegramId)));
 
 /* ========================= Routes ========================= */
 export function mountDisputes(app: Express) {
@@ -88,7 +96,7 @@ export function mountDisputes(app: Express) {
       if (!p.length) return res.status(404).json({ error: "payment_not_found" });
       const pay = p[0];
 
-      // ✅ Only buyer or seller of this payment can create dispute
+      // only buyer or seller can create
       if (me.id !== pay.buyerId && me.id !== pay.sellerId) {
         return res.status(403).json({ error: "forbidden", detail: "not_participant" });
       }
@@ -209,55 +217,87 @@ export function mountDisputes(app: Express) {
     }
   });
 
-  /** POST /api/disputes/:id/resolve */
+  /** POST /api/disputes/:id/resolve (admin only) */
   app.post("/api/disputes/:id/resolve", requireTelegramUser, async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
+
       const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
       if (!d.length) return res.status(404).json({ error: "not_found" });
 
       const me = await getCurrentUser(req);
       if (!me) return res.status(401).json({ error: "unauthorized" });
-
       const amAdmin = isAdminUser(me);
-      if (!amAdmin && me.id !== d[0].buyerId && me.id !== d[0].sellerId) {
-        return res.status(403).json({ error: "forbidden" });
+      if (!amAdmin) return res.status(403).json({ error: "forbidden" });
+
+      const pay = await db.query.payments.findFirst({ where: eq(payments.id, d[0].paymentId) });
+      if (!pay || pay.status !== "escrow") {
+        return res.status(404).json({ error: "payment_not_in_escrow" });
       }
 
-      const updated = await db
-        .update(disputes)
-        .set({ status: "resolved", resolvedAt: new Date() })
-        .where(eq(disputes.id, id))
-        .returning();
-
-      return res.json(updated[0]);
-    } catch (e: any) {
-      return res.status(400).json({ error: e?.message ?? "invalid_request" });
-    }
-  });
-
-  /** POST /api/disputes/:id/cancel */
-  app.post("/api/disputes/:id/cancel", requireTelegramUser, async (req: Request, res: Response) => {
-    try {
-      const { id } = idParam.parse(req.params);
-      const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
-      if (!d.length) return res.status(404).json({ error: "not_found" });
-
-      const me = await getCurrentUser(req);
-      if (!me) return res.status(401).json({ error: "unauthorized" });
-
-      const amAdmin = isAdminUser(me);
-      if (!amAdmin && me.id !== d[0].buyerId && me.id !== d[0].sellerId) {
-        return res.status(403).json({ error: "forbidden" });
+      const action = String(req.body?.action || "release");
+      if (!["release", "refund"].includes(action)) {
+        return res.status(400).json({ error: "bad_request" });
       }
 
-      const updated = await db
-        .update(disputes)
-        .set({ status: "cancelled" })
-        .where(eq(disputes.id, id))
-        .returning();
+      const amount = Number(pay.amount);
+      if (action === "release") {
+        const fee = +(amount * 0.05).toFixed(9);
+        const sellerAmount = +(amount - fee).toFixed(9);
 
-      return res.json(updated[0]);
+        await db.insert(walletLedger).values([
+          {
+            userId: pay.sellerId,
+            direction: "in",
+            amount: String(sellerAmount),
+            currency: "TON",
+            refType: "payout",
+            refId: pay.id,
+            note: "Released to seller",
+          },
+          {
+            userId: me.id, // admin user
+            direction: "in",
+            amount: String(fee),
+            currency: "TON",
+            refType: "fee",
+            refId: pay.id,
+            note: "Admin fee",
+          },
+        ]);
+
+        await db.update(payments).set({
+          feePercent: "5",
+          feeAmount: String(fee),
+          sellerAmount: String(sellerAmount),
+          status: "released",
+          adminAction: "release",
+        }).where(eq(payments.id, pay.id));
+      }
+
+      if (action === "refund") {
+        await db.insert(walletLedger).values({
+          userId: pay.buyerId,
+          direction: "in",
+          amount: String(amount),
+          currency: "TON",
+          refType: "refund",
+          refId: pay.id,
+          note: "Refunded to buyer",
+        });
+
+        await db.update(payments).set({
+          status: "refunded",
+          adminAction: "refund",
+        }).where(eq(payments.id, pay.id));
+      }
+
+      const updated = await db.update(disputes).set({
+        status: "resolved",
+        resolvedAt: new Date(),
+      }).where(eq(disputes.id, id)).returning();
+
+      return res.json({ ok: true, dispute: updated[0], action });
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
