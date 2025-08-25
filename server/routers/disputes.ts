@@ -45,6 +45,20 @@ const ADMIN_TG_IDS: number[] = (process.env.ADMIN_TG_IDS || "")
 const isAdminUser = (u: any | null) =>
   !!u && (u.role === "admin" || u.role === "moderator" || ADMIN_TG_IDS.includes(Number(u.telegramId)));
 
+async function notifyUser(telegramId: number | null, text: string) {
+  const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+  if (!BOT_TOKEN || !telegramId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: telegramId, text }),
+    });
+  } catch (e) {
+    console.error("notifyUser failed:", e);
+  }
+}
+
 /* ========================= Routes ========================= */
 export function mountDisputes(app: Express) {
   app.use("/api/disputes", tgOptionalAuth);
@@ -110,23 +124,7 @@ export function mountDisputes(app: Express) {
         })
         .returning();
 
-      let listingTitle: string | null = null;
-      if (pay.listingId) {
-        const l = await db
-          .select({ title: listings.title })
-          .from(listings)
-          .where(eq(listings.id, pay.listingId))
-          .limit(1);
-        listingTitle = l[0]?.title ?? null;
-      }
-
-      const row = await db
-        .select()
-        .from(disputesView)
-        .where(eq(disputesView.id, inserted[0].id))
-        .limit(1);
-
-      return res.status(201).json({ ...row[0], listingTitle });
+      return res.status(201).json(inserted[0]);
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
@@ -229,33 +227,32 @@ export function mountDisputes(app: Express) {
 
       const me = await getCurrentUser(req);
       if (!me) return res.status(401).json({ error: "unauthorized" });
-      const amAdmin = isAdminUser(me);
-      if (!amAdmin) return res.status(403).json({ error: "forbidden" });
+      if (!isAdminUser(me)) return res.status(403).json({ error: "forbidden" });
 
       const updated = await db.update(disputes).set({
         status: "resolved",
         resolvedAt: new Date(),
       }).where(eq(disputes.id, id)).returning();
 
-      const noteText =
+      const dispute = updated[0];
+      const buyer = await db.query.users.findFirst({ where: eq(users.id, dispute.buyerId) });
+      const seller = await db.query.users.findFirst({ where: eq(users.id, dispute.sellerId) });
+
+      const text =
         action === "seller_wins"
           ? "⚖️ Dispute resolved in favor of the seller. Admin will handle payout manually."
           : "⚖️ Dispute resolved in favor of the buyer. Admin will handle refund manually.";
 
-      await db.insert(messages).values({
-        disputeId: id,
-        content: noteText,
-        senderId: me.id,
-        senderUsername: "admin",
-      });
+      await notifyUser(buyer?.telegramId ?? null, text);
+      await notifyUser(seller?.telegramId ?? null, text);
 
-      return res.json({ ok: true, dispute: updated[0], action });
+      return res.json({ ok: true, dispute, action });
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 
-  /** POST /api/disputes/:id/cancel */
+  /** POST /api/disputes/:id/cancel (admin only) */
   app.post("/api/disputes/:id/cancel", requireTelegramUser, async (req: Request, res: Response) => {
     try {
       const { id } = idParam.parse(req.params);
@@ -263,18 +260,50 @@ export function mountDisputes(app: Express) {
       if (!d.length) return res.status(404).json({ error: "not_found" });
 
       const me = await getCurrentUser(req);
-      if (!me) return res.status(401).json({ error: "unauthorized" });
-
-      const dispute = d[0];
-      if (me.id !== dispute.buyerId && me.id !== dispute.sellerId) {
-        return res.status(403).json({ error: "forbidden" });
-      }
+      if (!me || !isAdminUser(me)) return res.status(403).json({ error: "forbidden" });
 
       const updated = await db.update(disputes).set({
         status: "cancelled",
       }).where(eq(disputes.id, id)).returning();
 
-      return res.json({ ok: true, dispute: updated[0], action: "closed_only" });
+      const dispute = updated[0];
+      const buyer = await db.query.users.findFirst({ where: eq(users.id, dispute.buyerId) });
+      const seller = await db.query.users.findFirst({ where: eq(users.id, dispute.sellerId) });
+
+      const text = "🚫 Dispute was cancelled by admin. No payout or refund processed.";
+      await notifyUser(buyer?.telegramId ?? null, text);
+      await notifyUser(seller?.telegramId ?? null, text);
+
+      return res.json({ ok: true, dispute, action: "cancelled" });
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** POST /api/disputes/:id/confirm-received (buyer only) */
+  app.post("/api/disputes/:id/confirm-received", requireTelegramUser, async (req: Request, res: Response) => {
+    try {
+      const { id } = idParam.parse(req.params);
+      const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!d.length) return res.status(404).json({ error: "not_found" });
+
+      const dispute = d[0];
+      const me = await getCurrentUser(req);
+      if (!me || me.id !== dispute.buyerId) return res.status(403).json({ error: "forbidden" });
+
+      const updated = await db.update(disputes).set({
+        status: "resolved",
+        resolvedAt: new Date(),
+      }).where(eq(disputes.id, id)).returning();
+
+      const buyer = await db.query.users.findFirst({ where: eq(users.id, dispute.buyerId) });
+      const seller = await db.query.users.findFirst({ where: eq(users.id, dispute.sellerId) });
+
+      const text = "✅ Buyer confirmed they received the product. Admin will finalize payout.";
+      await notifyUser(seller?.telegramId ?? null, text);
+      await notifyUser(buyer?.telegramId ?? null, text);
+
+      return res.json({ ok: true, dispute: updated[0], action: "buyer_confirmed" });
     } catch (e: any) {
       return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
