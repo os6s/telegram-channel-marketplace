@@ -2,42 +2,51 @@
 import type { Express, Request, Response } from "express";
 import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
 import { db } from "../db.js";
-import { eq, and } from "drizzle-orm";
-import { users, walletBalancesView } from "@shared/schema";
+import { eq, and, desc } from "drizzle-orm";
+import { users, walletBalancesView, walletLedger } from "@shared/schema";
+
+async function getMe(req: Request) {
+  const tg = (req as any).telegramUser as { id: number } | undefined;
+  if (!tg?.id) return null;
+  return await db.query.users.findFirst({
+    where: eq(users.telegramId, Number(tg.id)),
+    columns: { id: true, username: true },
+  });
+}
 
 export function mountBalance(app: Express) {
+  /** GET /api/me/balance */
   app.get("/api/me/balance", tgAuth, async (req: Request, res: Response) => {
     try {
-      const tg = (req as any).telegramUser as { id: number } | undefined;
-      if (!tg?.id) return res.status(401).json({ error: "unauthorized" });
+      const me = await getMe(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
 
-      const me = await db.query.users.findFirst({
-        where: eq(users.telegramId, Number(tg.id)),
-        columns: { id: true },
-      });
-      if (!me) return res.status(404).json({ error: "user_not_found" });
-
-      const qCurrency = typeof req.query.currency === "string" ? req.query.currency.toUpperCase() : undefined;
+      const qCurrency =
+        typeof req.query.currency === "string"
+          ? req.query.currency.toUpperCase()
+          : undefined;
 
       const rows = await db
         .select({
           userId: walletBalancesView.userId,
           currency: walletBalancesView.currency,
           balance: walletBalancesView.balance,
-          // أعمدة اختيارية إن كانت موجودة بالفيو:
-          // @ts-expect-error: optional columns may not exist in all setups
+          // optional columns
+          // @ts-expect-error
           txCount: (walletBalancesView as any).txCount,
-          // @ts-expect-error: optional columns may not exist in all setups
+          // @ts-expect-error
           lastTx: (walletBalancesView as any).lastTx,
         })
         .from(walletBalancesView)
         .where(
           qCurrency
-            ? and(eq(walletBalancesView.userId, me.id), eq(walletBalancesView.currency, qCurrency))
+            ? and(
+                eq(walletBalancesView.userId, me.id),
+                eq(walletBalancesView.currency, qCurrency)
+              )
             : eq(walletBalancesView.userId, me.id)
         );
 
-      // إذا طالب عملة محددة رجّع صف واحد (أو 0)
       if (qCurrency) {
         const r = rows[0];
         const balanceNum = Number(r?.balance ?? 0);
@@ -49,7 +58,6 @@ export function mountBalance(app: Express) {
         });
       }
 
-      // غير ذلك: رجّع كل العملات (أو TON=0 إذا ماكو صفوف)
       if (rows.length === 0) {
         return res.json([{ currency: "TON", balance: 0 }]);
       }
@@ -63,7 +71,38 @@ export function mountBalance(app: Express) {
 
       res.json(out);
     } catch (e: any) {
-      res.status(500).json({ error: e?.message || "failed_to_fetch_balance" });
+      res
+        .status(500)
+        .json({ error: e?.message || "failed_to_fetch_balance" });
     }
   });
+
+  /** GET /api/me/transactions (ledger history) */
+  app.get(
+    "/api/me/transactions",
+    tgAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const me = await getMe(req);
+        if (!me) return res.status(401).json({ error: "unauthorized" });
+
+        const limit = Math.min(
+          Number(req.query.limit) || 50,
+          200
+        ); // max 200
+        const rows = await db
+          .select()
+          .from(walletLedger)
+          .where(eq(walletLedger.userId, me.id))
+          .orderBy(desc(walletLedger.createdAt))
+          .limit(limit);
+
+        res.json(rows);
+      } catch (e: any) {
+        res
+          .status(500)
+          .json({ error: e?.message || "failed_to_fetch_transactions" });
+      }
+    }
+  );
 }
