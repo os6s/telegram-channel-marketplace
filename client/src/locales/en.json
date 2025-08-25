@@ -122,7 +122,13 @@
       "title": "Channel Transaction",
       "amount": "Amount:",
       "hash": "TX Hash:"
-    }
+    },
+    "locked": "Funds locked in escrow",
+    "released": "Funds release approved",
+    "refunded": "Order refunded/cancelled",
+    "unauthorized": "⚠️ Please open this app from Telegram.",
+    "empty": "No activity yet",
+    "updated": "Activity"
   },
 
   "profilePage": {
@@ -130,6 +136,10 @@
     "subtitle": "Manage your account and listings",
     "memberSince": "Member since {year}",
     "tonWallet": "TON Wallet",
+    "wallet": "Wallet",
+    "balance": "Balance",
+    "deposit": "Deposit",
+    "depositPlaceholder": "Enter amount",
     "stats": {
       "activeListings": "Active Listings",
       "totalValueTon": "Total Value (TON)",
@@ -137,14 +147,18 @@
     },
     "tabs": {
       "listings": "My Listings",
-      "activity": "Activity"
+      "activity": "Activity",
+      "disputes": "Disputes"
     },
     "listingsHeader": "My Listings",
     "listChannel": "List Channel",
     "emptyTitle": "No listings yet",
     "emptyDesc": "Start selling on the marketplace",
     "listFirst": "List Your First Item",
-    "openActivity": "Open Activity Page"
+    "openActivity": "Open Activity Page",
+    "cta": {
+      "list": "List for sale"
+    }
   },
 
   "toast": {
@@ -153,7 +167,11 @@
     "somethingWrong": "Something went wrong. Please try again.",
     "openFromTelegram": "Open this app from Telegram.",
     "saved": "Saved",
-    "published": "Listing submitted"
+    "published": "Listing submitted",
+    "invalidAmount": "Invalid amount",
+    "confirmDeposit": "Confirm deposit in your wallet",
+    "depositConfirmed": "Deposit confirmed ✅",
+    "depositFailed": "Deposit failed"
   },
 
   "notFound": {
