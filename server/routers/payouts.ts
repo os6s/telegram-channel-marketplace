@@ -1,32 +1,39 @@
+// server/routers/payouts.ts
 import type { Express, Request, Response } from "express";
-import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
+import { z } from "zod";
 import { db } from "../db.js";
-import { payouts, walletBalancesView, walletLedger } from "@shared/schema";
-import { eq } from "drizzle-orm";
-import { notifyUser } from "../telegram-bot.js";
+import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
+import { payouts, walletBalancesView, walletLedger, users } from "@shared/schema";
+import { eq, desc } from "drizzle-orm";
 
-const ADMIN_TG_IDS: number[] = (process.env.ADMIN_TG_IDS || "")
-  .split(",")
-  .map((x) => Number(x.trim()))
-  .filter((x) => Number.isFinite(x));
+const createPayoutSchema = z.object({
+  amount: z.number().positive(),
+  toAddress: z.string().min(10).max(128), // عنوان محفظة TON
+  note: z.string().optional(),
+});
 
 async function getMe(req: Request) {
-  return (req as any).telegramUser;
+  const tg = (req as any).telegramUser as { id?: number; username?: string } | undefined;
+  if (!tg?.id) return null;
+  const me = await db.query.users.findFirst({ where: eq(users.telegramId, BigInt(tg.id)) });
+  return me ?? null;
 }
 
+const ADMIN_TG_IDS = (process.env.ADMIN_TG_IDS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 export function mountPayouts(app: Express) {
-  /** 1) يطلب المستخدم سحب */
+  /** User: Create payout request */
   app.post("/api/payouts", tgAuth, async (req: Request, res: Response) => {
     try {
       const me = await getMe(req);
-      if (!me?.id) return res.status(401).json({ error: "unauthorized" });
+      if (!me) return res.status(401).json({ error: "unauthorized" });
 
-      const { amount, address } = req.body || {};
-      const amt = Number(amount);
-      if (!amt || amt <= 0) return res.status(400).json({ error: "invalid_amount" });
-      if (!address) return res.status(400).json({ error: "address_required" });
+      const body = createPayoutSchema.parse(req.body);
 
-      // تحقق من الرصيد
+      // Check balance
       const row = await db
         .select()
         .from(walletBalancesView)
@@ -34,70 +41,118 @@ export function mountPayouts(app: Express) {
         .limit(1);
 
       const balanceNum = Number(row[0]?.balance ?? 0);
-      if (balanceNum < amt) {
+      if (balanceNum < body.amount) {
         return res.status(400).json({ error: "insufficient_balance" });
       }
 
-      // نسجل payout
-      const [payout] = await db
+      // Insert payout
+      const [p] = await db
         .insert(payouts)
         .values({
-          userId: me.id,
-          amount: String(amt),
+          sellerId: me.id,
+          toAddress: body.toAddress,
+          amount: String(body.amount),
           currency: "TON",
-          address,
           status: "pending",
+          note: body.note ?? null,
         })
         .returning();
 
-      // نقص من الـ ledger
+      // Ledger entry: lock funds
       await db.insert(walletLedger).values({
         userId: me.id,
         direction: "out",
-        amount: String(amt),
+        amount: String(body.amount),
         currency: "TON",
-        refType: "payout",
-        refId: payout.id,
-        note: "Withdraw request",
+        refType: "payout_request",
+        refId: p.id,
+        note: "User requested payout",
       });
 
-      // إشعار للأدمن
-      for (const adminId of ADMIN_TG_IDS) {
-        await notifyUser(
-          adminId,
-          `💸 <b>New Payout Request</b>\n\nUser: ${me.username || me.id}\nAmount: ${amt} TON\nAddress: ${address}\n\n/status ${payout.id}`
-        );
-      }
-
-      res.json({ ok: true, payout });
+      res.status(201).json(p);
     } catch (e: any) {
-      res.status(500).json({ error: e?.message || "payout_failed" });
+      res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 
-  /** 2) الأدمن يحدّث حالة السحب */
-  app.post("/api/payouts/:id/status", tgAuth, async (req: Request, res: Response) => {
+  /** User: Get my payout requests */
+  app.get("/api/payouts/me", tgAuth, async (req: Request, res: Response) => {
     try {
       const me = await getMe(req);
-      if (!me?.id || !ADMIN_TG_IDS.includes(Number(me.id))) {
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
+      const rows = await db
+        .select()
+        .from(payouts)
+        .where(eq(payouts.sellerId, me.id))
+        .orderBy(desc(payouts.createdAt));
+
+      res.json(rows);
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** Admin: List all payout requests */
+  app.get("/api/payouts", tgAuth, async (req: Request, res: Response) => {
+    try {
+      const tg = (req as any).telegramUser;
+      if (!tg?.id || !ADMIN_TG_IDS.includes(String(tg.id))) {
         return res.status(403).json({ error: "forbidden" });
       }
 
-      const { id } = req.params;
-      const { status } = req.body || {};
-      if (!["completed", "failed"].includes(status)) {
-        return res.status(400).json({ error: "bad_status" });
+      const rows = await db.select().from(payouts).orderBy(desc(payouts.createdAt));
+      res.json(rows);
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** Admin: Update payout status (processing/completed/failed) */
+  app.patch("/api/payouts/:id", tgAuth, async (req: Request, res: Response) => {
+    try {
+      const tg = (req as any).telegramUser;
+      if (!tg?.id || !ADMIN_TG_IDS.includes(String(tg.id))) {
+        return res.status(403).json({ error: "forbidden" });
       }
 
-      const updated = await db
+      const id = String(req.params.id);
+      const { status, txHash, note } = req.body || {};
+
+      if (!["processing", "completed", "failed"].includes(status)) {
+        return res.status(400).json({ error: "invalid_status" });
+      }
+
+      const [updated] = await db
         .update(payouts)
-        .set({ status, updatedAt: new Date() })
+        .set({
+          status,
+          txHash: txHash ?? null,
+          note: note ?? null,
+          sentAt: status === "processing" ? new Date() : undefined,
+          confirmedAt: status === "completed" ? new Date() : undefined,
+        })
         .where(eq(payouts.id, id))
         .returning();
 
-      res.json({ ok: true, payout: updated[0] });
+      if (!updated) return res.status(404).json({ error: "not_found" });
+
+      // If failed → return funds to user
+      if (status === "failed") {
+        await db.insert(walletLedger).values({
+          userId: updated.sellerId,
+          direction: "in",
+          amount: String(updated.amount),
+          currency: "TON",
+          refType: "payout_refund",
+          refId: updated.id,
+          note: "Refund from failed payout",
+        });
+      }
+
+      res.json(updated);
     } catch (e: any) {
-      res.status(500).json({ error: e?.message || "payout_update_failed" });
+      res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
   });
 }
