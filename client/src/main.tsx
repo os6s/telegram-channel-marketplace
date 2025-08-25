@@ -6,19 +6,51 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import "./bootstrap";
 import { installTgFetchShim } from "@/lib/tg-fetch-shim";
 
+// ========== 1) Error logging (مثلاً Sentry أو fallback للباك) ==========
+function reportError(error: any, context: string) {
+  console.error(`[${context}]`, error);
+
+  // TODO: إذا عندك خدمة لوجينگ (Sentry, Logtail, إلخ)
+  // fetch("/api/log-client-error", {
+  //   method: "POST",
+  //   headers: { "Content-Type": "application/json" },
+  //   body: JSON.stringify({ context, error: String(error) }),
+  // });
+}
+
 // ثبّت الشِم قبل أي fetch يصير
 installTgFetchShim();
 
-// اطبع أي أخطاء عامة بدل ما تبقى الشاشة فاضية
-window.addEventListener("error", (e) => console.log("GlobalError:", (e as any).error || (e as any).message));
-window.addEventListener("unhandledrejection", (e) => console.log("Unhandled:", (e as any).reason));
+// اطبع أو أرسل أي أخطاء عامة بدل ما تبقى الشاشة فاضية
+window.addEventListener("error", (e) => reportError(e.error || e.message, "GlobalError"));
+window.addEventListener("unhandledrejection", (e) => reportError((e as any).reason, "UnhandledPromise"));
 
-// تهيئة Telegram WebApp مبكراً
-if (typeof window !== "undefined" && (window as any).Telegram?.WebApp) {
+// ========== 2) Telegram MiniApp Integration ==========
+const tg = (window as any).Telegram?.WebApp;
+
+if (tg) {
   try {
-    (window as any).Telegram.WebApp.ready();
-    (window as any).Telegram.WebApp.expand();
-  } catch {}
+    tg.ready(); // يلغي شاشة التحميل الافتراضية
+    tg.expand(); // يخلي الواجهة تاخذ الطول الكامل
+
+    // ========== 3) Theme Sync ==========
+    const applyTheme = (themeParams: any) => {
+      document.body.dataset.tgTheme = themeParams?.theme || "light";
+    };
+    applyTheme(tg.themeParams);
+    tg.onEvent("themeChanged", () => applyTheme(tg.themeParams));
+
+    // ========== 5) Security: Save initData ==========
+    if (tg.initDataUnsafe) {
+      console.log("Telegram initDataUnsafe:", tg.initDataUnsafe);
+      // تقدر ترسلها للباك للتحقق من هوية المستخدم
+      // fetch("/api/auth/telegram", { method: "POST", body: JSON.stringify(tg.initDataUnsafe) })
+    }
+  } catch (err) {
+    reportError(err, "TelegramWebAppInit");
+  }
+
+  // ========== 4) Fix viewport ==========
   const viewport = document.querySelector('meta[name="viewport"]');
   if (viewport) {
     viewport.setAttribute(
@@ -26,6 +58,8 @@ if (typeof window !== "undefined" && (window as any).Telegram?.WebApp) {
       "width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
     );
   }
+} else {
+  console.warn("Telegram.WebApp غير متاح — احتمال تشغّل التطبيق خارج تيليجرام (dev mode)");
 }
 
 createRoot(document.getElementById("root")!).render(
