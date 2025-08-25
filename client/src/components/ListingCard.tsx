@@ -13,7 +13,7 @@ interface ListingCardProps {
     seller?: { id: string; username?: string | null; name?: string | null };
     sellerUsername?: string | null;
     gifts?: { statueOfLiberty?: number; torchOfFreedom?: number };
-    canDelete?: boolean; // اختياري من API
+    canDelete?: boolean;
   };
   onViewDetails: (l: Channel) => void;
   onBuyNow: (l: Channel) => void;
@@ -45,8 +45,6 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
   const plat  = S(listing.platform);
   const currency = S(listing.currency) || "TON";
   const priceNum = N(listing.price);
-  const tonToUsd = 5.1; // تقديري
-  const usd = currency === "TON" ? +(priceNum * tonToUsd).toFixed(2) : priceNum;
 
   const sellerUsername = (listing.seller?.username || listing.sellerUsername || "").toLowerCase();
   const currentUname = (currentUser?.username || "").toLowerCase();
@@ -68,8 +66,8 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
     const name = listing.seller?.name;
     if (u) return `@${u}`;
     if (name) return name;
-    return "";
-  }, [listing]);
+    return t("market.unknownSeller") || "Unknown seller";
+  }, [listing, t]);
 
   return (
     <>
@@ -94,11 +92,10 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
                 </Badge>
               </div>
 
-              {sellerLabel ? (
-                <div className="text-[12px] text-muted-foreground mb-1">
-                  {t("market.seller") || "seller"}: <span className="font-medium text-foreground">{sellerLabel}</span>
-                </div>
-              ) : null}
+              <div className="text-[12px] text-muted-foreground mb-1 flex items-center gap-1">
+                👤 {t("market.seller") || "Seller"}:{" "}
+                <span className="font-medium text-foreground">{sellerLabel}</span>
+              </div>
 
               {uname ? <p className="text-sm text-muted-foreground mb-2">@{uname}</p> : null}
               {desc ? <p className="text-sm text-muted-foreground line-clamp-2">{desc}</p> : null}
@@ -172,7 +169,6 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
               <div className="text-2xl font-bold text-foreground">
                 {priceNum.toLocaleString()} {currency}
               </div>
-              <div className="text-sm text-muted-foreground">≈ ${usd.toLocaleString()} USD</div>
             </div>
 
             <div className="flex gap-2">
@@ -180,16 +176,19 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
                 <Eye className="w-4 h-4 mr-1" /> {t("channel.info")}
               </Button>
 
-              {/* زر الشراء: مخفي للمالك */}
               {!isOwner && (
-                <Button size="sm" onClick={() => setShowBuyConfirm(true)} className="bg-telegram-500 hover:bg-telegram-600 text-white">
+                <Button
+                  size="sm"
+                  disabled={priceNum <= 0}
+                  onClick={() => setShowBuyConfirm(true)}
+                  className="bg-telegram-500 hover:bg-telegram-600 text-white"
+                >
                   <ShoppingCart className="w-4 h-4 mr-1" /> {t("channel.buyNow")}
                 </Button>
               )}
             </div>
           </div>
 
-          {/* أدوات الإدارة: للإدمن فقط */}
           {isAdmin ? <AdminControls channel={listing as any} currentUser={currentUser} /> : null}
         </CardContent>
       </Card>
@@ -209,7 +208,7 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
 
             {kind === "channel" ? (
               <>
-                <p className="mb-2 text-foreground">🎯 {t("channel.mode") || "mode"}: <strong>{S((listing as any).channelMode) || "—"}</strong></p>
+                <p className="mb-2 text-foreground">🎯 {t("channel.mode")}: <strong>{S((listing as any).channelMode) || "—"}</strong></p>
                 <p className="mb-2 text-foreground">👥 {t("channel.subscribers")}: <strong>{formatNumber(subsCount)}</strong></p>
                 <p className="mb-2 text-foreground">🎁 {t("gift.kind")}: <strong>{giftKind || "—"}</strong></p>
                 <p className="mb-2 text-foreground">🎁 {t("gift.count")}: <strong>{formatNumber(giftsCount)}</strong></p>
@@ -278,6 +277,7 @@ export function ListingCard({ listing, onViewDetails, onBuyNow, currentUser }: L
                 {t("common.cancel")}
               </Button>
               <Button
+                disabled={priceNum <= 0}
                 onClick={() => { setShowBuyConfirm(false); onBuyNow(listing); }}
                 className="bg-telegram-500 hover:bg-telegram-600 text-white"
               >
