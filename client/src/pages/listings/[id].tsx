@@ -25,7 +25,7 @@ type Listing = {
   currency?: string|null;
   isActive?: boolean;
   createdAt?: string;
-  canDelete?: boolean; // اختياري من الباك
+  canDelete?: boolean;
 };
 
 export default function ListingDetailsPage({ params }: { params: { id: string } }) {
@@ -54,19 +54,15 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
 
   const fmt = useMemo(() => new Intl.NumberFormat(undefined, { maximumFractionDigits: 9 }), []);
 
-  // شراء: ينشئ Payment ثم Dispute
+  // ✅ Updated Buy Mutation: use /api/wallet/pay
   const buyMutation = useMutation({
     mutationFn: async () => {
-      const pay = await apiRequest("POST", "/api/payments", { listingId: id });
-      const paymentId: string | undefined = pay?.id;
-      if (paymentId) {
-        try { await apiRequest("POST", "/api/disputes", { paymentId }); } catch {}
-      }
-      return { paymentId };
+      const r = await apiRequest("POST", "/api/wallet/pay", { listingId: id });
+      return r?.payment;
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["/api/activities"] });
-      toast({ title: "تم إنشاء الطلب", description: "اذهب إلى صفحة النزاعات لمحادثة البائع." });
+      toast({ title: "تم إنشاء الطلب", description: "الأموال مقفلة في الضمان. راقب صفحة النزاعات للتسليم." });
       navigate("/disputes");
     },
     onError: (e: any) => {
@@ -79,7 +75,7 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
     },
   });
 
-  // حذف: يعتمد على username
+  // Delete listing
   const deleteMutation = useMutation({
     mutationFn: async () => {
       const uname = (telegramWebApp.user?.username || "").toLowerCase();
@@ -182,7 +178,8 @@ export default function ListingDetailsPage({ params }: { params: { id: string } 
           <AlertDialogHeader>
             <AlertDialogTitle>تأكيد الشراء</AlertDialogTitle>
             <AlertDialogDescription>
-              سيتم إنشاء طلب شراء بقيمة {fmt.format(Number(listing.price))} {currency}. بعدها تُفتح محادثة التسليم مع البائع في صفحة النزاعات.
+              سيتم إنشاء طلب شراء بقيمة {fmt.format(Number(listing.price))} {currency}.
+              الأموال ستُقفل في الضمان حتى اكتمال الصفقة.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
