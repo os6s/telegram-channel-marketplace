@@ -1,6 +1,6 @@
 // server/ton-verify.ts
 
-// ✅ بيئة متناسقة مع باقي المشروع (مع Back-compat)
+// ✅ Toncenter API base + key
 const TCC_URL =
   (process.env.TONCENTER_API_URL || process.env.TON_API_BASE || "https://toncenter.com/api/v2")
     .replace(/\/+$/, "");
@@ -35,14 +35,14 @@ function norm(s: unknown) {
 }
 
 function decodeComment(obj: any): string {
-  // toncenter variants: msg_data.text OR base64 in msg_data.body (msg.dataText)
+  // toncenter variants: msg_data.text OR base64 in msg_data.body
   const md = obj?.msg_data ?? obj?.message?.msg_data;
   if (!md) return "";
   if (typeof md.text === "string") return md.text;
   if (typeof md.body === "string") {
     try {
       const txt = Buffer.from(md.body, "base64").toString("utf8");
-      return txt.replace(/\0+$/, ""); // شيل أي null-terminators
+      return txt.replace(/\0+$/, "");
     } catch {
       return "";
     }
@@ -50,7 +50,11 @@ function decodeComment(obj: any): string {
   return "";
 }
 
-/** التحقق من دفع معيّن بالـ txHash ضد عنوان escrow */
+function normalizeComment(s: string): string {
+  return s.replace(/\0+$/, "").trim().toLowerCase();
+}
+
+/** تحقق من دفع معيّن بالـ txHash ضد عنوان escrow */
 export async function verifyTonPayment(opts: {
   escrow: string;
   expected: number;
@@ -66,7 +70,6 @@ export async function verifyTonPayment(opts: {
     const url = `${TCC_URL}/getTransaction?hash=${encodeURIComponent(hash)}&address=${encodeURIComponent(addr)}`;
     const data = await fetchJson<any>(url);
 
-    // الشكل الشائع في toncenter
     const inMsg = data?.result?.in_msg;
     const amountTon = toTon(inMsg?.value);
     return amountTon >= Number(opts.expected || 0);
@@ -77,8 +80,8 @@ export async function verifyTonPayment(opts: {
 }
 
 /**
- * التحقق من إيداع بالاعتماد على التعليق (code) داخل in_msg
- * يبحث في آخر 20 ثم 40 معاملة لعنوان الـ escrow.
+ * تحقق من إيداع عبر الكود (comment) داخل in_msg
+ * الآن يدعم: تطبيع التعليق + صفحات متعددة (حتى 200 معاملة).
  */
 export async function verifyTonDepositByComment(opts: {
   escrow: string;
@@ -86,27 +89,34 @@ export async function verifyTonDepositByComment(opts: {
   minAmountTon?: number;
 }): Promise<{ ok: boolean; amountTon: number; txHash?: string }> {
   const addr = norm(opts.escrow);
-  const code = norm(opts.code);
+  const code = normalizeComment(norm(opts.code));
   if (!addr || !code) return { ok: false, amountTon: 0 };
 
-  const limits = [20, 40];
-  for (const limit of limits) {
+  const MAX_TXS = 200; // history depth
+  let fetched = 0;
+  let lt: string | undefined;
+
+  while (fetched < MAX_TXS) {
     try {
-      const url = `${TCC_URL}/getTransactions?address=${encodeURIComponent(addr)}&limit=${limit}`;
-      const data = await fetchJson<any>(url);
+      const url = new URL(`${TCC_URL}/getTransactions`);
+      url.searchParams.set("address", addr);
+      url.searchParams.set("limit", "20");
+      if (lt) url.searchParams.set("lt", lt);
+
+      const data = await fetchJson<any>(url.toString());
       const txs: any[] = Array.isArray(data?.result) ? data.result : [];
+      if (!txs.length) break;
 
       for (const tx of txs) {
         const inMsg = tx?.in_msg;
         if (!inMsg) continue;
 
-        const comment = norm(decodeComment(inMsg));
+        const comment = normalizeComment(decodeComment(inMsg));
         if (comment !== code) continue;
 
         const amountTon = toTon(inMsg.value);
         if (opts.minAmountTon && amountTon < opts.minAmountTon) continue;
 
-        // حاول استخراج الهاش من عدة أماكن (حسب toncenter)
         const txHash: string | undefined =
           tx?.transaction_id?.hash ||
           tx?.hash ||
@@ -114,9 +124,13 @@ export async function verifyTonDepositByComment(opts: {
 
         return { ok: true, amountTon, txHash };
       }
+
+      fetched += txs.length;
+      lt = txs[txs.length - 1]?.transaction_id?.lt;
+      if (!lt) break;
     } catch (e) {
       console.error("[verifyTonDepositByComment] fetch failed:", (e as any)?.message || e);
-      // نكمل للمحاولة التالية بحد أكبر
+      break;
     }
   }
 
