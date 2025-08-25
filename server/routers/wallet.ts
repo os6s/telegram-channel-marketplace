@@ -1,4 +1,3 @@
-// server/routers/wallet.ts
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
 import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
@@ -9,7 +8,8 @@ import { verifyTonDepositByComment } from "../ton-verify.js";
 
 type TgUser = { id: number };
 
-const genCode = () => "D-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+// ✅ كود Hex فقط (10 أحرف)
+const genCode = () => crypto.randomBytes(5).toString("hex"); 
 
 function toNano(ton: number): string {
   const [i, fRaw = ""] = String(ton).split(".");
@@ -26,12 +26,13 @@ async function getMe(req: Request) {
   });
 }
 
+// ✅ تحقق مبسط للعنوان
 function isValidTonAddress(addr: string): boolean {
-  return /^([UuEeQq]{1}[A-Za-z0-9_-]{47,63})$/.test(addr.trim());
+  return typeof addr === "string" && addr.trim().length >= 48;
 }
 
 export function mountWallet(app: Express) {
-  /** ✅ 1) Wallet Address APIs */
+  /** 1) Wallet Address APIs */
   app.get("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
@@ -62,16 +63,12 @@ export function mountWallet(app: Express) {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-    await db
-      .update(users)
-      .set({ wallet_address: null, updatedAt: new Date() })
-      .where(eq(users.id, me.id));
-
+    await db.update(users).set({ wallet_address: null, updatedAt: new Date() }).where(eq(users.id, me.id));
     console.log(`❌ Wallet unlinked for user ${me.id}`);
     res.json({ ok: true, walletAddress: null });
   });
 
-  /** ✅ 2) Deposit Initiate */
+  /** 2) Initiate deposit */
   app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
     try {
       const escrow = (process.env.ESCROW_WALLET || "").trim();
@@ -88,7 +85,7 @@ export function mountWallet(app: Express) {
       const code = genCode();
       const amountNano = toNano(amountTon);
 
-      const [row] = await db.insert(payments).values({
+      await db.insert(payments).values({
         listingId: null,
         buyerId: me.id,
         sellerId: null,
@@ -100,22 +97,18 @@ export function mountWallet(app: Express) {
         feeAmount: "0",
         sellerAmount: "0",
         escrowAddress: escrow,
-        comment: code,
+        comment: code, // ✅ hex فقط
         txHash: null,
         buyerConfirmed: false,
         sellerConfirmed: false,
         status: "waiting",
         adminAction: "none",
-      }).returning();
+      });
 
       const payload = {
         validUntil: Math.floor(Date.now() / 1000) + 300,
         messages: [
-          {
-            address: escrow,
-            amount: amountNano,
-            payload: Buffer.from(code).toString("base64"),
-          },
+          { address: escrow, amount: amountNano, payload: Buffer.from(code).toString("base64") },
         ],
       };
 
@@ -136,7 +129,7 @@ export function mountWallet(app: Express) {
     }
   });
 
-  /** ✅ 3) Verify deposit */
+  /** 3) Verify deposit */
   app.post("/api/wallet/deposit/status", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ error: "unauthorized" });
@@ -186,7 +179,7 @@ export function mountWallet(app: Express) {
     res.json({ status: "paid", amount: Number(updated.amount), txHash: updated.txHash, id: updated.id });
   });
 
-  /** ✅ 4) Balance */
+  /** 4) Balance */
   app.get("/api/wallet/balance", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ error: "unauthorized" });
@@ -198,12 +191,54 @@ export function mountWallet(app: Express) {
     });
   });
 
-  /** ✅ 5) Ledger */
+  /** 5) Ledger */
   app.get("/api/wallet/ledger", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ error: "unauthorized" });
 
     const rows = await db.select().from(walletLedger).where(eq(walletLedger.userId, me.id)).orderBy(desc(walletLedger.createdAt)).limit(50);
     res.json(rows);
+  });
+
+  /** 6) Withdraw (مع چيك الرصيد) */
+  app.post("/api/payouts", tgAuth, async (req: Request, res: Response) => {
+    try {
+      const me = await getMe(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
+      const amount = Number(req.body?.amount || 0);
+      const toAddress = String(req.body?.toAddress || "").trim();
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return res.status(400).json({ error: "invalid_amount" });
+      }
+      if (!isValidTonAddress(toAddress)) {
+        return res.status(400).json({ error: "invalid_address" });
+      }
+
+      // ✅ check balance
+      const row = await db.select().from(walletBalancesView).where(eq(walletBalancesView.userId, me.id)).limit(1);
+      const balance = Number(row[0]?.balance ?? 0);
+      if (balance < amount) {
+        return res.status(400).json({ error: "insufficient_balance" });
+      }
+
+      // لو عندك جدول payouts أضفه هنا
+      // await db.insert(payouts)....
+
+      await db.insert(walletLedger).values({
+        userId: me.id,
+        direction: "out",
+        amount: String(amount),
+        currency: "TON",
+        refType: "withdraw",
+        refId: null,
+        note: `Withdraw to ${toAddress}`,
+      });
+
+      res.json({ ok: true, amount, toAddress });
+    } catch (e: any) {
+      console.error("payout error:", e);
+      res.status(500).json({ error: e?.message || "withdraw_failed" });
+    }
   });
 }
