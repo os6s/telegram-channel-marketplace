@@ -1,279 +1,301 @@
-// server/telegram-bot.ts
-import express from "express";
+import type { Express, Request, Response } from "express";
+import { z } from "zod";
+import { eq, desc, or } from "drizzle-orm";
+import { db } from "../db.js";
+import { tgOptionalAuth, requireTelegramUser } from "../middleware/tgAuth.js";
+import {
+  disputes,
+  disputesView,
+  messages,
+  listings,
+  payments,
+  users,
+} from "@shared/schema";
+import { notifyUser } from "../telegram-bot.js";
 
-/* =========================
-   Types
-========================= */
-interface TelegramMessage {
-  message_id: number;
-  from: { id: number; is_bot: boolean; first_name: string; username?: string };
-  chat: { id: number; type: string };
-  date: number;
-  text?: string;
-}
-interface TelegramUpdate {
-  update_id: number;
-  message?: TelegramMessage;
-  callback_query?: any;
-}
+/* ========================= Schemas ========================= */
+const idParam = z.object({ id: z.string().uuid() });
+const createDisputeSchema = z.object({
+  paymentId: z.string().uuid(),
+  reason: z.string().optional(),
+  evidence: z.string().optional(),
+});
 
-/* =========================
-   Bot class (no webhook mgmt in prod)
-========================= */
-export class TelegramBot {
-  private token: string;
-  private baseUrl: string;
-  private activeMonitors = new Map<string, NodeJS.Timeout>();
-
-  constructor(token: string) {
-    this.token = token;
-    this.baseUrl = `https://api.telegram.org/bot${token}`;
+/* ========================= Helpers ========================= */
+async function getCurrentUser(req: Request) {
+  const tg = (req as any).telegramUser as { id?: number; username?: string } | undefined;
+  if (tg?.id) {
+    const byTg = await db.query.users.findFirst({ where: eq(users.telegramId, Number(tg.id)) });
+    if (byTg) return byTg;
   }
+  if (tg?.username) {
+    const u = await db.query.users.findFirst({
+      where: eq(users.username, tg.username.toLowerCase()),
+    });
+    if (u) return u;
+  }
+  return null;
+}
 
-  async sendMessage(chatId: number | string, text: string, replyMarkup?: any) {
+const ADMIN_TG_IDS: number[] = (process.env.ADMIN_TG_IDS || "")
+  .split(",")
+  .map((x) => Number(x.trim()))
+  .filter((x) => Number.isFinite(x));
+
+const isAdminUser = (u: any | null) =>
+  !!u && (u.role === "admin" || u.role === "moderator" || ADMIN_TG_IDS.includes(Number(u.telegramId)));
+
+/* ========================= Routes ========================= */
+export function mountDisputes(app: Express) {
+  app.use("/api/disputes", tgOptionalAuth);
+
+  /** GET /api/disputes */
+  app.get("/api/disputes", async (req: Request, res: Response) => {
     try {
-      const r = await fetch(`${this.baseUrl}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          reply_markup: replyMarkup,
-          parse_mode: "HTML",
-        }),
+      const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
+      const amAdmin = isAdminUser(me);
+      if (amAdmin) {
+        const list = await db.select().from(disputesView).orderBy(desc(disputesView.createdAt));
+        return res.json(list);
+      }
+
+      const list = await db
+        .select()
+        .from(disputesView)
+        .where(or(eq(disputesView.buyerId, me.id), eq(disputesView.sellerId, me.id)))
+        .orderBy(desc(disputesView.createdAt));
+
+      return res.json(list);
+    } catch (e: any) {
+      return res.status(500).json({ error: e?.message ?? "server_error" });
+    }
+  });
+
+  /** POST /api/disputes */
+  app.post("/api/disputes", requireTelegramUser, async (req: Request, res: Response) => {
+    try {
+      const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
+      const body = createDisputeSchema.parse(req.body ?? {});
+      const p = await db
+        .select({
+          id: payments.id,
+          listingId: payments.listingId,
+          buyerId: payments.buyerId,
+          sellerId: payments.sellerId,
+        })
+        .from(payments)
+        .where(eq(payments.id, body.paymentId))
+        .limit(1);
+
+      if (!p.length) return res.status(404).json({ error: "payment_not_found" });
+      const pay = p[0];
+
+      if (me.id !== pay.buyerId && me.id !== pay.sellerId) {
+        return res.status(403).json({ error: "forbidden", detail: "not_participant" });
+      }
+
+      const inserted = await db
+        .insert(disputes)
+        .values({
+          paymentId: body.paymentId,
+          buyerId: pay.buyerId,
+          sellerId: pay.sellerId,
+          reason: body.reason ?? null,
+          evidence: body.evidence ?? null,
+          status: "open",
+        })
+        .returning();
+
+      let listingTitle: string | null = null;
+      if (pay.listingId) {
+        const l = await db
+          .select({ title: listings.title })
+          .from(listings)
+          .where(eq(listings.id, pay.listingId))
+          .limit(1);
+        listingTitle = l[0]?.title ?? null;
+      }
+
+      const row = await db
+        .select()
+        .from(disputesView)
+        .where(eq(disputesView.id, inserted[0].id))
+        .limit(1);
+
+      return res.status(201).json({ ...row[0], listingTitle });
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** GET /api/disputes/:id */
+  app.get("/api/disputes/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = idParam.parse(req.params);
+      const rows = await db.select().from(disputesView).where(eq(disputesView.id, id)).limit(1);
+      if (!rows.length) return res.status(404).json({ error: "not_found" });
+      const d = rows[0];
+
+      const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin && me.id !== d.buyerId && me.id !== d.sellerId) {
+        return res.status(403).json({ error: "forbidden" });
+      }
+
+      return res.json(d);
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** GET /api/disputes/:id/messages */
+  app.get("/api/disputes/:id/messages", async (req: Request, res: Response) => {
+    try {
+      const { id } = idParam.parse(req.params);
+      const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!d.length) return res.status(404).json({ error: "dispute_not_found" });
+
+      const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin && me.id !== d[0].buyerId && me.id !== d[0].sellerId) {
+        return res.status(403).json({ error: "forbidden" });
+      }
+
+      const list = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.disputeId, id))
+        .orderBy(desc(messages.createdAt));
+
+      return res.json(list);
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** POST /api/disputes/:id/messages */
+  app.post("/api/disputes/:id/messages", requireTelegramUser, async (req: Request, res: Response) => {
+    try {
+      const { id } = idParam.parse(req.params);
+      const text = z.string().min(1).parse(req.body?.text);
+
+      const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!d.length) return res.status(404).json({ error: "dispute_not_found" });
+
+      const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin && me.id !== d[0].buyerId && me.id !== d[0].sellerId) {
+        return res.status(403).json({ error: "forbidden" });
+      }
+
+      const row = await db
+        .insert(messages)
+        .values({
+          disputeId: id,
+          content: text.trim(),
+          senderId: me.id,
+          senderUsername: me.username?.toLowerCase() || "unknown",
+        })
+        .returning();
+
+      return res.status(201).json(row[0]);
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** POST /api/disputes/:id/resolve (admin only, bilingual notify) */
+  app.post("/api/disputes/:id/resolve", requireTelegramUser, async (req: Request, res: Response) => {
+    try {
+      const { id } = idParam.parse(req.params);
+      const action = String(req.body?.action || "");
+
+      if (!["seller_wins", "buyer_wins"].includes(action)) {
+        return res.status(400).json({ error: "bad_request" });
+      }
+
+      const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!d.length) return res.status(404).json({ error: "not_found" });
+
+      const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin) return res.status(403).json({ error: "forbidden" });
+
+      const updated = await db.update(disputes).set({
+        status: "resolved",
+        resolvedAt: new Date(),
+      }).where(eq(disputes.id, id)).returning();
+
+      const noteText =
+        action === "seller_wins"
+          ? "⚖️ Dispute resolved in favor of the seller / ⚖️ تم حل النزاع لصالح البائع"
+          : "⚖️ Dispute resolved in favor of the buyer / ⚖️ تم حل النزاع لصالح المشتري";
+
+      await db.insert(messages).values({
+        disputeId: id,
+        content: noteText,
+        senderId: me.id,
+        senderUsername: "admin",
       });
-      return await r.json();
-    } catch (e) {
-      console.error("Error sending message:", e);
-    }
-  }
 
-  async checkChannelOwnership(channelId: string, userId: number): Promise<boolean> {
+      const buyer = await db.query.users.findFirst({ where: eq(users.id, d[0].buyerId) });
+      const seller = await db.query.users.findFirst({ where: eq(users.id, d[0].sellerId) });
+
+      if (buyer?.telegramId) await notifyUser(buyer.telegramId, noteText);
+      if (seller?.telegramId) await notifyUser(seller.telegramId, noteText);
+
+      return res.json({ ok: true, dispute: updated[0], action });
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
+    }
+  });
+
+  /** POST /api/disputes/:id/cancel (admin only, bilingual notify) */
+  app.post("/api/disputes/:id/cancel", requireTelegramUser, async (req: Request, res: Response) => {
     try {
-      const r = await fetch(`${this.baseUrl}/getChatMember`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: channelId, user_id: userId }),
+      const { id } = idParam.parse(req.params);
+
+      const d = await db.select().from(disputes).where(eq(disputes.id, id)).limit(1);
+      if (!d.length) return res.status(404).json({ error: "not_found" });
+
+      const me = await getCurrentUser(req);
+      if (!me) return res.status(401).json({ error: "unauthorized" });
+      const amAdmin = isAdminUser(me);
+      if (!amAdmin) return res.status(403).json({ error: "forbidden" });
+
+      const updated = await db.update(disputes).set({
+        status: "cancelled",
+      }).where(eq(disputes.id, id)).returning();
+
+      const noteText = "❌ Dispute cancelled by admin / ❌ تم إلغاء النزاع من قبل المشرف";
+
+      await db.insert(messages).values({
+        disputeId: id,
+        content: noteText,
+        senderId: me.id,
+        senderUsername: "admin",
       });
-      const j = await r.json();
-      return j.ok && ["creator", "administrator"].includes(j.result?.status);
-    } catch (e) {
-      console.error("Error checking channel ownership:", e);
-      return false;
+
+      const buyer = await db.query.users.findFirst({ where: eq(users.id, d[0].buyerId) });
+      const seller = await db.query.users.findFirst({ where: eq(users.id, d[0].sellerId) });
+
+      if (buyer?.telegramId) await notifyUser(buyer.telegramId, noteText);
+      if (seller?.telegramId) await notifyUser(seller.telegramId, noteText);
+
+      return res.json({ ok: true, dispute: updated[0], action: "cancelled" });
+    } catch (e: any) {
+      return res.status(400).json({ error: e?.message ?? "invalid_request" });
     }
-  }
-
-  async monitorChannelTransfer(channelId: string, sellerId: number, buyerId: number, escrowId: string) {
-    const existing = this.activeMonitors.get(escrowId);
-    if (existing) clearInterval(existing);
-
-    let checks = 0;
-    const maxChecks = 48; // 24h @ 30s
-    const h = setInterval(async () => {
-      checks++;
-      try {
-        const buyerOwns = await this.checkChannelOwnership(channelId, buyerId);
-        const sellerOwns = await this.checkChannelOwnership(channelId, sellerId);
-
-        if (buyerOwns && !sellerOwns) {
-          this.cleanupMonitor(escrowId);
-          await this.sendMessage(
-            buyerId,
-            `🎉 <b>Channel Transfer Complete!</b>\n\nYou are now the owner. Escrow will be released.\n\n<b>Channel:</b> ${channelId}\n<b>Status:</b> ✅ Ownership Verified`
-          );
-          await this.sendMessage(
-            sellerId,
-            `✅ <b>Transfer Confirmed</b>\nBuyer is now the owner.\n\n<b>Channel:</b> ${channelId}\n<b>Status:</b> ✅ Verified`
-          );
-        } else if (checks >= maxChecks) {
-          this.cleanupMonitor(escrowId);
-          await this.sendMessage(
-            buyerId,
-            `⚠️ <b>Transfer Timeout</b>\nNo completion within 24h. Please contact support.\n\n<b>Channel:</b> ${channelId}`
-          );
-        }
-      } catch (e) {
-        console.error("Error monitoring channel transfer:", e);
-      }
-    }, 30_000);
-
-    this.activeMonitors.set(escrowId, h);
-  }
-
-  private cleanupMonitor(escrowId: string) {
-    const h = this.activeMonitors.get(escrowId);
-    if (h) {
-      clearInterval(h);
-      this.activeMonitors.delete(escrowId);
-    }
-  }
-  cleanupAllMonitors() {
-    this.activeMonitors.forEach(clearInterval);
-    this.activeMonitors.clear();
-  }
-
-  handleUpdate(update: TelegramUpdate) {
-    if (update.message) this.handleMessage(update.message);
-    if (update.callback_query) this.handleCallbackQuery(update.callback_query);
-  }
-
-  private async handleCallbackQuery(cq: any) {
-    const chatId = cq.message?.chat?.id;
-    const data = cq.data;
-
-    if (chatId && data) {
-      if (data === "how_it_works") {
-        await this.sendMessage(
-          chatId,
-          [
-            "📋 <b>How Channel Marketplace Works</b>",
-            "",
-            "1️⃣ Browse channels",
-            "2️⃣ Secure escrow payment (TON)",
-            "3️⃣ Ownership verification",
-            "4️⃣ Safe transfer",
-            "",
-            "💰 Escrow: held until transfer, refund if failed.",
-            "🔒 Verification: seller proves ownership.",
-          ].join("\n")
-        );
-      } else if (data === "support") {
-        await this.sendMessage(
-          chatId,
-          [
-            "💬 <b>Need Help?</b>",
-            "",
-            "• Technical issues",
-            "• Transaction problems",
-            "• Account questions",
-            "",
-            "Contact support from the app.",
-          ].join("\n")
-        );
-      }
-    }
-
-    await fetch(`${this.baseUrl}/answerCallbackQuery`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ callback_query_id: cq.id }),
-    });
-  }
-
-  private async handleMessage(msg: TelegramMessage) {
-    const chatId = msg.chat.id;
-    const text = msg.text;
-    if (text === "/start") {
-      const webappUrl = process.env.WEBAPP_URL;
-      const welcome = `
-🎉 <b>Welcome to Channel Marketplace!</b>
-
-Buy & sell Telegram channels with secure TON escrow.
-
-🔥 <b>Features</b>
-• Verified listings
-• Escrow protection
-• Ownership verification
-
-${webappUrl ? "👇 <b>Open the marketplace:</b>" : "⚠️ WEBAPP_URL is not configured."}
-      `.trim();
-
-      const keyboard = webappUrl
-        ? {
-            inline_keyboard: [
-              [{ text: "🛒 Open Marketplace", web_app: { url: webappUrl } }],
-              [
-                { text: "📋 How it works", callback_data: "how_it_works" },
-                { text: "💬 Support", callback_data: "support" },
-              ],
-            ],
-          }
-        : undefined;
-
-      await this.sendMessage(chatId, welcome, keyboard);
-    }
-  }
-}
-
-/* =========================
-   Singleton + helpers
-========================= */
-let botInstance: TelegramBot | null = null;
-
-/** Send a message to any Telegram user from anywhere in the server */
-export async function notifyUser(telegramId: string | number, text: string) {
-  if (!botInstance) {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    if (!token) {
-      console.error("TELEGRAM_BOT_TOKEN not set - cannot send Telegram notifications");
-      return;
-    }
-    botInstance = new TelegramBot(token);
-  }
-  await botInstance.sendMessage(telegramId, text);
-}
-
-/* =========================
-   Route registration
-   - DEV: polling (webhook removed)
-   - PROD: webhook handled elsewhere (routers/webhook.ts + setWebhook done outside)
-========================= */
-export function registerBotRoutes(app: express.Express) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) {
-    console.warn("TELEGRAM_BOT_TOKEN not set - bot disabled");
-    return;
-  }
-  botInstance = new TelegramBot(token);
-
-  if (process.env.NODE_ENV === "development") {
-    // Use long polling locally for convenience
-    removeWebhookSafe(token).then(() => {
-      console.log("Webhook removed for development mode (polling on).");
-      startPolling(botInstance!);
-    });
-  } else {
-    console.log("Production mode: webhook managed via routers/webhook.ts and external setWebhook.");
-  }
-
-  console.log("Telegram bot routes registered");
-}
-
-/* =========================
-   Internals
-========================= */
-async function removeWebhookSafe(token: string) {
-  try {
-    const r = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ drop_pending_updates: true }),
-    });
-    await r.json().catch(() => ({}));
-  } catch (e) {
-    console.warn("deleteWebhook failed (dev):", e);
-  }
-}
-
-async function startPolling(bot: TelegramBot) {
-  let offset = 0;
-  const poll = async () => {
-    try {
-      const r = await fetch(
-        `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getUpdates?offset=${offset}&timeout=30`
-      );
-      const data = await r.json();
-      if (data.ok && Array.isArray(data.result) && data.result.length > 0) {
-        for (const update of data.result) {
-          bot.handleUpdate(update);
-          offset = update.update_id + 1;
-        }
-      }
-    } catch (e) {
-      console.error("Polling error:", e);
-    }
-    setTimeout(poll, 1000);
-  };
-  console.log("Starting Telegram bot polling (development)...");
-  poll();
+  });
 }
