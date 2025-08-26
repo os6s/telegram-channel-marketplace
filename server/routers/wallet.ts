@@ -6,17 +6,20 @@ import { db } from "../db.js";
 import { payments, users, walletLedger, walletBalancesView } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { verifyTonDepositByComment } from "../ton-verify.js";
-import { Address } from "@ton/core"; // ✅ proper TON address validation
+import { Address, beginCell } from "@ton/core"; // ✅ validate + build BOC payload
 
 type TgUser = { id: number };
 
-const genCode = () => "D" + crypto.randomBytes(4).toString("hex"); // comment code (no spaces/underscores)
+// رمز تعليق قصير وفريد
+const genCode = () => "D" + crypto.randomBytes(4).toString("hex");
 
+// تحويل TON إلى nanoTON بدقة (يدعم أعداد < 1)
 function toNano(ton: number): string {
-  const [i, fRaw = ""] = String(ton).split(".");
-  const f = (fRaw + "000000000").slice(0, 9);
-  const s = `${i}${f}`.replace(/^0+/, "");
-  return s || "0";
+  if (!Number.isFinite(ton) || ton <= 0) return "0";
+  const [iRaw, fRaw = ""] = String(ton).trim().split(".");
+  const i = (iRaw || "0").replace(/^0+(?=\d)/, "") || "0";
+  const frac = (fRaw + "000000000").slice(0, 9); // 9 digits
+  return (BigInt(i) * 1000000000n + BigInt(frac || "0")).toString();
 }
 
 async function getMe(req: Request) {
@@ -29,7 +32,7 @@ async function getMe(req: Request) {
 
 function isValidTonAddress(addr: string): boolean {
   try {
-    Address.parse(addr.trim()); // ✅ use ton-core to validate
+    Address.parse(addr.trim());
     return true;
   } catch {
     return false;
@@ -37,11 +40,10 @@ function isValidTonAddress(addr: string): boolean {
 }
 
 export function mountWallet(app: Express) {
-  /** ✅ 1) Wallet Address APIs */
+  /** ✅ 1) إدارة عنوان المحفظة في البروفايل */
   app.get("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
-
     res.json({ ok: true, walletAddress: (me as any).wallet_address ?? null });
   });
 
@@ -77,7 +79,7 @@ export function mountWallet(app: Express) {
     res.json({ ok: true, walletAddress: null });
   });
 
-  /** ✅ 2) Initiate deposit (TonConnect payload) */
+  /** ✅ 2) بدء الإيداع: توليد حمولة TonConnect مع تعليق BOC */
   app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
     try {
       const escrow = (process.env.ESCROW_WALLET || "").trim();
@@ -98,39 +100,43 @@ export function mountWallet(app: Express) {
       const code = genCode();
       const amountNano = toNano(amountTon);
 
-      const [row] = await db.insert(payments).values({
-        listingId: null,
-        buyerId: me.id,
-        sellerId: null,
-        kind: "deposit",
-        locked: false,
-        amount: String(amountTon),
-        currency: "TON",
-        feePercent: "0",
-        feeAmount: "0",
-        sellerAmount: "0",
-        escrowAddress: escrow,
-        comment: code,
-        txHash: null,
-        buyerConfirmed: false,
-        sellerConfirmed: false,
-        status: "waiting",
-        adminAction: "none",
-      }).returning();
+      const [row] = await db
+        .insert(payments)
+        .values({
+          listingId: null,
+          buyerId: me.id,
+          sellerId: null,
+          kind: "deposit",
+          locked: false,
+          amount: String(amountTon), // input amount (سيتم تحديثها عند التأكيد)
+          currency: "TON",
+          feePercent: "0",
+          feeAmount: "0",
+          sellerAmount: "0",
+          escrowAddress: escrow,
+          comment: code, // سنطابق به التحويل
+          txHash: null,
+          buyerConfirmed: false,
+          sellerConfirmed: false,
+          status: "waiting",
+          adminAction: "none",
+        })
+        .returning();
 
-      // ✅ safer TonConnect payload using comment field
-      const payload = {
+      // ✅ تعليق كـ payload BOC (standard op=0 + string)
+      const commentCell = beginCell().storeUint(0, 32).storeStringTail(code).endCell();
+      const payloadB64 = commentCell.toBoc().toString("base64");
+
+      const txPayload = {
         validUntil: Math.floor(Date.now() / 1000) + 300,
         messages: [
           {
             address: escrow,
             amount: amountNano,
-            stateInit: null,
-            payload: null,
-            text: code, // use as comment
+            payload: payloadB64,
           },
         ],
-      };
+      } as const;
 
       res.status(201).json({
         ok: true,
@@ -138,7 +144,8 @@ export function mountWallet(app: Express) {
         escrowAddress: escrow,
         amountTon,
         amountNano,
-        txPayload: payload,
+        txPayload,
+        id: row.id,
       });
     } catch (e: unknown) {
       const err = e as Error;
@@ -147,7 +154,7 @@ export function mountWallet(app: Express) {
     }
   });
 
-  /** ✅ 3) Verify deposit */
+  /** ✅ 3) التحقق من الإيداع عبر تعليق التحويل */
   app.post("/api/wallet/deposit/status", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
@@ -176,15 +183,17 @@ export function mountWallet(app: Express) {
 
     if (!v.ok) return res.json({ ok: true, status: "pending" });
 
-    const [updated] = await db.update(payments).set({
-      amount: String(v.amountTon),
-      txHash: v.txHash ?? null,
-      status: "paid",
-      confirmedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(
-      and(eq(payments.id, waiting.id), eq(payments.status, "waiting")) // ✅ double-spend safe
-    ).returning();
+    const [updated] = await db
+      .update(payments)
+      .set({
+        amount: String(v.amountTon),
+        txHash: v.txHash ?? null,
+        status: "paid",
+        confirmedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(payments.id, waiting.id), eq(payments.status, "waiting"))) // ✅ double-spend safe
+      .returning();
 
     await db.insert(walletLedger).values({
       userId: me.id,
@@ -196,23 +205,34 @@ export function mountWallet(app: Express) {
       note: "Deposit confirmed",
     });
 
-    res.json({ ok: true, status: "paid", amount: Number(updated.amount), txHash: updated.txHash, id: updated.id });
+    res.json({
+      ok: true,
+      status: "paid",
+      amount: Number(updated.amount),
+      txHash: updated.txHash,
+      id: updated.id,
+    });
   });
 
-  /** ✅ 4) Balance */
+  /** ✅ 4) الرصيد */
   app.get("/api/wallet/balance", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-    const row = await db.select().from(walletBalancesView).where(eq(walletBalancesView.userId, me.id)).limit(1);
+    const row = await db
+      .select()
+      .from(walletBalancesView)
+      .where(eq(walletBalancesView.userId, me.id))
+      .limit(1);
+
     res.json({
       ok: true,
       currency: row[0]?.currency ?? "TON",
-      balance: (Number(row[0]?.balance ?? 0)).toFixed(9), // ✅ keep string for precision
+      balance: Number(row[0]?.balance ?? 0).toFixed(9), // string precision
     });
   });
 
-  /** ✅ 5) Ledger */
+  /** ✅ 5) كشف الحركات */
   app.get("/api/wallet/ledger", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
