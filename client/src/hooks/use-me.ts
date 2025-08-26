@@ -1,31 +1,21 @@
 // client/src/hooks/use-me.ts
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { telegramWebApp } from "@/lib/telegram";
 import { apiRequest } from "@/lib/queryClient";
 
-/** يجلب/ينشئ المستخدم بالاعتماد على Telegram ID ثم يرجعه */
+/** ✅ Fetch current user (via /api/me) 
+ * Includes: user info + balance + walletAddress
+ */
 export function useMe() {
-  const tg = telegramWebApp.user;
-  const telegramId = tg?.id ? String(tg.id) : undefined;
-
   return useQuery({
-    enabled: !!telegramId,
-    queryKey: ["me", telegramId],
-    staleTime: 60_000,
+    queryKey: ["me"],
+    staleTime: 60_000, // cache for 1 min
     queryFn: async () => {
-      const r = await fetch(`/api/users/by-telegram/${telegramId}`, { credentials: "include" });
-      if (r.ok) return await r.json();
-      return await apiRequest("POST", "/api/users", {
-        telegramId,
-        username: tg?.username,
-        firstName: tg?.first_name,
-        lastName: tg?.last_name,
-      });
+      return await apiRequest("GET", "/api/me");
     },
   });
 }
 
-/** Listings حسب sellerUsername */
+/** ✅ Listings for current user (by sellerUsername) */
 export function useMyListings(username?: string) {
   const uname = (username || "").trim().toLowerCase();
   return useQuery({
@@ -42,7 +32,7 @@ export function useMyListings(username?: string) {
   });
 }
 
-/** Activities حسب sellerUsername */
+/** ✅ Activities for current user */
 export function useMyActivities(username?: string) {
   const uname = (username || "").trim().toLowerCase();
   return useQuery({
@@ -59,33 +49,20 @@ export function useMyActivities(username?: string) {
   });
 }
 
-/** تحديث المحفظة عبر username فقط (بدون id) */
+/** ✅ Update wallet address (via /api/me/wallet) */
 export function useUpdateWallet() {
   const qc = useQueryClient();
-  const tg = telegramWebApp.user;
-  const username = tg?.username ? tg.username.trim().toLowerCase() : undefined;
-
   return useMutation({
     mutationFn: async (walletAddress: string) => {
-      if (!username) return null;
-      return await apiRequest(
-        "PATCH",
-        `/api/users/by-username/${encodeURIComponent(username)}`,
-        { tonWallet: walletAddress }
-      );
+      return await apiRequest("POST", "/api/me/wallet", { walletAddress });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["me"] });
-      if (username) {
-        qc.invalidateQueries({ queryKey: ["listings/by-seller-username", username] });
-        qc.invalidateQueries({ queryKey: ["activities/by-seller-username", username] });
-        qc.invalidateQueries({ queryKey: ["disputes/by-user", username] });
-      }
+      qc.invalidateQueries({ queryKey: ["me"] }); // refresh user data with new wallet
     },
   });
 }
 
-/** Disputes حسب username */
+/** ✅ Disputes for current user */
 export function useMyDisputes(username?: string | null) {
   const uname = (username || "").trim().toLowerCase();
   return useQuery({
