@@ -24,11 +24,21 @@ function toNano(ton: number): string {
   return (BigInt(i) * 1000000000n + BigInt(frac || "0")).toString();
 }
 
-// جلب المستخدم من التلغرام
+// جلب المستخدم من التلغرام (تحديد أعمدة صراحةً)
 async function getMe(req: Request) {
   const tg = (req as any).telegramUser as TgUser | undefined;
   if (!tg?.id) return null;
-  return await db.query.users.findFirst({ where: eq(users.telegramId, BigInt(tg.id)) });
+  const rows = await db
+    .select({
+      id: users.id,
+      telegramId: users.telegramId,
+      wallet_address: users.wallet_address,
+      updatedAt: users.updatedAt,
+    })
+    .from(users)
+    .where(eq(users.telegramId, BigInt(tg.id)))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 // تطبيع/تحقّق عنوان TON محلياً (raw 0:… أو EQ…) → EQ… مع احترام الشبكة
@@ -50,7 +60,7 @@ export function mountWallet(app: Express) {
   app.get("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
-    res.json({ ok: true, walletAddress: (me as any).wallet_address ?? null });
+    res.json({ ok: true, walletAddress: me.wallet_address ?? null });
   });
 
   app.post("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
@@ -63,12 +73,18 @@ export function mountWallet(app: Express) {
 
       // إلغاء ربط إذا فارغ
       if (!input) {
-        await db.update(users).set({ wallet_address: null, updatedAt: new Date() }).where(eq(users.id, me.id));
-        const row = await db.query.users.findFirst({
-          columns: { wallet_address: true },
-          where: eq(users.id, me.id),
-        });
-        return res.json({ ok: true, walletAddress: row?.wallet_address ?? null });
+        await db
+          .update(users)
+          .set({ wallet_address: null, updatedAt: new Date() })
+          .where(eq(users.id, me.id));
+
+        const row = await db
+          .select({ wallet_address: users.wallet_address })
+          .from(users)
+          .where(eq(users.id, me.id))
+          .limit(1);
+
+        return res.json({ ok: true, walletAddress: row[0]?.wallet_address ?? null });
       }
 
       // يقبل نص أو كائن { address: "EQ..." }
@@ -83,12 +99,18 @@ export function mountWallet(app: Express) {
         }
       }
 
-      await db.update(users).set({ wallet_address: pretty, updatedAt: new Date() }).where(eq(users.id, me.id));
-      const row = await db.query.users.findFirst({
-        columns: { wallet_address: true },
-        where: eq(users.id, me.id),
-      });
-      return res.json({ ok: true, walletAddress: row?.wallet_address ?? pretty });
+      await db
+        .update(users)
+        .set({ wallet_address: pretty, updatedAt: new Date() })
+        .where(eq(users.id, me.id));
+
+      const row = await db
+        .select({ wallet_address: users.wallet_address })
+        .from(users)
+        .where(eq(users.id, me.id))
+        .limit(1);
+
+      return res.json({ ok: true, walletAddress: row[0]?.wallet_address ?? pretty });
     } catch (e: any) {
       console.error("wallet/address error:", e, "body:", (req as any)?.body);
       return res.status(400).json({ ok: false, error: "invalid_address" });
@@ -100,13 +122,18 @@ export function mountWallet(app: Express) {
       const me = await getMe(req);
       if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-      await db.update(users).set({ wallet_address: null, updatedAt: new Date() }).where(eq(users.id, me.id));
-      const row = await db.query.users.findFirst({
-        columns: { wallet_address: true },
-        where: eq(users.id, me.id),
-      });
+      await db
+        .update(users)
+        .set({ wallet_address: null, updatedAt: new Date() })
+        .where(eq(users.id, me.id));
 
-      return res.json({ ok: true, walletAddress: row?.wallet_address ?? null });
+      const row = await db
+        .select({ wallet_address: users.wallet_address })
+        .from(users)
+        .where(eq(users.id, me.id))
+        .limit(1);
+
+      return res.json({ ok: true, walletAddress: row[0]?.wallet_address ?? null });
     } catch (e) {
       console.error("wallet/address delete error:", e);
       return res.status(500).json({ ok: false, error: "wallet_unlink_failed" });
@@ -126,14 +153,14 @@ export function mountWallet(app: Express) {
 
       const me = await getMe(req);
       if (!me) return res.status(404).json({ ok: false, error: "user_not_found" });
-      if (!(me as any).wallet_address) {
+      if (!me.wallet_address) {
         return res.status(400).json({ ok: false, error: "wallet_not_linked" });
       }
 
       const code = genCode();
       const amountNano = toNano(amountTon);
 
-      const [row] = await db
+      const [p] = await db
         .insert(payments)
         .values({
           listingId: null,
@@ -154,7 +181,7 @@ export function mountWallet(app: Express) {
           status: "waiting",
           adminAction: "none",
         })
-        .returning();
+        .returning({ id: payments.id });
 
       // تعليق BOC: op=0 + string(code)
       const commentCell = beginCell().storeUint(0, 32).storeStringTail(code).endCell();
@@ -172,7 +199,7 @@ export function mountWallet(app: Express) {
         amountTon,
         amountNano,
         txPayload,
-        id: String((row as any).id), // لا BigInt في JSON
+        id: String(p.id), // لا BigInt في JSON
       });
     } catch (e: unknown) {
       const err = e as Error;
@@ -191,15 +218,29 @@ export function mountWallet(app: Express) {
     const minTon = Number((req.body as any)?.minTon || "0");
     if (!escrow || !code) return res.status(400).json({ ok: false, error: "bad_request" });
 
-    const waiting = await db.query.payments.findFirst({
-      where: and(
-        eq(payments.buyerId, me.id),
-        eq(payments.kind, "deposit" as any),
-        eq(payments.status, "waiting" as any),
-        eq(payments.comment, code)
-      ),
-      orderBy: desc(payments.createdAt),
-    });
+    // حدد الأعمدة صراحةً
+    const waitingRows = await db
+      .select({
+        id: payments.id,
+        buyerId: payments.buyerId,
+        kind: payments.kind,
+        status: payments.status,
+        comment: payments.comment,
+        createdAt: payments.createdAt,
+      })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.buyerId, me.id),
+          eq(payments.kind, "deposit" as any),
+          eq(payments.status, "waiting" as any),
+          eq(payments.comment, code)
+        )
+      )
+      .orderBy(desc(payments.createdAt))
+      .limit(1);
+
+    const waiting = waitingRows[0];
     if (!waiting) return res.status(404).json({ ok: false, status: "not_found" });
 
     const v = await verifyTonDepositByComment({
@@ -210,7 +251,8 @@ export function mountWallet(app: Express) {
 
     if (!v.ok) return res.json({ ok: true, status: "pending" });
 
-    const [updated] = await db
+    // تحديث بدون returning() ثم جلب القيم التي نحتاجها
+    await db
       .update(payments)
       .set({
         amount: String(v.amountTon),
@@ -219,8 +261,19 @@ export function mountWallet(app: Express) {
         confirmedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(and(eq(payments.id, waiting.id), eq(payments.status, "waiting")))
-      .returning();
+      .where(and(eq(payments.id, waiting.id), eq(payments.status, "waiting")));
+
+    const updatedRows = await db
+      .select({
+        id: payments.id,
+        amount: payments.amount,
+        txHash: payments.txHash,
+      })
+      .from(payments)
+      .where(eq(payments.id, waiting.id))
+      .limit(1);
+
+    const updated = updatedRows[0];
 
     await db.insert(walletLedger).values({
       userId: me.id,
@@ -228,16 +281,16 @@ export function mountWallet(app: Express) {
       amount: String(v.amountTon),
       currency: "TON",
       refType: "deposit",
-      refId: (updated as any).id,
+      refId: updated.id,
       note: "Deposit confirmed",
     });
 
     res.json({
       ok: true,
       status: "paid",
-      amount: Number((updated as any).amount),
-      txHash: (updated as any).txHash,
-      id: String((updated as any).id),
+      amount: Number(updated.amount),
+      txHash: updated.txHash,
+      id: String(updated.id),
     });
   });
 
