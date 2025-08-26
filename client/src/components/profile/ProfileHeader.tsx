@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Settings, ArrowLeft, Plus, Minus, Link2 } from "lucide-react";
-import TonIcon from "@/assets/icons/ton.svg";
+import tonIconUrl from "@/assets/icons/ton.svg"; // ✅ استيراد كـ صورة URL
 
 import { useLanguage } from "@/contexts/language-context";
 import { useToast } from "@/hooks/use-toast";
@@ -21,7 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 
 import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
-import { useWalletAddress } from "@/hooks/use-wallet"; // ✅ new hook
+import { useWalletAddress } from "@/hooks/use-wallet";
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
 const initialFrom = (v: unknown) => {
@@ -33,7 +33,7 @@ export function ProfileHeader({
   telegramUser,
   onBack,
   onOpenSettings,
-  balance, // ✅ balance is passed from ProfilePage
+  balance,
 }: {
   telegramUser: any;
   onBack: () => void;
@@ -46,23 +46,20 @@ export function ProfileHeader({
 
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
-
-  const { data: linkedWallet, updateWallet } = useWalletAddress(); // ✅ use hook
+  const { data: linkedWallet, updateWallet } = useWalletAddress();
 
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [amount, setAmount] = useState("");
 
-  // ✅ Sync wallet automatically when TonConnect changes
   useEffect(() => {
     if (wallet?.account.address) {
       updateWallet(wallet.account.address);
     } else {
-      updateWallet(null); // unlink if disconnected
+      updateWallet(null);
     }
   }, [wallet?.account.address]);
 
-  // ✅ Deposit
   async function handleDeposit() {
     try {
       const amt = Number(amount);
@@ -77,7 +74,6 @@ export function ProfileHeader({
       await tonConnectUI.sendTransaction(r.txPayload);
       toast({ title: t("toast.confirmDeposit") });
 
-      // Poll for confirmation
       const check = async () => {
         const status = await apiRequest("POST", "/api/wallet/deposit/status", {
           code: r.code,
@@ -94,7 +90,6 @@ export function ProfileHeader({
         }
       };
       setTimeout(check, 5000);
-
       setDepositOpen(false);
     } catch (e: any) {
       toast({
@@ -105,7 +100,6 @@ export function ProfileHeader({
     }
   }
 
-  // ✅ Withdraw
   async function handleWithdraw() {
     try {
       const amt = Number(amount);
@@ -191,7 +185,8 @@ export function ProfileHeader({
 
             {/* 🟢 Wallet section */}
             <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
-              <TonIcon className="w-5 h-5" />
+              {/* ✅ استخدام <img /> بدل Component */}
+              <img src={tonIconUrl} alt="TON" className="w-5 h-5" />
               <span className="font-semibold">
                 {balance?.balance ?? 0} {balance?.currency || "TON"}
               </span>
