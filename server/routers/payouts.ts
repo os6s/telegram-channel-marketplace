@@ -5,18 +5,30 @@ import { db } from "../db.js";
 import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
 import { payouts, walletBalancesView, walletLedger, users } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
+import { Address } from "ton-core"; // ✅ for TON address validation
 
+// ------------------ utils ------------------
 const createPayoutSchema = z.object({
   amount: z.number().positive(),
-  toAddress: z.string().min(10).max(128), // عنوان محفظة TON
+  toAddress: z.string().min(10).max(128), // further validated with ton-core
   note: z.string().optional(),
 });
 
 async function getMe(req: Request) {
   const tg = (req as any).telegramUser as { id?: number; username?: string } | undefined;
   if (!tg?.id) return null;
-  const me = await db.query.users.findFirst({ where: eq(users.telegramId, BigInt(tg.id)) });
-  return me ?? null;
+  return await db.query.users.findFirst({
+    where: eq(users.telegramId, BigInt(tg.id)),
+  });
+}
+
+function isValidTonAddress(addr: string): boolean {
+  try {
+    Address.parse(addr.trim());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const ADMIN_TG_IDS = (process.env.ADMIN_TG_IDS || "")
@@ -24,14 +36,19 @@ const ADMIN_TG_IDS = (process.env.ADMIN_TG_IDS || "")
   .map((s) => s.trim())
   .filter(Boolean);
 
+// ------------------ router ------------------
 export function mountPayouts(app: Express) {
   /** User: Create payout request */
   app.post("/api/payouts", tgAuth, async (req: Request, res: Response) => {
     try {
       const me = await getMe(req);
-      if (!me) return res.status(401).json({ error: "unauthorized" });
+      if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
       const body = createPayoutSchema.parse(req.body);
+
+      if (!isValidTonAddress(body.toAddress)) {
+        return res.status(400).json({ ok: false, error: "invalid_address" });
+      }
 
       // Check balance
       const row = await db
@@ -42,15 +59,15 @@ export function mountPayouts(app: Express) {
 
       const balanceNum = Number(row[0]?.balance ?? 0);
       if (balanceNum < body.amount) {
-        return res.status(400).json({ error: "insufficient_balance" });
+        return res.status(400).json({ ok: false, error: "insufficient_balance" });
       }
 
-      // Insert payout
-      const [p] = await db
+      // Insert payout (status=pending)
+      const [payout] = await db
         .insert(payouts)
         .values({
-          sellerId: me.id,
-          toAddress: body.toAddress,
+          userId: me.id,
+          toAddress: body.toAddress.trim(),
           amount: String(body.amount),
           currency: "TON",
           status: "pending",
@@ -58,20 +75,11 @@ export function mountPayouts(app: Express) {
         })
         .returning();
 
-      // Ledger entry: lock funds
-      await db.insert(walletLedger).values({
-        userId: me.id,
-        direction: "out",
-        amount: String(body.amount),
-        currency: "TON",
-        refType: "payout_request",
-        refId: p.id,
-        note: "User requested payout",
-      });
+      // ⚠️ Do NOT deduct balance yet → only lock logically
 
-      res.status(201).json(p);
+      return res.status(201).json({ ok: true, payout });
     } catch (e: any) {
-      res.status(400).json({ error: e?.message ?? "invalid_request" });
+      return res.status(400).json({ ok: false, error: e?.message ?? "invalid_request" });
     }
   });
 
@@ -79,17 +87,17 @@ export function mountPayouts(app: Express) {
   app.get("/api/payouts/me", tgAuth, async (req: Request, res: Response) => {
     try {
       const me = await getMe(req);
-      if (!me) return res.status(401).json({ error: "unauthorized" });
+      if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
       const rows = await db
         .select()
         .from(payouts)
-        .where(eq(payouts.sellerId, me.id))
+        .where(eq(payouts.userId, me.id))
         .orderBy(desc(payouts.createdAt));
 
-      res.json(rows);
+      return res.json({ ok: true, rows });
     } catch (e: any) {
-      res.status(400).json({ error: e?.message ?? "invalid_request" });
+      return res.status(400).json({ ok: false, error: e?.message ?? "invalid_request" });
     }
   });
 
@@ -98,13 +106,13 @@ export function mountPayouts(app: Express) {
     try {
       const tg = (req as any).telegramUser;
       if (!tg?.id || !ADMIN_TG_IDS.includes(String(tg.id))) {
-        return res.status(403).json({ error: "forbidden" });
+        return res.status(403).json({ ok: false, error: "forbidden" });
       }
 
       const rows = await db.select().from(payouts).orderBy(desc(payouts.createdAt));
-      res.json(rows);
+      return res.json({ ok: true, rows });
     } catch (e: any) {
-      res.status(400).json({ error: e?.message ?? "invalid_request" });
+      return res.status(400).json({ ok: false, error: e?.message ?? "invalid_request" });
     }
   });
 
@@ -113,14 +121,14 @@ export function mountPayouts(app: Express) {
     try {
       const tg = (req as any).telegramUser;
       if (!tg?.id || !ADMIN_TG_IDS.includes(String(tg.id))) {
-        return res.status(403).json({ error: "forbidden" });
+        return res.status(403).json({ ok: false, error: "forbidden" });
       }
 
       const id = String(req.params.id);
       const { status, txHash, note } = req.body || {};
 
       if (!["processing", "completed", "failed"].includes(status)) {
-        return res.status(400).json({ error: "invalid_status" });
+        return res.status(400).json({ ok: false, error: "invalid_status" });
       }
 
       const [updated] = await db
@@ -135,12 +143,24 @@ export function mountPayouts(app: Express) {
         .where(eq(payouts.id, id))
         .returning();
 
-      if (!updated) return res.status(404).json({ error: "not_found" });
+      if (!updated) return res.status(404).json({ ok: false, error: "not_found" });
 
-      // If failed → return funds to user
+      // ✅ Ledger updates only on final result
+      if (status === "completed") {
+        await db.insert(walletLedger).values({
+          userId: updated.userId,
+          direction: "out",
+          amount: String(updated.amount),
+          currency: "TON",
+          refType: "payout",
+          refId: updated.id,
+          note: "Payout completed",
+        });
+      }
+
       if (status === "failed") {
         await db.insert(walletLedger).values({
-          userId: updated.sellerId,
+          userId: updated.userId,
           direction: "in",
           amount: String(updated.amount),
           currency: "TON",
@@ -150,9 +170,9 @@ export function mountPayouts(app: Express) {
         });
       }
 
-      res.json(updated);
+      return res.json({ ok: true, payout: updated });
     } catch (e: any) {
-      res.status(400).json({ error: e?.message ?? "invalid_request" });
+      return res.status(400).json({ ok: false, error: e?.message ?? "invalid_request" });
     }
   });
 }
