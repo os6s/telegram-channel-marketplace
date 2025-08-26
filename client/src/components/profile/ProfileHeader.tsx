@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Settings, ArrowLeft, Plus, Minus } from "lucide-react";
 
-import tonIconUrl from "@/assets/icons/ton.svg?url"; // ✅ image only
+import tonIconUrl from "@/assets/icons/ton.svg?url"; // ✅ fixed to ?url for vite
 
 import { useLanguage } from "@/contexts/language-context";
 import { useToast } from "@/hooks/use-toast";
@@ -59,43 +59,45 @@ export function ProfileHeader({
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [amount, setAmount] = useState("");
-
-  // separate busy states
-  const [busyConnect, setBusyConnect] = useState(false);
-  const [busyDeposit, setBusyDeposit] = useState(false);
-  const [busyWithdraw, setBusyWithdraw] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
+  // ✅ FIX: do not unlink automatically if no address
   useEffect(() => {
-    updateWallet(address || null);
+    if (address) {
+      updateWallet(address);
+    }
   }, [address, updateWallet]);
 
   async function handleConnect() {
     try {
-      setBusyConnect(true);
+      setBusy(true);
       const addr = await waitForConnect(tonConnectUI);
       updateWallet(addr);
     } catch (e: any) {
-      toast({ title: t("toast.connectFailed") || "Connect failed", description: e?.message || "", variant: "destructive" });
+      toast({
+        title: t("toast.connectFailed") || "Connect failed",
+        description: e?.message || "",
+        variant: "destructive",
+      });
     } finally {
-      setBusyConnect(false);
+      setBusy(false);
     }
   }
 
   async function handleDisconnect() {
     try {
-      setBusyConnect(true);
+      setBusy(true);
       await tonConnectUI?.disconnect();
-      updateWallet(null);
+      updateWallet(null); // unlink explicitly
     } finally {
-      setBusyConnect(false);
+      setBusy(false);
     }
   }
 
   async function handleDeposit() {
     try {
-      setBusyDeposit(true);
       const amt = Number(amount);
       if (!amt || amt <= 0) {
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
@@ -103,9 +105,10 @@ export function ProfileHeader({
       }
 
       await waitForConnect(tonConnectUI);
-      const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
 
+      const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
       await tonConnectUI.sendTransaction(r.txPayload);
+
       toast({ title: t("toast.confirmDeposit") });
 
       const poll = async () => {
@@ -114,28 +117,35 @@ export function ProfileHeader({
           minTon: amt,
         });
         if (status.status === "paid") {
-          toast({ title: t("toast.depositConfirmed"), description: `Tx: ${status.txHash}` });
+          toast({
+            title: t("toast.depositConfirmed"),
+            description: `Tx: ${status.txHash}`,
+          });
           qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
         } else {
           setTimeout(poll, 5000);
         }
       };
       setTimeout(poll, 5000);
+
       setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
       if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-        try { await tonConnectUI?.disconnect(); } catch {}
+        try {
+          await tonConnectUI?.disconnect();
+        } catch {}
       }
-      toast({ title: t("toast.depositFailed"), description: e?.message || "", variant: "destructive" });
-    } finally {
-      setBusyDeposit(false);
+      toast({
+        title: t("toast.depositFailed"),
+        description: e?.message || "",
+        variant: "destructive",
+      });
     }
   }
 
   async function handleWithdraw() {
     try {
-      setBusyWithdraw(true);
       const amt = Number(amount);
       if (!amt || amt <= 0 || (balance?.balance || 0) < amt) {
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
@@ -147,9 +157,11 @@ export function ProfileHeader({
       setWithdrawOpen(false);
       setAmount("");
     } catch (e: any) {
-      toast({ title: "Withdraw failed", description: e?.message || "", variant: "destructive" });
-    } finally {
-      setBusyWithdraw(false);
+      toast({
+        title: "Withdraw failed",
+        description: e?.message || "",
+        variant: "destructive",
+      });
     }
   }
 
@@ -177,34 +189,47 @@ export function ProfileHeader({
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-start justify-between gap-6">
-            {/* Left: wallet actions */}
+            {/* Wallet */}
             <div className="flex flex-col items-start gap-3">
               <div className="flex items-center gap-2 bg-muted rounded-full pl-3 pr-2 py-1">
                 <img src={tonIconUrl} alt="TON" className="w-4 h-4" />
                 <span className="text-foreground/90 text-sm font-semibold">
                   {(balance?.balance ?? 0).toLocaleString()} {balance?.currency || "TON"}
                 </span>
-                <button className="ml-1 h-8 w-8 rounded-full bg-secondary text-secondary-foreground grid place-items-center" onClick={() => setDepositOpen(true)} aria-label="Deposit">
+                <button
+                  className="ml-1 h-8 w-8 rounded-full bg-secondary text-secondary-foreground grid place-items-center"
+                  onClick={() => setDepositOpen(true)}
+                  aria-label="Deposit"
+                >
                   <Plus className="w-4 h-4" />
                 </button>
-                <button className="h-8 w-8 rounded-full bg-secondary text-secondary-foreground grid place-items-center" onClick={() => setWithdrawOpen(true)} aria-label="Withdraw">
+                <button
+                  className="h-8 w-8 rounded-full bg-secondary text-secondary-foreground grid place-items-center"
+                  onClick={() => setWithdrawOpen(true)}
+                  aria-label="Withdraw"
+                >
                   <Minus className="w-4 h-4" />
                 </button>
               </div>
 
               {!address ? (
-                <Button onClick={handleConnect} className="rounded-full px-5" disabled={busyConnect}>
+                <Button onClick={handleConnect} className="rounded-full px-5" disabled={busy}>
                   <img src={tonIconUrl} alt="" className="w-4 h-4 mr-2" />
-                  {busyConnect ? "…" : "Connect Wallet"}
+                  {busy ? "…" : "Connect Wallet"}
                 </Button>
               ) : (
-                <Button onClick={handleDisconnect} className="rounded-full px-5" variant="secondary" disabled={busyConnect}>
-                  {busyConnect ? "…" : "Disconnect"}
+                <Button
+                  onClick={handleDisconnect}
+                  className="rounded-full px-5"
+                  variant="secondary"
+                  disabled={busy}
+                >
+                  Disconnect
                 </Button>
               )}
             </div>
 
-            {/* Right: user info */}
+            {/* User Info */}
             <div className="flex items-center gap-4">
               <Avatar className="w-16 h-16">
                 <AvatarImage src={telegramUser?.photo_url} />
@@ -217,7 +242,9 @@ export function ProfileHeader({
                 <h2 className="text-xl font-semibold text-foreground">
                   {S(telegramUser?.first_name)} {S(telegramUser?.last_name)}
                 </h2>
-                {telegramUser?.username && <p className="text-muted-foreground">@{telegramUser.username}</p>}
+                {telegramUser?.username && (
+                  <p className="text-muted-foreground">@{telegramUser.username}</p>
+                )}
                 <div className="flex items-center gap-2 mt-2">
                   {telegramUser?.is_premium && <Badge variant="secondary">⭐</Badge>}
                   <Badge variant="secondary">
@@ -249,8 +276,8 @@ export function ProfileHeader({
             inputMode="decimal"
           />
           <DialogFooter>
-            <Button onClick={handleDeposit} disabled={busyDeposit || !address}>
-              {busyDeposit ? "…" : t("wallet.deposit")}
+            <Button onClick={handleDeposit} disabled={busy || !address}>
+              {busy ? "…" : t("wallet.deposit")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -269,8 +296,8 @@ export function ProfileHeader({
             inputMode="decimal"
           />
           <DialogFooter>
-            <Button onClick={handleWithdraw} disabled={busyWithdraw}>
-              {busyWithdraw ? "…" : t("wallet.withdraw")}
+            <Button onClick={handleWithdraw} disabled={busy}>
+              {busy ? "…" : t("wallet.withdraw")}
             </Button>
           </DialogFooter>
         </DialogContent>
