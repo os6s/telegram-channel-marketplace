@@ -6,7 +6,7 @@ import { db } from "../db.js";
 import { payments, users, walletLedger, walletBalancesView } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { verifyTonDepositByComment } from "../ton-verify.js";
-import { Address } from "ton-core"; // ✅ proper TON address validation
+import { Address } from "@ton/core"; // ✅ proper TON address validation
 
 type TgUser = { id: number };
 
