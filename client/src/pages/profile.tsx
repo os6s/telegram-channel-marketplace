@@ -11,7 +11,7 @@ import { ListingsTab } from "@/components/profile/ListingsTab";
 import { ActivityTab } from "@/components/profile/ActivityTab";
 import { ActivityDialog } from "@/components/profile/ActivityDialog";
 import { DisputesTab } from "@/components/profile/DisputesTab";
-import WalletTab from "@/components/profile/WalletTab"; // ✅ جديد
+import WalletTab from "@/components/profile/WalletTab";
 import {
   useMe,
   useMyListings,
@@ -23,7 +23,7 @@ const S = (v: unknown) => (typeof v === "string" ? v : "");
 const N = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
 
 export default function ProfilePage() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { toast } = useToast();
 
   const [showSettings, setShowSettings] = useState(false);
@@ -87,28 +87,39 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <ProfileHeader
-        telegramUser={tgUser}
-        onBack={() => window.history.back()}
-        onOpenSettings={() => setShowSettings(true)}
-        t={t}
-      />
+      {/* ✅ Profile + Wallet in same row */}
+      <div className="px-4 py-6">
+        <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${lang === "ar" ? "direction-rtl" : ""}`}>
+          <div>
+            <ProfileHeader
+              telegramUser={tgUser}
+              onBack={() => window.history.back()}
+              onOpenSettings={() => setShowSettings(true)}
+              t={t}
+            />
+          </div>
+          <div>
+            <WalletTab compact />
+          </div>
+        </div>
+      </div>
 
-      <div className="px-4 py-6 space-y-6">
-        {/* Stats Section */}
+      {/* Stats Section */}
+      <div className="px-4">
         <StatsCards
           activeCount={stats.activeCount}
           totalValue={stats.totalValue}
           totalSubs={stats.totalSubs}
         />
+      </div>
 
-        {/* Tabs */}
+      {/* Tabs */}
+      <div className="px-4 py-6">
         <Tabs defaultValue="listings" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="listings">{t("profilePage.tabs.listings")}</TabsTrigger>
             <TabsTrigger value="activity">{t("profilePage.tabs.activity")}</TabsTrigger>
             <TabsTrigger value="disputes">{t("profilePage.tabs.disputes")}</TabsTrigger>
-            <TabsTrigger value="wallet">{t("profilePage.tabs.wallet") || "Wallet"}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="listings" className="space-y-4">
@@ -121,32 +132,17 @@ export default function ProfilePage() {
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-4">
-            <ActivityTab
-              events={events as any}
-              emptyText={t("activityPage.empty")}
-            />
+            <ActivityTab events={events as any} emptyText={t("activityPage.empty")} />
           </TabsContent>
 
           <TabsContent value="disputes" className="space-y-4">
             <DisputesTab disputes={myDisputes as any} isLoading={disputesLoading} />
           </TabsContent>
-
-          {/* ✅ Wallet Tab */}
-          <TabsContent value="wallet" className="space-y-4">
-            <WalletTab />
-          </TabsContent>
         </Tabs>
       </div>
 
-      <ActivityDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        activityId={dialogActivityId}
-      />
-      <SettingsModal
-        open={showSettings}
-        onOpenChange={setShowSettings}
-      />
+      <ActivityDialog open={dialogOpen} onOpenChange={setDialogOpen} activityId={dialogActivityId} />
+      <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
     </div>
   );
 }
