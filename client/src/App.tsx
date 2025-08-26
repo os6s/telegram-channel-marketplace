@@ -1,4 +1,3 @@
-اي، هذا كامل ومصحّح وفيه export default App بنهاية الملف:
 
 // client/src/App.tsx
 import { Switch, Route, Link, useLocation } from "wouter";
