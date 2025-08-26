@@ -45,6 +45,18 @@ const statusStyle: Record<Dispute["status"], string> = {
   cancelled: "bg-gray-200 text-gray-700",
 };
 
+const formatAmount = (amount?: string, currency?: string) =>
+  amount
+    ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(
+        Number(amount)
+      ) +
+      " " +
+      (currency || "TON")
+    : "—";
+
+const shortId = (id: string) =>
+  id.length > 12 ? id.slice(0, 6) + "…" + id.slice(-4) : id;
+
 export function DisputesTab({
   disputes = [],
   isLoading,
@@ -93,7 +105,8 @@ export function DisputesTab({
             {/* header row */}
             <div className="flex items-center justify-between">
               <div className="font-medium truncate">
-                #{d.id} · {d.listingTitle || t("disputes.listing") || "Listing"}
+                #{shortId(d.id)} ·{" "}
+                {d.listingTitle || t("disputes.listing") || "Listing"}
               </div>
               <Badge className={statusStyle[d.status]}>
                 {t(`disputes.status.${d.status}`) || d.status}
@@ -101,22 +114,32 @@ export function DisputesTab({
             </div>
 
             {/* product + payment info */}
-            <div className="text-sm text-foreground">
+            <div className="text-sm text-foreground break-words">
               {d.listingTitle && (
-                <>
-                  {d.listingTitle} — {d.listingPrice} {d.listingCurrency}
-                </>
+                <div>
+                  {d.listingTitle} —{" "}
+                  {formatAmount(d.listingPrice, d.listingCurrency)}
+                </div>
               )}
               {d.paymentAmount && (
                 <div className="text-xs text-muted-foreground">
-                  {t("disputes.payment") || "Payment"}: {d.paymentAmount}{" "}
-                  {d.paymentCurrency || "TON"}
+                  {t("disputes.payment") || "Payment"}:{" "}
+                  {formatAmount(d.paymentAmount, d.paymentCurrency)}
                 </div>
               )}
             </div>
 
+            {/* reason preview */}
+            {d.reason && (
+              <div className="text-xs text-muted-foreground italic">
+                {d.reason.length > 80
+                  ? d.reason.slice(0, 80) + "…"
+                  : d.reason}
+              </div>
+            )}
+
             {/* buyer/seller info */}
-            <div className="text-xs text-muted-foreground">
+            <div className="text-xs text-muted-foreground break-words">
               {t("disputes.buyer") || "Buyer"}:{" "}
               {d.buyerUsername || d.buyerTelegramId || "—"} ·{" "}
               {t("disputes.seller") || "Seller"}:{" "}
@@ -128,8 +151,11 @@ export function DisputesTab({
               {t("disputes.created") || "Created"}:{" "}
               {d.createdAt ? new Date(d.createdAt).toLocaleString() : "—"}
               {d.resolvedAt && (
-                <> · {t("disputes.resolved") || "Resolved"}:{" "}
-                {new Date(d.resolvedAt).toLocaleString()}</>
+                <>
+                  {" "}
+                  · {t("disputes.resolved") || "Resolved"}:{" "}
+                  {new Date(d.resolvedAt).toLocaleString()}
+                </>
               )}
             </div>
 
