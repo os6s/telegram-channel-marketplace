@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Settings, ArrowLeft, Plus, Minus, Link2 } from "lucide-react";
-import tonIconUrl from "@/assets/icons/ton.svg"; // ✅ استيراد كـ صورة URL
+
+import tonIconUrl from "@/assets/icons/ton.svg?url"; // ← استخدمها كصورة
 
 import { useLanguage } from "@/contexts/language-context";
 import { useToast } from "@/hooks/use-toast";
@@ -53,12 +54,9 @@ export function ProfileHeader({
   const [amount, setAmount] = useState("");
 
   useEffect(() => {
-    if (wallet?.account.address) {
-      updateWallet(wallet.account.address);
-    } else {
-      updateWallet(null);
-    }
-  }, [wallet?.account.address]);
+    if (wallet?.account?.address) updateWallet(wallet.account.address);
+    else updateWallet(null);
+  }, [wallet?.account?.address]);
 
   async function handleDeposit() {
     try {
@@ -67,36 +65,26 @@ export function ProfileHeader({
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
         return;
       }
-      const r = await apiRequest("POST", "/api/wallet/deposit/initiate", {
-        amountTon: amt,
-      });
-
+      const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
       await tonConnectUI.sendTransaction(r.txPayload);
       toast({ title: t("toast.confirmDeposit") });
 
-      const check = async () => {
+      const poll = async () => {
         const status = await apiRequest("POST", "/api/wallet/deposit/status", {
           code: r.code,
           minTon: amt,
         });
         if (status.status === "paid") {
-          toast({
-            title: t("toast.depositConfirmed"),
-            description: `Tx: ${status.txHash}`,
-          });
+          toast({ title: t("toast.depositConfirmed"), description: `Tx: ${status.txHash}` });
           qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
         } else {
-          setTimeout(check, 5000);
+          setTimeout(poll, 5000);
         }
       };
-      setTimeout(check, 5000);
+      setTimeout(poll, 5000);
       setDepositOpen(false);
     } catch (e: any) {
-      toast({
-        title: t("toast.depositFailed"),
-        description: e?.message || "",
-        variant: "destructive",
-      });
+      toast({ title: t("toast.depositFailed"), description: e?.message || "", variant: "destructive" });
     }
   }
 
@@ -108,17 +96,11 @@ export function ProfileHeader({
         return;
       }
       await apiRequest("POST", "/api/payouts", { amount: amt });
-      toast({
-        title: t("wallet.withdrawRequest") || "Withdrawal request sent",
-      });
+      toast({ title: t("wallet.withdrawRequest") || "Withdrawal request sent" });
       qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
       setWithdrawOpen(false);
     } catch (e: any) {
-      toast({
-        title: "Withdraw failed",
-        description: e?.message || "",
-        variant: "destructive",
-      });
+      toast({ title: "Withdraw failed", description: e?.message || "", variant: "destructive" });
     }
   }
 
@@ -149,8 +131,40 @@ export function ProfileHeader({
 
       <Card>
         <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            {/* 🟢 Profile info */}
+          <div className="flex items-start justify-between gap-6">
+            {/* يسار: الرصيد + +/- + Connect Wallet */}
+            <div className="flex flex-col items-start gap-3">
+              <div className="flex items-center gap-2 bg-muted rounded-full pl-3 pr-2 py-1">
+                <img src={tonIconUrl} alt="TON" className="w-4 h-4" />
+                <span className="text-foreground/90 text-sm font-semibold">
+                  {(balance?.balance ?? 0).toLocaleString()} {balance?.currency || "TON"}
+                </span>
+                <button
+                  className="ml-1 h-8 w-8 rounded-full bg-secondary text-secondary-foreground grid place-items-center"
+                  onClick={() => setDepositOpen(true)}
+                  aria-label="Deposit"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                <button
+                  className="h-8 w-8 rounded-full bg-secondary text-secondary-foreground grid place-items-center"
+                  onClick={() => setWithdrawOpen(true)}
+                  aria-label="Withdraw"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+              </div>
+
+              <Button
+                onClick={() => tonConnectUI.openModal()}
+                className="rounded-full px-5"
+              >
+                <img src={tonIconUrl} alt="" className="w-4 h-4 mr-2" />
+                Connect Wallet
+              </Button>
+            </div>
+
+            {/* يمين: معلومات المستخدم */}
             <div className="flex items-center gap-4">
               <Avatar className="w-16 h-16">
                 <AvatarImage src={telegramUser?.photo_url} />
@@ -158,47 +172,27 @@ export function ProfileHeader({
                   {initialFrom(telegramUser?.first_name)}
                 </AvatarFallback>
               </Avatar>
-              <div className="flex-1">
+
+              <div className="min-w-[200px]">
                 <h2 className="text-xl font-semibold text-foreground">
                   {S(telegramUser?.first_name)} {S(telegramUser?.last_name)}
                 </h2>
                 {telegramUser?.username && (
-                  <p className="text-muted-foreground">
-                    @{telegramUser.username}
-                  </p>
+                  <p className="text-muted-foreground">@{telegramUser.username}</p>
                 )}
                 <div className="flex items-center gap-2 mt-2">
-                  {telegramUser?.is_premium && (
-                    <Badge
-                      variant="secondary"
-                      className="bg-yellow-100 text-yellow-800"
-                    >
-                      ⭐
-                    </Badge>
-                  )}
+                  {telegramUser?.is_premium && <Badge variant="secondary">⭐</Badge>}
                   <Badge variant="secondary">
                     {t("profilePage.memberSince")} {new Date().getFullYear()}
                   </Badge>
+                  {linkedWallet && (
+                    <Badge variant="secondary" className="truncate max-w-[180px]">
+                      <img src={tonIconUrl} className="w-3 h-3 mr-1" alt="" />
+                      {linkedWallet.slice(0, 6)}…{linkedWallet.slice(-4)}
+                    </Badge>
+                  )}
                 </div>
               </div>
-            </div>
-
-            {/* 🟢 Wallet section */}
-            <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
-              {/* ✅ استخدام <img /> بدل Component */}
-              <img src={tonIconUrl} alt="TON" className="w-5 h-5" />
-              <span className="font-semibold">
-                {balance?.balance ?? 0} {balance?.currency || "TON"}
-              </span>
-              <Button variant="ghost" size="icon" onClick={() => setDepositOpen(true)}>
-                <Plus className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => setWithdrawOpen(true)}>
-                <Minus className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => tonConnectUI.openModal()}>
-                <Link2 className="w-4 h-4" />
-              </Button>
             </div>
           </div>
         </CardContent>
@@ -214,6 +208,7 @@ export function ProfileHeader({
             placeholder={t("profilePage.depositPlaceholder")}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            inputMode="decimal"
           />
           <DialogFooter>
             <Button onClick={handleDeposit}>{t("wallet.deposit")}</Button>
@@ -231,6 +226,7 @@ export function ProfileHeader({
             placeholder={t("profilePage.depositPlaceholder")}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            inputMode="decimal"
           />
           <DialogFooter>
             <Button onClick={handleWithdraw}>{t("wallet.withdraw")}</Button>
