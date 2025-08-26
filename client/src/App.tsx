@@ -158,7 +158,6 @@ function BottomNavigation() {
   );
 }
 
-/* -------- App Root -------- */
 function App() {
   const manifestUrl = useMemo(() => {
     return typeof window !== "undefined"
@@ -166,9 +165,20 @@ function App() {
       : "/tonconnect-manifest.json";
   }, []);
 
+  const botUsername =
+    (window as any)?.Telegram?.WebApp?.initDataUnsafe?.bot_username ||
+    (window as any)?.Telegram?.WebApp?.Bot?.username ||
+    "";
+
   return (
     <QueryClientProvider client={queryClient}>
-      <TonConnectUIProvider manifestUrl={manifestUrl}>
+      <TonConnectUIProvider
+        manifestUrl={manifestUrl}
+        returnStrategy="back"
+        actionsConfiguration={{
+          twaReturnUrl: botUsername ? `https://t.me/${botUsername}` : undefined,
+        }}
+      >
         <ThemeProvider>
           <LanguageProvider>
             <TooltipProvider>
@@ -176,11 +186,8 @@ function App() {
                 <Toaster />
                 <Router />
 
-                {/* ✅ زر البيع (FAB) */}
-                <Link
-                  href="/sell"
-                  className="fixed bottom-20 right-4 z-50"
-                >
+                {/* زر البيع */}
+                <Link href="/sell" className="fixed bottom-20 right-4 z-50">
                   <Button className="rounded-full w-14 h-14 bg-green-500 hover:bg-green-600 shadow-lg text-white text-2xl">
                     +
                   </Button>
@@ -195,5 +202,3 @@ function App() {
     </QueryClientProvider>
   );
 }
-
-export default App;
