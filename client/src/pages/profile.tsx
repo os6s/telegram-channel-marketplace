@@ -1,4 +1,3 @@
-// client/src/pages/profile.tsx
 import { useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SettingsModal } from "@/components/settings-modal";
@@ -16,7 +15,7 @@ import {
   useMyActivities,
   useMyDisputes,
 } from "@/hooks/use-me";
-import { useWalletBalance } from "@/hooks/use-wallet"; // ✅ new wallet hook
+import { useWalletBalance } from "@/hooks/use-wallet"; // ✅ new hook
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
 const N = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
@@ -32,7 +31,7 @@ export default function ProfilePage() {
   const { data: user } = useMe();
   const uname = user?.username || tgUser?.username || null;
 
-  // ✅ Wallet balance via custom hook
+  // ✅ Wallet balance with hook
   const { data: balance, isLoading: balanceLoading } = useWalletBalance();
 
   const { data: myListings = [], isLoading: listingsLoading } = useMyListings(
