@@ -16,8 +16,7 @@ import {
   useMyActivities,
   useMyDisputes,
 } from "@/hooks/use-me";
-import { useQuery } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { useWalletBalance } from "@/hooks/use-wallet"; // ✅ new wallet hook
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
 const N = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
@@ -33,12 +32,8 @@ export default function ProfilePage() {
   const { data: user } = useMe();
   const uname = user?.username || tgUser?.username || null;
 
-  // ✅ Wallet balance
-  const { data: balance, isLoading: balanceLoading } = useQuery({
-    queryKey: ["/api/wallet/balance"],
-    queryFn: async () => await apiRequest("GET", "/api/wallet/balance"),
-    staleTime: 15_000, // cache for 15s
-  });
+  // ✅ Wallet balance via custom hook
+  const { data: balance, isLoading: balanceLoading } = useWalletBalance();
 
   const { data: myListings = [], isLoading: listingsLoading } = useMyListings(
     uname || undefined,
