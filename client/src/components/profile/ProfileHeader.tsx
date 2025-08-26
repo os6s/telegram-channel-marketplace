@@ -1,3 +1,4 @@
+// client/src/components/profile/ProfileHeader.tsx
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -5,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Settings, ArrowLeft, Plus, Minus, Link2 } from "lucide-react";
+import { Settings, ArrowLeft, Plus, Minus } from "lucide-react";
 import TonIcon from "@/assets/icons/ton.svg";
 
 import { useLanguage } from "@/contexts/language-context";
@@ -54,14 +55,21 @@ export function ProfileHeader({
         const addr = wallet?.account.address || "";
         if (addr) {
           await apiRequest("POST", "/api/wallet/address", { walletAddress: addr });
-          toast({ title: t("wallet.linked"), description: addr.slice(0, 6) + "…" + addr.slice(-4) });
+          toast({
+            title: t("wallet.linked"),
+            description: addr.slice(0, 6) + "…" + addr.slice(-4),
+          });
         } else {
           await apiRequest("DELETE", "/api/wallet/address");
           toast({ title: t("wallet.unlinked"), description: t("wallet.disconnected") });
         }
         qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
       } catch (e: any) {
-        toast({ title: "Wallet sync failed", description: e?.message || "", variant: "destructive" });
+        toast({
+          title: "Wallet sync failed",
+          description: e?.message || "",
+          variant: "destructive",
+        });
       }
     }
     syncWallet();
@@ -87,7 +95,10 @@ export function ProfileHeader({
           minTon: amt,
         });
         if (status.status === "paid") {
-          toast({ title: t("toast.depositConfirmed"), description: `Tx: ${status.txHash}` });
+          toast({
+            title: t("toast.depositConfirmed"),
+            description: `Tx: ${status.txHash}`,
+          });
           qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
         } else {
           setTimeout(check, 5000);
@@ -97,7 +108,11 @@ export function ProfileHeader({
 
       setDepositOpen(false);
     } catch (e: any) {
-      toast({ title: t("toast.depositFailed"), description: e?.message || "", variant: "destructive" });
+      toast({
+        title: t("toast.depositFailed"),
+        description: e?.message || "",
+        variant: "destructive",
+      });
     }
   }
 
@@ -114,7 +129,11 @@ export function ProfileHeader({
       qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
       setWithdrawOpen(false);
     } catch (e: any) {
-      toast({ title: "Withdraw failed", description: e?.message || "", variant: "destructive" });
+      toast({
+        title: "Withdraw failed",
+        description: e?.message || "",
+        variant: "destructive",
+      });
     }
   }
 
@@ -167,20 +186,41 @@ export function ProfileHeader({
             </div>
 
             {/* 🟢 قسم المحفظة */}
-            <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
-              <TonIcon className="w-5 h-5" />
-              <span className="font-semibold">
-                {balance?.balance ?? 0} {balance?.currency || "TON"}
-              </span>
-              <Button variant="ghost" size="icon" onClick={() => setDepositOpen(true)}>
-                <Plus className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => setWithdrawOpen(true)}>
-                <Minus className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => tonConnectUI.openModal()}>
-                <Link2 className="w-4 h-4" />
-              </Button>
+            <div className="flex flex-col items-end gap-2 bg-muted rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2">
+                <TonIcon className="w-5 h-5" />
+                <span className="font-semibold">
+                  {balance?.balance ?? 0} {balance?.currency || "TON"}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="icon" onClick={() => setDepositOpen(true)}>
+                  <Plus className="w-4 h-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => setWithdrawOpen(true)}>
+                  <Minus className="w-4 h-4" />
+                </Button>
+
+                {/* زر ربط/إلغاء ربط */}
+                {wallet?.account?.address ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      await apiRequest("DELETE", "/api/wallet/address");
+                      toast({ title: t("wallet.unlinked") });
+                      qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
+                    }}
+                  >
+                    {t("wallet.disconnect")}
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={() => tonConnectUI.openModal()}>
+                    {t("wallet.connect")}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </CardContent>
@@ -192,7 +232,11 @@ export function ProfileHeader({
           <DialogHeader>
             <DialogTitle>{t("wallet.deposit")}</DialogTitle>
           </DialogHeader>
-          <Input placeholder={t("profilePage.depositPlaceholder")} value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <Input
+            placeholder={t("profilePage.depositPlaceholder")}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
           <DialogFooter>
             <Button onClick={handleDeposit}>{t("wallet.deposit")}</Button>
           </DialogFooter>
@@ -204,7 +248,11 @@ export function ProfileHeader({
           <DialogHeader>
             <DialogTitle>{t("wallet.withdraw")}</DialogTitle>
           </DialogHeader>
-          <Input placeholder={t("profilePage.depositPlaceholder")} value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <Input
+            placeholder={t("profilePage.depositPlaceholder")}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
           <DialogFooter>
             <Button onClick={handleWithdraw}>{t("wallet.withdraw")}</Button>
           </DialogFooter>
