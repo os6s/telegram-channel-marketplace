@@ -101,10 +101,11 @@ export const paymentsView = pgView("payments_view", {
 /* =========================
    Wallet Balances View
 ========================= */
-export const walletBalancesView = pgView("wallet_balances", {
+export const walletBalancesView = pgView("wallet_balances_view", {
   userId: uuid("user_id"),
+  telegramId: varchar("telegram_id", { length: 64 }),
   username: varchar("username", { length: 64 }),
+  walletAddress: varchar("wallet_address", { length: 128 }),
+  currency: varchar("currency", { length: 8 }),
   balance: numeric("balance", { precision: 18, scale: 8 }),
-  txCount: bigint("tx_count", { mode: "number" }),
-  lastTx: timestamp("last_tx", { withTimezone: true }),
 }).existing();
