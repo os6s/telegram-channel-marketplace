@@ -1,5 +1,6 @@
+// client/src/pages/marketplace.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,6 +13,7 @@ import { ListingCard } from "@/components/ListingCard";
 import { useLanguage } from "@/contexts/language-context";
 import { onListingsChange, listLocalListings, type AnyListing } from "@/store/listings";
 import { apiRequest } from "@/lib/queryClient";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 type Kind = "username" | "account" | "channel" | "service" | "";
 type Platform = "telegram" | "twitter" | "instagram" | "discord" | "snapchat" | "tiktok" | "";
@@ -19,28 +21,25 @@ type ChannelMode = "subscribers" | "gifts" | "";
 type ServiceType = "followers" | "members" | "boost_channel" | "boost_group" | "";
 
 const LABELS = (t: (k: string) => string) => ({
-  title: t("market.title") || "Digital Marketplace",
-  subtitle: t("market.subtitle") || "Platform for Buying & Selling Digital Assets",
-  searchPlaceholder: t("market.searchPlaceholder") || "Search…",
-  allTypes: t("market.allTypes") || "All",
-  sortAsc: t("market.sortByPriceAsc") || "Sort: Price Low → High",
-  sortDesc: t("market.sortByPriceDesc") || "Sort: Price High → Low",
-  loadMore: t("market.loadMore") || "Load More",
-  noFound: t("market.noFound") || "No listings found",
-  tryFilters: t("market.tryFilters") || "Try adjusting your filters or search query",
-  salesCountLabel: t("market.salesCountLabel") || "Sales Count",
-  salesVolumeLabel: t("market.salesVolumeLabel") || "Sales Volume",
-  activeListingsLabel: t("market.activeListingsLabel") || "Active Listings",
-  username: t("sell.username") || "Sell Username",
-  account: t("sell.account") || "Sell Account",
-  channel: t("sell.channel") || "Sell",
-  service: t("sell.service") || "Sell Service",
-  modeSubscribers: t("sell.modeSubscribers") || "Subscribers channel",
-  modeGifts: t("sell.modeGifts") || "Gifts channel",
-  serviceFollowers: t("market.type.serviceFollowers") || "Followers Service",
-  serviceSubscribers: t("market.type.serviceSubscribers") || "Subscribers Service",
-  boostCh: t("sell.boostCh") || "Boost Telegram Channel",
-  boostGp: t("sell.boostGp") || "Boost Telegram Group",
+  title: t("market.title"),
+  subtitle: t("market.subtitle"),
+  searchPlaceholder: t("market.searchPlaceholder"),
+  allTypes: t("market.allTypes"),
+  sortAsc: t("market.sortByPriceAsc"),
+  sortDesc: t("market.sortByPriceDesc"),
+  loadMore: t("market.loadMore"),
+  noFound: t("market.noFound"),
+  tryFilters: t("market.tryFilters"),
+  salesCountLabel: t("market.salesCountLabel"),
+  salesVolumeLabel: t("market.salesVolumeLabel"),
+  activeListingsLabel: t("market.activeListingsLabel"),
+  toastDeleted: t("market.toastDeleted"),
+  toastDeleteError: t("market.toastDeleteError"),
+  toastBuyConfirm: t("market.toastBuyConfirm"),
+  toastBuySuccess: t("market.toastBuySuccess"),
+  toastBuyError: t("market.toastBuyError"),
+  toastInsufficient: t("market.toastInsufficient"),
+  toastUnauthorized: t("market.toastUnauthorized"),
 });
 
 const ICON: Record<string, JSX.Element> = {
@@ -61,6 +60,7 @@ const ICON: Record<string, JSX.Element> = {
 export default function Marketplace() {
   const { t } = useLanguage();
   const { toast } = useToast();
+  const qc = useQueryClient();
   const L = useMemo(() => LABELS(t), [t]);
   const containerCls = "min-h-screen bg-background text-foreground";
 
@@ -71,14 +71,6 @@ export default function Marketplace() {
   const [serviceType, setServiceType] = useState<ServiceType>("");
 
   const [sortAsc, setSortAsc] = useState(true);
-
-  const [showStats, setShowStats] = useState(true);
-  useEffect(() => {
-    const onScroll = () => setShowStats(window.scrollY < 80);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
 
   // ===== me =====
   const { data: me } = useQuery({
@@ -153,37 +145,43 @@ export default function Marketplace() {
     return sortAsc ? pa - pb : pb - pa;
   });
 
-  // ===== Buy handler =====
-  async function handleBuy(listing: AnyListing) {
-    try {
-      await apiRequest("POST", "/api/wallet/pay", { listingId: listing.id });
-      toast({ title: "Order created", description: "Funds locked in escrow. Check Profile → Activity." });
-    } catch (e: any) {
+  // ===== Buy mutation =====
+  const [buyDialogOpen, setBuyDialogOpen] = useState(false);
+  const [selectedListing, setSelectedListing] = useState<AnyListing | null>(null);
+
+  const buyMutation = useMutation({
+    mutationFn: async (listingId: string) =>
+      await apiRequest("POST", "/api/wallet/pay", { listingId }),
+    onSuccess: () => {
+      toast({ title: L.toastBuySuccess });
+      qc.invalidateQueries({ queryKey: ["/api/me"] });
+      qc.invalidateQueries({ queryKey: ["/api/listings"] });
+      setBuyDialogOpen(false);
+      setSelectedListing(null);
+    },
+    onError: (e: any) => {
       const msg = String(e?.message || "");
       if (msg.startsWith("401")) {
-        toast({ title: "Unauthorized", description: "افتح الميني-أب داخل تيليجرام لتسجيل الدخول.", variant: "destructive" });
+        toast({ title: L.toastUnauthorized, variant: "destructive" });
       } else if (msg.includes("insufficient_balance")) {
-        toast({ title: "Insufficient funds", description: "رصيدك غير كافٍ — أودِع أولًا من المحفظة.", variant: "destructive" });
+        toast({ title: L.toastInsufficient, variant: "destructive" });
       } else {
-        toast({ title: "Error", description: msg || "Failed to create order.", variant: "destructive" });
+        toast({ title: L.toastBuyError, description: msg, variant: "destructive" });
       }
-    }
-  }
+    },
+  });
 
-  // ===== Delete handler =====
-  async function handleDelete(id: string) {
-    try {
-      await apiRequest("DELETE", `/api/listings/${id}`);
-      toast({ title: "Deleted", description: "Listing deleted successfully" });
-      setLocalListings((prev) => prev.filter((l) => l.id !== id)); // تحديث بدون reload
-    } catch (e: any) {
-      toast({
-        title: "Error",
-        description: e?.message || "Failed to delete listing",
-        variant: "destructive",
-      });
-    }
-  }
+  // ===== Delete mutation =====
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => await apiRequest("DELETE", `/api/listings/${id}`),
+    onSuccess: () => {
+      toast({ title: L.toastDeleted });
+      qc.invalidateQueries({ queryKey: ["/api/listings"] });
+    },
+    onError: (e: any) => {
+      toast({ title: L.toastDeleteError, description: e?.message || "", variant: "destructive" });
+    },
+  });
 
   const currentUser = me ? { id: me.id, username: me.username, role: me.role } : undefined;
 
@@ -191,42 +189,17 @@ export default function Marketplace() {
     <div className={containerCls}>
       <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="px-4 py-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-base font-semibold text-foreground">{L.title}</h1>
-              <p className="text-[11px] text-muted-foreground">{L.subtitle}</p>
-            </div>
-          </div>
-
-          {!statsLoading && (
-            <div className={["transition-all duration-300 overflow-hidden", showStats ? "max-h-24 opacity-100 mt-2" : "max-h-0 opacity-0 mt-0 pointer-events-none"].join(" ")}>
-              <div className="grid grid-cols-3 gap-2">
-                <Card><CardContent className="px-3 py-2 text-center">
-                  <div className="text-base font-bold text-foreground">{(stats as any)?.totalSales ?? 0}</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesCountLabel}</div>
-                </CardContent></Card>
-                <Card><CardContent className="px-3 py-2 text-center">
-                  <div className="text-base font-bold text-foreground">{(stats as any)?.totalVolume ?? 0} TON</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.salesVolumeLabel}</div>
-                </CardContent></Card>
-                <Card><CardContent className="px-3 py-2 text-center">
-                  <div className="text-base font-bold text-foreground">{(stats as any)?.activeListings ?? 0}</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">{L.activeListingsLabel}</div>
-                </CardContent></Card>
-              </div>
-            </div>
-          )}
+          <h1 className="text-base font-semibold">{L.title}</h1>
+          <p className="text-[11px] text-muted-foreground">{L.subtitle}</p>
         </div>
       </header>
 
-      {/* Filters */}
-      <div className="bg-card px-4 py-3 border-b border-border">
-        {/* ... filters code (نفس الكود الأصلي) ... */}
-      </div>
+      {/* Filters placeholder */}
+      <div className="bg-card px-4 py-3 border-b border-border">Filters here…</div>
 
       <div className="px-4 py-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-foreground">{L.title}</h2>
+          <h2 className="text-lg font-semibold">{L.title}</h2>
           <Button variant="outline" size="sm" onClick={() => setSortAsc(!sortAsc)}>
             <Filter className="w-4 h-4 mr-1" />
             {sortAsc ? L.sortAsc : L.sortDesc}
@@ -236,7 +209,11 @@ export default function Marketplace() {
         {listingsLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i}><CardContent className="p-4"><Skeleton className="h-24 w-full" /></CardContent></Card>
+              <Card key={i}><CardContent className="p-4 space-y-2">
+                <Skeleton className="h-6 w-1/2" />
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-20 w-full" />
+              </CardContent></Card>
             ))}
           </div>
         ) : sorted.length === 0 ? (
@@ -253,21 +230,48 @@ export default function Marketplace() {
                 listing={listing as any}
                 currentUser={currentUser as any}
                 onViewDetails={() => console.log("View", listing.id)}
-                onBuyNow={() => handleBuy(listing)}
-                onDelete={handleDelete} // ✅ تمرير الحذف
+                onBuyNow={() => {
+                  setSelectedListing(listing);
+                  setBuyDialogOpen(true);
+                }}
+                onDelete={(id) => deleteMutation.mutate(id)}
               />
             ))}
           </div>
         )}
 
+        {/* Load more */}
         {!listingsLoading && sorted.length > 0 && (
           <div className="text-center mt-6">
             <Button variant="outline" className="px-6" disabled>
-              {L.loadMore} (pagination not implemented yet)
+              {L.loadMore}
             </Button>
           </div>
         )}
       </div>
+
+      {/* Confirm Buy Dialog */}
+      <Dialog open={buyDialogOpen} onOpenChange={setBuyDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{L.toastBuyConfirm}</DialogTitle>
+          </DialogHeader>
+          <p>
+            {selectedListing
+              ? `${t("market.buyPrompt")} ${selectedListing.title} (${selectedListing.price} TON)`
+              : ""}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBuyDialogOpen(false)}>{t("cancel")}</Button>
+            <Button
+              onClick={() => selectedListing && buyMutation.mutate(selectedListing.id)}
+              disabled={buyMutation.isPending}
+            >
+              {buyMutation.isPending ? t("loading") : t("confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
