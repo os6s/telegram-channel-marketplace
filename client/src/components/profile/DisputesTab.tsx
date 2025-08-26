@@ -7,10 +7,27 @@ import { useLanguage } from "@/contexts/language-context";
 
 type Dispute = {
   id: string;
-  orderId?: string;
-  listingTitle?: string;
   status: "open" | "pending" | "resolved" | "cancelled";
   createdAt?: string;
+  reason?: string;
+
+  // payment
+  paymentId?: string;
+  paymentAmount?: string;
+  paymentCurrency?: string;
+
+  // listing
+  listingId?: string;
+  listingTitle?: string;
+  listingPrice?: string;
+  listingCurrency?: string;
+  listingPlatform?: string;
+  listingKind?: string;
+  listingSellerUsername?: string;
+
+  // users
+  buyerUsername?: string;
+  sellerUsername?: string;
 };
 
 const statusStyle: Record<Dispute["status"], string> = {
@@ -66,6 +83,7 @@ export function DisputesTab({
         <Card key={d.id}>
           <CardContent className="p-4 flex items-center gap-3">
             <div className="flex-1 min-w-0">
+              {/* Top row: ID + status */}
               <div className="flex items-center gap-2">
                 <div className="font-medium truncate">
                   #{d.id} · {d.listingTitle || t("disputes.listing") || "Listing"}
@@ -74,8 +92,24 @@ export function DisputesTab({
                   {t(`disputes.status.${d.status}`) || d.status}
                 </Badge>
               </div>
-              <div className="text-xs text-muted-foreground">
-                {t("disputes.order") || "Order"}: {d.orderId || "—"} ·{" "}
+
+              {/* Product & Payment Info */}
+              <div className="text-xs text-muted-foreground mt-1">
+                {d.listingPlatform ? `[${d.listingPlatform}] ` : ""}
+                {d.listingKind ? `${d.listingKind} · ` : ""}
+                {d.listingPrice && d.listingCurrency
+                  ? `${d.listingPrice} ${d.listingCurrency}`
+                  : ""}
+              </div>
+
+              {/* Buyer & Seller */}
+              <div className="text-xs text-muted-foreground mt-1">
+                {t("disputes.buyer") || "Buyer"}: @{d.buyerUsername || "—"} ·{" "}
+                {t("disputes.seller") || "Seller"}: @{d.sellerUsername || "—"}
+              </div>
+
+              {/* Created date */}
+              <div className="text-xs text-muted-foreground mt-1">
                 {d.createdAt ? new Date(d.createdAt).toLocaleString() : ""}
               </div>
             </div>
