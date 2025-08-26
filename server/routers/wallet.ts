@@ -6,7 +6,7 @@ import { db } from "../db.js";
 import { payments, users, walletLedger, walletBalancesView } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { verifyTonDepositByComment } from "../ton-verify.js";
-import { Address, beginCell } from "@ton/core"; // ✅ validate + build BOC payload
+import { Address, beginCell } from "@ton/core"; // validate + build BOC payload
 
 type TgUser = { id: number };
 
@@ -30,52 +30,58 @@ async function getMe(req: Request) {
   });
 }
 
-function isValidTonAddress(addr: string): boolean {
-  try {
-    Address.parse(addr.trim());
-    return true;
-  } catch {
-    return false;
-  }
+// تطبيع العنوان لأي إدخال raw/EQ إلى pretty EQ… مع احترام الشبكة
+function normalizeTonAddress(input: string): string {
+  const parsed = Address.parse(input.trim()); // يقبل 0:… أو EQ…
+  const isTestnet = (process.env.TON_NETWORK || "mainnet") !== "mainnet";
+  return parsed.toString({ bounceable: true, testOnly: isTestnet });
 }
+
+// JSON replacer آمن ضد BigInt
+const jsonSafe = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
 
 export function mountWallet(app: Express) {
   /** ✅ 1) إدارة عنوان المحفظة في البروفايل */
   app.get("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
+
+    // قد يكون المخزون raw سابقاً. طبعاً لا نكسر القديم، فقط نعرضه كما هو.
     res.json({ ok: true, walletAddress: (me as any).wallet_address ?? null });
   });
 
   app.post("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
-    const me = await getMe(req);
-    if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
+    try {
+      const me = await getMe(req);
+      if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-    const addr = String(req.body?.walletAddress || "").trim();
-    if (!isValidTonAddress(addr)) {
+      const input = String(req.body?.walletAddress || "").trim();
+      if (!input) {
+        // يعتبر إلغاء ربط إذا جاء فراغ
+        await db.update(users).set({ wallet_address: null, updatedAt: new Date() }).where(eq(users.id, me.id));
+        return res.json({ ok: true, walletAddress: null });
+      }
+
+      const pretty = normalizeTonAddress(input);
+
+      const [updated] = await db
+        .update(users)
+        .set({ wallet_address: pretty, updatedAt: new Date() })
+        .where(eq(users.id, me.id))
+        .returning({ wallet_address: users.wallet_address });
+
+      res.json({ ok: true, walletAddress: updated.wallet_address });
+    } catch (e: any) {
+      console.error("wallet/address error:", e);
       return res.status(400).json({ ok: false, error: "invalid_address" });
     }
-
-    const [updated] = await db
-      .update(users)
-      .set({ wallet_address: addr, updatedAt: new Date() })
-      .where(eq(users.id, me.id))
-      .returning({ id: users.id, wallet_address: users.wallet_address });
-
-    console.log(`✅ Wallet linked for user ${me.id}: ${addr}`);
-    res.json({ ok: true, walletAddress: updated.wallet_address });
   });
 
   app.delete("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-    await db
-      .update(users)
-      .set({ wallet_address: null, updatedAt: new Date() })
-      .where(eq(users.id, me.id));
-
-    console.log(`❌ Wallet unlinked for user ${me.id}`);
+    await db.update(users).set({ wallet_address: null, updatedAt: new Date() }).where(eq(users.id, me.id));
     res.json({ ok: true, walletAddress: null });
   });
 
@@ -123,7 +129,7 @@ export function mountWallet(app: Express) {
         })
         .returning();
 
-      // ✅ تعليق كـ payload BOC (standard op=0 + string)
+      // تعليق كـ payload BOC (standard op=0 + string)
       const commentCell = beginCell().storeUint(0, 32).storeStringTail(code).endCell();
       const payloadB64 = commentCell.toBoc().toString("base64");
 
@@ -138,6 +144,7 @@ export function mountWallet(app: Express) {
         ],
       } as const;
 
+      // ❗️الحرص على عدم إعادة BigInt في JSON
       res.status(201).json({
         ok: true,
         code,
@@ -145,7 +152,7 @@ export function mountWallet(app: Express) {
         amountTon,
         amountNano,
         txPayload,
-        id: row.id,
+        id: String((row as any).id),
       });
     } catch (e: unknown) {
       const err = e as Error;
@@ -192,7 +199,7 @@ export function mountWallet(app: Express) {
         confirmedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(and(eq(payments.id, waiting.id), eq(payments.status, "waiting"))) // ✅ double-spend safe
+      .where(and(eq(payments.id, waiting.id), eq(payments.status, "waiting"))) // double-spend safe
       .returning();
 
     await db.insert(walletLedger).values({
@@ -201,16 +208,16 @@ export function mountWallet(app: Express) {
       amount: String(v.amountTon),
       currency: "TON",
       refType: "deposit",
-      refId: updated.id,
+      refId: (updated as any).id,
       note: "Deposit confirmed",
     });
 
     res.json({
       ok: true,
       status: "paid",
-      amount: Number(updated.amount),
-      txHash: updated.txHash,
-      id: updated.id,
+      amount: Number((updated as any).amount),
+      txHash: (updated as any).txHash,
+      id: String((updated as any).id),
     });
   });
 
@@ -232,7 +239,7 @@ export function mountWallet(app: Express) {
     });
   });
 
-  /** ✅ 5) كشف الحركات */
+  /** ✅ 5) كشف الحركات (مع تحويل BigInt إلى string) */
   app.get("/api/wallet/ledger", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
@@ -244,6 +251,8 @@ export function mountWallet(app: Express) {
       .orderBy(desc(walletLedger.createdAt))
       .limit(50);
 
-    res.json({ ok: true, rows });
+    // نحوّل BigInt ضمنياً قبل الإرسال
+    const safeRows = JSON.parse(JSON.stringify(rows, jsonSafe));
+    res.json({ ok: true, rows: safeRows });
   });
 }
