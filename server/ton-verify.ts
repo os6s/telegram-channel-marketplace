@@ -1,4 +1,5 @@
 // server/ton-verify.ts
+import { Cell } from "@ton/core";
 
 // ✅ Toncenter API base + key
 const TCC_URL =
@@ -34,20 +35,32 @@ function norm(s: unknown) {
   return String(s ?? "").trim();
 }
 
+/** ✅ فكّ تعليق BOC: op=0 ثم string tail */
 function decodeComment(obj: any): string {
-  // toncenter variants: msg_data.text OR base64 in msg_data.body
+  // toncenter: قد تكون تحت in_msg.msg_data أو transaction.message.msg_data
   const md = obj?.msg_data ?? obj?.message?.msg_data;
   if (!md) return "";
+
+  // نص صريح إن وُجد
   if (typeof md.text === "string") return md.text;
-  if (typeof md.body === "string") {
-    try {
-      const txt = Buffer.from(md.body, "base64").toString("utf8");
-      return txt.replace(/\0+$/, "");
-    } catch {
-      return "";
-    }
+
+  // BOC Base64 في body
+  const b64 = typeof md.body === "string" ? md.body : undefined;
+  if (!b64) return "";
+
+  try {
+    const boc = Buffer.from(b64, "base64");
+    const cells = Cell.fromBoc(boc);
+    if (!cells.length) return "";
+    const slice = cells[0].beginParse();
+    // op
+    const op = slice.loadUint(32).toNumber();
+    if (op !== 0) return ""; // نتعامل فقط مع op=0 للتعليقات
+    const text = slice.loadStringTail();
+    return text.replace(/\0+$/, "");
+  } catch {
+    return "";
   }
-  return "";
 }
 
 function normalizeComment(s: string): string {
@@ -81,7 +94,7 @@ export async function verifyTonPayment(opts: {
 
 /**
  * تحقق من إيداع عبر الكود (comment) داخل in_msg
- * الآن يدعم: تطبيع التعليق + صفحات متعددة (حتى 200 معاملة).
+ * يدعم BOC، تطبيع التعليق، وصفحات متعددة.
  */
 export async function verifyTonDepositByComment(opts: {
   escrow: string;
@@ -92,7 +105,7 @@ export async function verifyTonDepositByComment(opts: {
   const code = normalizeComment(norm(opts.code));
   if (!addr || !code) return { ok: false, amountTon: 0 };
 
-  const MAX_TXS = 200; // history depth
+  const MAX_TXS = 200; // عمق التاريخ
   let fetched = 0;
   let lt: string | undefined;
 
@@ -101,6 +114,7 @@ export async function verifyTonDepositByComment(opts: {
       const url = new URL(`${TCC_URL}/getTransactions`);
       url.searchParams.set("address", addr);
       url.searchParams.set("limit", "20");
+      url.searchParams.set("archival", "true"); // ✅ يسمح بالتصفح الأعمق
       if (lt) url.searchParams.set("lt", lt);
 
       const data = await fetchJson<any>(url.toString());
@@ -118,9 +132,7 @@ export async function verifyTonDepositByComment(opts: {
         if (opts.minAmountTon && amountTon < opts.minAmountTon) continue;
 
         const txHash: string | undefined =
-          tx?.transaction_id?.hash ||
-          tx?.hash ||
-          undefined;
+          tx?.transaction_id?.hash || tx?.hash || undefined;
 
         return { ok: true, amountTon, txHash };
       }
