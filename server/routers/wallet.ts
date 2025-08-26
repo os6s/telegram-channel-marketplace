@@ -6,47 +6,43 @@ import { db } from "../db.js";
 import { payments, users, walletLedger, walletBalancesView } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { verifyTonDepositByComment } from "../ton-verify.js";
-import { Address, beginCell } from "@ton/core"; // validate + build BOC payload
+import { Address, beginCell } from "@ton/core";
 
 type TgUser = { id: number };
 
-// رمز تعليق قصير وفريد
+// تعليق قصير وفريد
 const genCode = () => "D" + crypto.randomBytes(4).toString("hex");
 
-// تحويل TON إلى nanoTON بدقة (يدعم أعداد < 1)
+// TON → nanoTON بدقة
 function toNano(ton: number): string {
   if (!Number.isFinite(ton) || ton <= 0) return "0";
   const [iRaw, fRaw = ""] = String(ton).trim().split(".");
   const i = (iRaw || "0").replace(/^0+(?=\d)/, "") || "0";
-  const frac = (fRaw + "000000000").slice(0, 9); // 9 digits
+  const frac = (fRaw + "000000000").slice(0, 9);
   return (BigInt(i) * 1000000000n + BigInt(frac || "0")).toString();
 }
 
 async function getMe(req: Request) {
   const tg = (req as any).telegramUser as TgUser | undefined;
   if (!tg?.id) return null;
-  return await db.query.users.findFirst({
-    where: eq(users.telegramId, BigInt(tg.id)),
-  });
+  return await db.query.users.findFirst({ where: eq(users.telegramId, BigInt(tg.id)) });
 }
 
-// تطبيع العنوان لأي إدخال raw/EQ إلى pretty EQ… مع احترام الشبكة
+// تطبيع إلى EQ… مع احترام الشبكة
 function normalizeTonAddress(input: string): string {
-  const parsed = Address.parse(input.trim()); // يقبل 0:… أو EQ…
+  const parsed = Address.parse(input.trim());
   const isTestnet = (process.env.TON_NETWORK || "mainnet") !== "mainnet";
   return parsed.toString({ bounceable: true, testOnly: isTestnet });
 }
 
-// JSON replacer آمن ضد BigInt
+// JSON replacer لِـ BigInt
 const jsonSafe = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
 
 export function mountWallet(app: Express) {
-  /** ✅ 1) إدارة عنوان المحفظة في البروفايل */
+  // 1) إدارة عنوان المحفظة
   app.get("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
-
-    // قد يكون المخزون raw سابقاً. طبعاً لا نكسر القديم، فقط نعرضه كما هو.
     res.json({ ok: true, walletAddress: (me as any).wallet_address ?? null });
   });
 
@@ -56,36 +52,52 @@ export function mountWallet(app: Express) {
       if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
       const input = String(req.body?.walletAddress || "").trim();
+
+      // إلغاء ربط إذا فارغ
       if (!input) {
-        // يعتبر إلغاء ربط إذا جاء فراغ
         await db.update(users).set({ wallet_address: null, updatedAt: new Date() }).where(eq(users.id, me.id));
-        return res.json({ ok: true, walletAddress: null });
+        const row = await db.query.users.findFirst({
+          columns: { wallet_address: true },
+          where: eq(users.id, me.id),
+        });
+        return res.json({ ok: true, walletAddress: row?.wallet_address ?? null });
       }
 
       const pretty = normalizeTonAddress(input);
 
-      const [updated] = await db
-        .update(users)
-        .set({ wallet_address: pretty, updatedAt: new Date() })
-        .where(eq(users.id, me.id))
-        .returning({ wallet_address: users.wallet_address });
+      // بدون returning() لتفادي TypeError
+      await db.update(users).set({ wallet_address: pretty, updatedAt: new Date() }).where(eq(users.id, me.id));
+      const row = await db.query.users.findFirst({
+        columns: { wallet_address: true },
+        where: eq(users.id, me.id),
+      });
 
-      res.json({ ok: true, walletAddress: updated.wallet_address });
-    } catch (e: any) {
+      return res.json({ ok: true, walletAddress: row?.wallet_address ?? pretty });
+    } catch (e) {
       console.error("wallet/address error:", e);
       return res.status(400).json({ ok: false, error: "invalid_address" });
     }
   });
 
   app.delete("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
-    const me = await getMe(req);
-    if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
+    try {
+      const me = await getMe(req);
+      if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-    await db.update(users).set({ wallet_address: null, updatedAt: new Date() }).where(eq(users.id, me.id));
-    res.json({ ok: true, walletAddress: null });
+      await db.update(users).set({ wallet_address: null, updatedAt: new Date() }).where(eq(users.id, me.id));
+      const row = await db.query.users.findFirst({
+        columns: { wallet_address: true },
+        where: eq(users.id, me.id),
+      });
+
+      return res.json({ ok: true, walletAddress: row?.wallet_address ?? null });
+    } catch (e) {
+      console.error("wallet/address delete error:", e);
+      return res.status(500).json({ ok: false, error: "wallet_unlink_failed" });
+    }
   });
 
-  /** ✅ 2) بدء الإيداع: توليد حمولة TonConnect مع تعليق BOC */
+  // 2) بدء الإيداع
   app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
     try {
       const escrow = (process.env.ESCROW_WALLET || "").trim();
@@ -98,7 +110,6 @@ export function mountWallet(app: Express) {
 
       const me = await getMe(req);
       if (!me) return res.status(404).json({ ok: false, error: "user_not_found" });
-
       if (!(me as any).wallet_address) {
         return res.status(400).json({ ok: false, error: "wallet_not_linked" });
       }
@@ -114,13 +125,13 @@ export function mountWallet(app: Express) {
           sellerId: null,
           kind: "deposit",
           locked: false,
-          amount: String(amountTon), // input amount (سيتم تحديثها عند التأكيد)
+          amount: String(amountTon),
           currency: "TON",
           feePercent: "0",
           feeAmount: "0",
           sellerAmount: "0",
           escrowAddress: escrow,
-          comment: code, // سنطابق به التحويل
+          comment: code,
           txHash: null,
           buyerConfirmed: false,
           sellerConfirmed: false,
@@ -129,22 +140,14 @@ export function mountWallet(app: Express) {
         })
         .returning();
 
-      // تعليق كـ payload BOC (standard op=0 + string)
       const commentCell = beginCell().storeUint(0, 32).storeStringTail(code).endCell();
       const payloadB64 = commentCell.toBoc().toString("base64");
 
       const txPayload = {
         validUntil: Math.floor(Date.now() / 1000) + 300,
-        messages: [
-          {
-            address: escrow,
-            amount: amountNano,
-            payload: payloadB64,
-          },
-        ],
+        messages: [{ address: escrow, amount: amountNano, payload: payloadB64 }],
       } as const;
 
-      // ❗️الحرص على عدم إعادة BigInt في JSON
       res.status(201).json({
         ok: true,
         code,
@@ -152,7 +155,7 @@ export function mountWallet(app: Express) {
         amountTon,
         amountNano,
         txPayload,
-        id: String((row as any).id),
+        id: String((row as any).id), // لا BigInt في JSON
       });
     } catch (e: unknown) {
       const err = e as Error;
@@ -161,7 +164,7 @@ export function mountWallet(app: Express) {
     }
   });
 
-  /** ✅ 3) التحقق من الإيداع عبر تعليق التحويل */
+  // 3) التحقق من الإيداع
   app.post("/api/wallet/deposit/status", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
@@ -199,7 +202,7 @@ export function mountWallet(app: Express) {
         confirmedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(and(eq(payments.id, waiting.id), eq(payments.status, "waiting"))) // double-spend safe
+      .where(and(eq(payments.id, waiting.id), eq(payments.status, "waiting")))
       .returning();
 
     await db.insert(walletLedger).values({
@@ -221,7 +224,7 @@ export function mountWallet(app: Express) {
     });
   });
 
-  /** ✅ 4) الرصيد */
+  // 4) الرصيد
   app.get("/api/wallet/balance", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
@@ -235,23 +238,18 @@ export function mountWallet(app: Express) {
     res.json({
       ok: true,
       currency: row[0]?.currency ?? "TON",
-      balance: Number(row[0]?.balance ?? 0).toFixed(9), // string precision
+      balance: Number(row[0]?.balance ?? 0).toFixed(9),
     });
   });
 
-  /** ✅ 5) كشف الحركات (مع تحويل BigInt إلى string) */
-  app.get("/api/wallet/ledger", tgAuth, async (req: Request, res: Response) => {
-    const me = await getMe(req);
-    if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
-
+  // 5) كشف الحركات
+  app.get("/api/wallet/ledger", tgAuth, async (_req: Request, res: Response) => {
     const rows = await db
       .select()
       .from(walletLedger)
-      .where(eq(walletLedger.userId, me.id))
       .orderBy(desc(walletLedger.createdAt))
       .limit(50);
 
-    // نحوّل BigInt ضمنياً قبل الإرسال
     const safeRows = JSON.parse(JSON.stringify(rows, jsonSafe));
     res.json({ ok: true, rows: safeRows });
   });
