@@ -72,7 +72,7 @@ export function mountWallet(app: Express) {
     res.json({ ok: true, walletAddress: null });
   });
 
-  /** ✅ 2) Initiate deposit (TonConnect payload) */
+    /** ✅ 2) Initiate deposit (TonConnect payload) */
   app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
     try {
       const escrow = (process.env.ESCROW_WALLET || "").trim();
@@ -85,6 +85,11 @@ export function mountWallet(app: Express) {
 
       const me = await getMe(req);
       if (!me) return res.status(404).json({ error: "user_not_found" });
+
+      // 🟢 check if wallet linked
+      if (!(me as any).wallet_address) {
+        return res.status(400).json({ error: "wallet_not_linked" });
+      }
 
       const code = genCode();
       const amountNano = toNano(amountTon);
@@ -120,6 +125,19 @@ export function mountWallet(app: Express) {
           },
         ],
       };
+
+      res.status(201).json({
+        code,
+        escrowAddress: escrow,
+        amountTon,
+        amountNano,
+        txPayload: payload,
+      });
+    } catch (e: any) {
+      console.error("deposit/initiate error:", e);
+      res.status(500).json({ error: e?.message || "deposit_initiate_failed" });
+    }
+  });
 
       res.status(201).json({
         code,
