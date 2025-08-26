@@ -1,78 +1,59 @@
 // client/src/components/profile/WalletTab.tsx
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
-import { TonConnectButton, useTonConnectUI, useTonWallet } from "@tonconnect/ui-react";
+import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
+import { Plus, Minus } from "lucide-react";
 
 export default function WalletTab() {
   const { t } = useLanguage();
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const [depositAmount, setDepositAmount] = useState("");
+  const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [amount, setAmount] = useState("");
   const [withdrawAddress, setWithdrawAddress] = useState("");
 
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
 
-  // ✅ العنوان المخزون في الباك
-  const { data: walletInfo } = useQuery({
-    queryKey: ["/api/wallet/address"],
-    queryFn: async () => await apiRequest("GET", "/api/wallet/address"),
-  });
-
-  // ✅ sync بين TonConnect والباك
-  useEffect(() => {
-    async function syncWallet() {
-      try {
-        const tonAddr = wallet?.account.address || "";
-        const dbAddr = walletInfo?.walletAddress || "";
-
-        if (tonAddr && tonAddr !== dbAddr) {
-          await apiRequest("POST", "/api/wallet/address", { walletAddress: tonAddr });
-          toast({
-            title: "Wallet linked",
-            description: `Connected: ${tonAddr.slice(0, 6)}…${tonAddr.slice(-4)}`,
-          });
-          qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
-        }
-
-        if (!tonAddr && dbAddr) {
-          await apiRequest("DELETE", "/api/wallet/address");
-          toast({ title: "Wallet unlinked", description: "Disconnected from Ton wallet" });
-          qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
-        }
-      } catch (e: any) {
-        toast({ title: "Wallet sync failed", description: e?.message || "", variant: "destructive" });
-      }
-    }
-    syncWallet();
-  }, [wallet?.account.address, walletInfo?.walletAddress]);
-
-  // ✅ الرصيد
+  // ✅ رصيد المحفظة
   const { data: balance } = useQuery({
     queryKey: ["/api/wallet/balance"],
     queryFn: async () => await apiRequest("GET", "/api/wallet/balance"),
   });
 
-  // ✅ المعاملات
-  const { data: ledger = [] } = useQuery({
-    queryKey: ["/api/wallet/ledger"],
-    queryFn: async () => await apiRequest("GET", "/api/wallet/ledger"),
-  });
+  // ✅ تحديث عنوان المحفظة عند الربط أو إلغاء الربط
+  useEffect(() => {
+    async function syncWallet() {
+      try {
+        const address = wallet?.account.address || "";
+        if (address) {
+          await apiRequest("POST", "/api/wallet/address", { walletAddress: address });
+          toast({ title: "Wallet linked", description: `${address.slice(0, 6)}…${address.slice(-4)}` });
+        } else {
+          await apiRequest("DELETE", "/api/wallet/address");
+          toast({ title: "Wallet unlinked", description: "Disconnected from Ton wallet" });
+        }
+        qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
+      } catch (e: any) {
+        toast({ title: "Failed to sync wallet", description: e?.message || "", variant: "destructive" });
+      }
+    }
+    syncWallet();
+  }, [wallet?.account.address]);
 
-  /** ✅ Deposit */
+  /** ✅ إيداع */
   async function handleDeposit() {
     try {
-      const amt = Number(depositAmount);
+      const amt = Number(amount);
       if (!amt || amt <= 0) {
         toast({ title: t("toast.invalidAmount") || "Invalid amount", variant: "destructive" });
         return;
@@ -81,109 +62,116 @@ export default function WalletTab() {
 
       if (wallet) {
         await tonConnectUI.sendTransaction(r.txPayload);
-        toast({ title: "Please confirm deposit in your wallet…" });
+        toast({ title: t("toast.confirmDeposit") || "Confirm deposit in your wallet…" });
       }
 
       const check = async () => {
         const status = await apiRequest("POST", "/api/wallet/deposit/status", { code: r.code, minTon: amt });
         if (status.status === "paid") {
-          toast({ title: "Deposit confirmed ✅", description: `Tx: ${status.txHash}` });
+          toast({ title: t("toast.depositConfirmed") || "Deposit confirmed ✅" });
           qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
-          qc.invalidateQueries({ queryKey: ["/api/wallet/ledger"] });
         } else {
           setTimeout(check, 5000);
         }
       };
       setTimeout(check, 5000);
+      setDepositOpen(false);
+      setAmount("");
     } catch (e: any) {
-      toast({ title: "Deposit failed", description: e?.message || "", variant: "destructive" });
+      toast({ title: t("toast.depositFailed") || "Deposit failed", description: e?.message || "", variant: "destructive" });
+    }
+  }
+
+  /** ✅ سحب */
+  async function handleWithdraw() {
+    try {
+      await apiRequest("POST", "/api/payouts", {
+        amount: Number(amount),
+        toAddress: withdrawAddress,
+      });
+      toast({ title: "Withdrawal request submitted" });
+      setWithdrawOpen(false);
+      setAmount("");
+      setWithdrawAddress("");
+      qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
+    } catch (e: any) {
+      toast({ title: "Withdraw failed", description: e?.message || "", variant: "destructive" });
     }
   }
 
   return (
     <div className="space-y-4">
-      {/* Wallet Connect */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("wallet.balance") || "Wallet Balance"}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-2xl font-semibold">
-            {balance?.balance ?? 0} {balance?.currency || "TON"}
-          </div>
+      {/* Widget */}
+      <Card className="flex items-center justify-between p-4">
+        {/* شعار TON */}
+        <img src="/ton-logo.svg" alt="TON" className="w-8 h-8 object-contain" />
 
-          <div className="flex flex-col gap-2">
-            <TonConnectButton />
+        {/* الرصيد */}
+        <div className="text-xl font-bold">
+          {balance?.balance ?? 0} {balance?.currency || "TON"}
+        </div>
 
-            {wallet && (
-              <div className="text-xs text-muted-foreground">
-                Connected: {wallet.account.address.slice(0, 6)}…{wallet.account.address.slice(-4)}
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <Input
-                placeholder={t("profilePage.depositPlaceholder") || "Enter amount"}
-                value={depositAmount}
-                onChange={(e) => setDepositAmount(e.target.value)}
-              />
-              <Button onClick={handleDeposit}>{t("profilePage.deposit") || "Deposit"}</Button>
-              <Button variant="secondary" onClick={() => setWithdrawOpen(true)}>
-                {t("wallet.withdraw") || "Withdraw"}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
+        {/* أزرار + و - */}
+        <div className="flex gap-2">
+          <Button size="icon" variant="outline" onClick={() => setDepositOpen(true)}>
+            <Plus className="w-4 h-4" />
+          </Button>
+          <Button size="icon" variant="outline" onClick={() => setWithdrawOpen(true)}>
+            <Minus className="w-4 h-4" />
+          </Button>
+        </div>
       </Card>
 
-      {/* Transactions */}
-      <Card>
-        <CardContent className="p-4 space-y-3">
-          <div className="font-semibold">{t("wallet.transactions") || "Transactions"}</div>
-          {ledger.length === 0 && (
-            <div className="text-muted-foreground text-sm">{t("wallet.empty") || "No transactions yet."}</div>
-          )}
-          {ledger.map((tx: any) => (
-            <div key={tx.id} className="flex justify-between items-center border-b py-2">
-              <div>
-                <div className="text-sm font-medium">
-                  {tx.refType} {tx.direction === "in" ? "🟢" : "🔴"}
-                </div>
-                <div className="text-xs text-muted-foreground">{tx.note}</div>
-              </div>
-              <div className="text-right">
-                <div className="font-semibold">{tx.amount} {tx.currency}</div>
-                <div className="text-xs opacity-70">{new Date(tx.createdAt).toLocaleString()}</div>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      {/* زر ربط/إلغاء ربط المحفظة */}
+      <Button
+        className="w-full"
+        variant={wallet ? "secondary" : "default"}
+        onClick={() => {
+          if (wallet) {
+            tonConnectUI.disconnect(); // إلغاء الربط
+          } else {
+            tonConnectUI.connectWallet(); // TonConnect
+          }
+        }}
+      >
+        {wallet ? "Unlink Wallet" : t("wallet.connect") || "Connect Wallet"}
+      </Button>
 
-      {/* Withdraw Modal */}
+      {/* Dialog الإيداع */}
+      <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("profilePage.deposit") || "Deposit"}</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder={t("profilePage.depositPlaceholder") || "Enter amount"}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+          <DialogFooter>
+            <Button onClick={handleDeposit}>Confirm Deposit</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog السحب */}
       <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("wallet.withdraw") || "Request Withdrawal"}</DialogTitle>
+            <DialogTitle>{t("wallet.withdraw") || "Withdraw"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <Input placeholder="Enter TON wallet address" value={withdrawAddress} onChange={(e) => setWithdrawAddress(e.target.value)} />
-            <Input placeholder="Enter amount" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} />
-          </div>
+          <Input
+            placeholder="Enter TON wallet address"
+            value={withdrawAddress}
+            onChange={(e) => setWithdrawAddress(e.target.value)}
+          />
+          <Input
+            placeholder="Enter amount"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
           <DialogFooter>
-            <Button
-              onClick={async () => {
-                await apiRequest("POST", "/api/payouts", {
-                  amount: Number(withdrawAmount),
-                  toAddress: withdrawAddress,
-                });
-                toast({ title: "Payout request submitted" });
-                setWithdrawOpen(false);
-                qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
-              }}
-            >
-              {t("wallet.withdraw")}
-            </Button>
+            <Button onClick={handleWithdraw}>{t("wallet.withdraw") || "Withdraw"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
