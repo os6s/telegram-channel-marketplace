@@ -5,7 +5,7 @@ import { db } from "../db.js";
 import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
 import { payouts, walletBalancesView, walletLedger, users } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
-import { Address } from "ton-core"; // ✅ for TON address validation
+import { Address } from "@ton/core"; // ✅ for TON address validation
 
 // ------------------ utils ------------------
 const createPayoutSchema = z.object({
