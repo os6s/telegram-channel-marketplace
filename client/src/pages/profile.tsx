@@ -3,7 +3,6 @@ import { useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SettingsModal } from "@/components/settings-modal";
 import { telegramWebApp } from "@/lib/telegram";
-import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/language-context";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { StatsCards } from "@/components/profile/StatsCards";
@@ -25,7 +24,6 @@ const N = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
 
 export default function ProfilePage() {
   const { t, lang } = useLanguage();
-  const { toast } = useToast();
 
   const [showSettings, setShowSettings] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -35,18 +33,28 @@ export default function ProfilePage() {
   const { data: user } = useMe();
   const uname = user?.username || tgUser?.username || null;
 
-  // ✅ جلب رصيد المحفظة
-  const { data: balance } = useQuery({
+  // ✅ Wallet balance
+  const { data: balance, isLoading: balanceLoading } = useQuery({
     queryKey: ["/api/wallet/balance"],
     queryFn: async () => await apiRequest("GET", "/api/wallet/balance"),
+    staleTime: 15_000, // cache for 15s
   });
 
-  const { data: myListings = [], isLoading: listingsLoading } = useMyListings(uname || undefined);
-  const { data: myActivities = [] } = useMyActivities(uname || undefined);
-  const { data: myDisputes = [], isLoading: disputesLoading } = useMyDisputes(uname || undefined);
+  const { data: myListings = [], isLoading: listingsLoading } = useMyListings(
+    uname || undefined,
+    { staleTime: 30_000 }
+  );
+  const { data: myActivities = [] } = useMyActivities(uname || undefined, {
+    staleTime: 30_000,
+  });
+  const { data: myDisputes = [], isLoading: disputesLoading } = useMyDisputes(
+    uname || undefined,
+    { staleTime: 30_000 }
+  );
 
   const stats = useMemo(() => {
-    if (!Array.isArray(myListings)) return { activeCount: 0, totalValue: "0.00", totalSubs: 0 };
+    if (!Array.isArray(myListings))
+      return { activeCount: 0, totalValue: "0.00", totalSubs: 0 };
     const active = myListings.filter((l: any) => l.isActive);
     const activeCount = active.length;
     const totalValue = active.reduce(
@@ -67,7 +75,9 @@ export default function ProfilePage() {
       if (a.type === "buy") {
         type = "SOLD";
         title = t("activityPage.locked") || "Funds locked in escrow";
-      } else if (["buyer_confirm", "seller_confirm", "admin_release"].includes(a.type)) {
+      } else if (
+        ["buyer_confirm", "seller_confirm", "admin_release"].includes(a.type)
+      ) {
         type = "RELEASED";
         title = t("activityPage.released") || "Funds release approved";
       } else if (["admin_refund", "cancel"].includes(a.type)) {
@@ -87,7 +97,8 @@ export default function ProfilePage() {
   if (!tgUser?.id && !user?.id) {
     return (
       <div className="p-6 text-center text-red-500">
-        {t("activityPage.unauthorized") || "⚠️ Please open this app from Telegram."}
+        {t("activityPage.unauthorized") ||
+          "⚠️ Please open this app from Telegram."}
       </div>
     );
   }
@@ -101,7 +112,11 @@ export default function ProfilePage() {
           onBack={() => window.history.back()}
           onOpenSettings={() => setShowSettings(true)}
           t={t}
-          balance={balance}
+          balance={
+            balanceLoading
+              ? { balance: 0, currency: "…" }
+              : balance || { balance: 0, currency: "TON" }
+          }
         />
       </div>
 
@@ -118,9 +133,15 @@ export default function ProfilePage() {
       <div className="px-4 py-6">
         <Tabs defaultValue="listings" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="listings">{t("profilePage.tabs.listings")}</TabsTrigger>
-            <TabsTrigger value="activity">{t("profilePage.tabs.activity")}</TabsTrigger>
-            <TabsTrigger value="disputes">{t("profilePage.tabs.disputes")}</TabsTrigger>
+            <TabsTrigger value="listings">
+              {t("profilePage.tabs.listings")}
+            </TabsTrigger>
+            <TabsTrigger value="activity">
+              {t("profilePage.tabs.activity")}
+            </TabsTrigger>
+            <TabsTrigger value="disputes">
+              {t("profilePage.tabs.disputes")}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="listings" className="space-y-4">
@@ -133,16 +154,26 @@ export default function ProfilePage() {
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-4">
-            <ActivityTab events={events as any} emptyText={t("activityPage.empty")} />
+            <ActivityTab
+              events={events as any}
+              emptyText={t("activityPage.empty")}
+            />
           </TabsContent>
 
           <TabsContent value="disputes" className="space-y-4">
-            <DisputesTab disputes={myDisputes as any} isLoading={disputesLoading} />
+            <DisputesTab
+              disputes={myDisputes as any}
+              isLoading={disputesLoading}
+            />
           </TabsContent>
         </Tabs>
       </div>
 
-      <ActivityDialog open={dialogOpen} onOpenChange={setDialogOpen} activityId={dialogActivityId} />
+      <ActivityDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        activityId={dialogActivityId}
+      />
       <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
     </div>
   );
