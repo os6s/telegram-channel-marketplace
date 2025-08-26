@@ -1,3 +1,5 @@
+اي، هذا كامل ومصحّح وفيه export default App بنهاية الملف:
+
 // client/src/App.tsx
 import { Switch, Route, Link, useLocation } from "wouter";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
@@ -202,3 +204,5 @@ function App() {
     </QueryClientProvider>
   );
 }
+
+export default App;
