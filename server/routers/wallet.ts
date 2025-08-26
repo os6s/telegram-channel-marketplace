@@ -72,7 +72,7 @@ export function mountWallet(app: Express) {
     res.json({ ok: true, walletAddress: null });
   });
 
-    /** ✅ 2) Initiate deposit (TonConnect payload) */
+  /** ✅ 2) Initiate deposit (TonConnect payload) */
   app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
     try {
       const escrow = (process.env.ESCROW_WALLET || "").trim();
@@ -133,22 +133,10 @@ export function mountWallet(app: Express) {
         amountNano,
         txPayload: payload,
       });
-    } catch (e: any) {
-      console.error("deposit/initiate error:", e);
-      res.status(500).json({ error: e?.message || "deposit_initiate_failed" });
-    }
-  });
-
-      res.status(201).json({
-        code,
-        escrowAddress: escrow,
-        amountTon,
-        amountNano,
-        txPayload: payload,
-      });
-    } catch (e: any) {
-      console.error("deposit/initiate error:", e);
-      res.status(500).json({ error: e?.message || "deposit_initiate_failed" });
+    } catch (e: unknown) {
+      const err = e as Error;
+      console.error("deposit/initiate error:", err);
+      res.status(500).json({ error: err?.message || "deposit_initiate_failed" });
     }
   });
 
