@@ -27,7 +27,16 @@
     "loadMore": "تحميل المزيد من العروض",
     "salesCountLabel": "عدد المبيعات",
     "salesVolumeLabel": "حجم المبيعات",
-    "activeListingsLabel": "العروض النشطة"
+    "activeListingsLabel": "العروض النشطة",
+
+    "toastDeleted": "تم حذف الإعلان بنجاح",
+    "toastDeleteError": "فشل حذف الإعلان",
+    "toastBuyConfirm": "هل تريد شراء هذا العنصر؟",
+    "toastBuySuccess": "تم إنشاء الطلب. الأموال محجوزة في الضمان.",
+    "toastBuyError": "فشل إنشاء الطلب",
+    "toastInsufficient": "رصيد غير كافٍ — يرجى الإيداع أولاً.",
+    "toastUnauthorized": "غير مصرح. افتح الميني أب داخل تيليجرام لتسجيل الدخول.",
+    "buyPrompt": "هل أنت متأكد أنك تريد شراء"
   },
 
   "sell": {
@@ -246,5 +255,9 @@
       "loadFailed": "فشل تحميل الطلبات",
       "disputeLoadFailed": "فشل تحميل النزاع"
     }
-  }
+  },
+
+  "cancel": "إلغاء",
+  "confirm": "تأكيد",
+  "loading": "جاري التحميل..."
 }
