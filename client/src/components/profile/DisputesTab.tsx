@@ -9,25 +9,24 @@ type Dispute = {
   id: string;
   status: "open" | "pending" | "resolved" | "cancelled";
   createdAt?: string;
-  reason?: string;
 
-  // payment
-  paymentId?: string;
-  paymentAmount?: string;
-  paymentCurrency?: string;
-
-  // listing
+  // product info
   listingId?: string;
   listingTitle?: string;
   listingPrice?: string;
   listingCurrency?: string;
-  listingPlatform?: string;
-  listingKind?: string;
-  listingSellerUsername?: string;
+
+  // payment info
+  paymentAmount?: string;
+  paymentCurrency?: string;
 
   // users
   buyerUsername?: string;
   sellerUsername?: string;
+
+  // dispute info
+  reason?: string;
+  resolvedAt?: string;
 };
 
 const statusStyle: Record<Dispute["status"], string> = {
@@ -81,43 +80,70 @@ export function DisputesTab({
     <div className="space-y-3">
       {disputes.map((d) => (
         <Card key={d.id}>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="flex-1 min-w-0">
-              {/* Top row: ID + status */}
-              <div className="flex items-center gap-2">
-                <div className="font-medium truncate">
-                  #{d.id} · {d.listingTitle || t("disputes.listing") || "Listing"}
-                </div>
-                <Badge className={statusStyle[d.status]}>
-                  {t(`disputes.status.${d.status}`) || d.status}
-                </Badge>
-              </div>
-
-              {/* Product & Payment Info */}
-              <div className="text-xs text-muted-foreground mt-1">
-                {d.listingPlatform ? `[${d.listingPlatform}] ` : ""}
-                {d.listingKind ? `${d.listingKind} · ` : ""}
-                {d.listingPrice && d.listingCurrency
-                  ? `${d.listingPrice} ${d.listingCurrency}`
-                  : ""}
-              </div>
-
-              {/* Buyer & Seller */}
-              <div className="text-xs text-muted-foreground mt-1">
-                {t("disputes.buyer") || "Buyer"}: @{d.buyerUsername || "—"} ·{" "}
-                {t("disputes.seller") || "Seller"}: @{d.sellerUsername || "—"}
-              </div>
-
-              {/* Created date */}
-              <div className="text-xs text-muted-foreground mt-1">
-                {d.createdAt ? new Date(d.createdAt).toLocaleString() : ""}
-              </div>
+          <CardContent className="p-4 flex flex-col gap-2">
+            {/* Header: ID + Status */}
+            <div className="flex items-center justify-between">
+              <div className="font-medium">#{d.id}</div>
+              <Badge className={statusStyle[d.status]}>
+                {t(`disputes.status.${d.status}`) || d.status}
+              </Badge>
             </div>
 
-            <DisputeActionMenu
-              onOpenChat={() => (window.location.href = `/disputes/${d.id}`)}
-              onViewDetails={() => (window.location.href = `/disputes/${d.id}`)}
-            />
+            {/* Product Info */}
+            <div className="text-sm text-foreground">
+              <strong>{t("disputes.product") || "Product"}:</strong>{" "}
+              {d.listingTitle || t("disputes.listing") || "Listing"}{" "}
+              {d.listingPrice && d.listingCurrency && (
+                <span className="text-muted-foreground">
+                  ({d.listingPrice} {d.listingCurrency})
+                </span>
+              )}
+            </div>
+
+            {/* Payment Info */}
+            {d.paymentAmount && (
+              <div className="text-sm text-foreground">
+                <strong>{t("disputes.payment") || "Payment"}:</strong>{" "}
+                {d.paymentAmount} {d.paymentCurrency || "TON"}
+              </div>
+            )}
+
+            {/* Buyer & Seller */}
+            <div className="text-sm text-foreground">
+              <strong>{t("disputes.buyer") || "Buyer"}:</strong>{" "}
+              @{d.buyerUsername || "—"}
+            </div>
+            <div className="text-sm text-foreground">
+              <strong>{t("disputes.seller") || "Seller"}:</strong>{" "}
+              @{d.sellerUsername || "—"}
+            </div>
+
+            {/* Reason */}
+            {d.reason && (
+              <div className="text-sm text-muted-foreground">
+                <strong>{t("disputes.reason") || "Reason"}:</strong> {d.reason}
+              </div>
+            )}
+
+            {/* Dates */}
+            <div className="text-xs text-muted-foreground">
+              {t("disputes.created") || "Created"}:{" "}
+              {d.createdAt ? new Date(d.createdAt).toLocaleString() : "—"}
+              {d.status === "resolved" && d.resolvedAt && (
+                <> · {t("disputes.resolvedAt") || "Resolved"}:{" "}
+                {new Date(d.resolvedAt).toLocaleString()}</>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="mt-2 flex justify-end">
+              <DisputeActionMenu
+                onOpenChat={() => (window.location.href = `/disputes/${d.id}`)}
+                onViewDetails={() =>
+                  (window.location.href = `/disputes/${d.id}`)
+                }
+              />
+            </div>
           </CardContent>
         </Card>
       ))}
