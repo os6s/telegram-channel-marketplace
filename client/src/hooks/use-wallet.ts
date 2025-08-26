@@ -7,8 +7,8 @@ export function useWalletAddress() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  // GET العنوان
-  const query = useQuery({
+  // ✅ GET wallet address
+  const query = useQuery<string | null>({
     queryKey: ["/api/wallet/address"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/wallet/address");
@@ -17,20 +17,22 @@ export function useWalletAddress() {
     staleTime: 30_000,
   });
 
-  // POST/DELETE تحديث العنوان
+  // ✅ POST/DELETE wallet address
   const mutation = useMutation({
     mutationFn: async (addr: string | null) => {
       if (addr) {
-        // ربط
-        return await apiRequest("POST", "/api/wallet/address", { walletAddress: addr });
+        const normalized = String(addr).trim();
+        return await apiRequest("POST", "/api/wallet/address", {
+          walletAddress: normalized,
+        });
       } else {
-        // إلغاء الربط
         return await apiRequest("DELETE", "/api/wallet/address");
       }
     },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
       qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
+
       const a = res?.walletAddress;
       if (a) {
         toast({
@@ -42,10 +44,11 @@ export function useWalletAddress() {
       }
     },
     onError: (e: any) => {
-      // 🔴 تحسين عرض الخطأ: إذا السيرفر رجع {error:"..."} اعرضه
-      let msg = e?.message || "Unknown error";
-      if (e?.response?.data?.error) msg = e.response.data.error;
+      let msg = "Unknown error";
       if (typeof e === "string") msg = e;
+      else if (e?.error) msg = e.error;
+      else if (e?.message) msg = e.message;
+
       toast({
         title: "Wallet update failed",
         description: msg,
@@ -56,11 +59,12 @@ export function useWalletAddress() {
 
   return {
     ...query,
-    updateWallet: mutation.mutate, // updateWallet(address | null)
+    updateWallet: mutation.mutate, // 🔥 call updateWallet(address | null)
+    linking: mutation.isPending,
   };
 }
 
-/** رصيد المحفظة داخل المنصّة */
+/** رصيد المحفظة */
 export function useWalletBalance() {
   return useQuery({
     queryKey: ["/api/wallet/balance"],
