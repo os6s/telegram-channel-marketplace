@@ -4,7 +4,7 @@ import { db } from "../db.js";
 import { eq } from "drizzle-orm";
 import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
 import { users, walletBalancesView } from "@shared/schema";
-import { Address } from "ton-core"; // ✅ better address validation
+import { Address } from "@ton/core"; // ✅ better address validation
 
 const norm = (v: unknown) => String(v ?? "").trim();
 
