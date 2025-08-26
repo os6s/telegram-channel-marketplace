@@ -2,38 +2,40 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-/**
- * Hook: Fetch linked wallet address from backend
- */
+/** جلب/تحديث عنوان المحفظة */
 export function useWalletAddress() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  // ✅ Fetch linked wallet
+  // GET العنوان
   const query = useQuery({
-    queryKey: ["/api/me/wallet"],
+    queryKey: ["/api/wallet/address"],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/me/wallet");
+      const res = await apiRequest("GET", "/api/wallet/address");
       return res?.walletAddress || null;
     },
     staleTime: 30_000,
   });
 
-  // ✅ Mutation: update wallet
+  // POST/DELETE تحديث العنوان
   const mutation = useMutation({
     mutationFn: async (addr: string | null) => {
-      if (!addr) {
-        return await apiRequest("POST", "/api/me/wallet", { walletAddress: "" });
+      if (addr) {
+        // ربط
+        return await apiRequest("POST", "/api/wallet/address", { walletAddress: addr });
+      } else {
+        // إلغاء الربط
+        return await apiRequest("DELETE", "/api/wallet/address");
       }
-      return await apiRequest("POST", "/api/me/wallet", { walletAddress: addr });
     },
     onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ["/api/me/wallet"] });
+      qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
       qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
-      if (res?.walletAddress) {
+      const a = res?.walletAddress;
+      if (a) {
         toast({
           title: "Wallet linked",
-          description: res.walletAddress.slice(0, 6) + "…" + res.walletAddress.slice(-4),
+          description: a.slice(0, 6) + "…" + a.slice(-4),
         });
       } else {
         toast({ title: "Wallet unlinked" });
@@ -50,13 +52,11 @@ export function useWalletAddress() {
 
   return {
     ...query,
-    updateWallet: mutation.mutate, // call updateWallet(address | null)
+    updateWallet: mutation.mutate, // updateWallet(address | null)
   };
 }
 
-/**
- * Hook: Fetch wallet balance
- */
+/** رصيد المحفظة داخل المنصّة */
 export function useWalletBalance() {
   return useQuery({
     queryKey: ["/api/wallet/balance"],
