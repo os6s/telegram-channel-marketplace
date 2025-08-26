@@ -24,18 +24,15 @@ export const activitiesView = pgView("activities_view", {
 ========================= */
 export const disputesView = pgView("disputes_view", {
   id: uuid("id"),
-
-  // dispute info
-  status: varchar("status", { length: 32 }),
-  reason: varchar("reason", { length: 2048 }),
   createdAt: timestamp("created_at", { withTimezone: true }),
+  status: varchar("status", { length: 32 }),
 
-  // payment reference
+  // payment info
   paymentId: uuid("payment_id"),
   paymentAmount: numeric("payment_amount", { precision: 18, scale: 8 }),
   paymentCurrency: varchar("payment_currency", { length: 8 }),
 
-  // listing / product info
+  // listing info
   listingId: uuid("listing_id"),
   listingTitle: varchar("listing_title", { length: 200 }),
   listingPrice: numeric("listing_price", { precision: 18, scale: 8 }),
@@ -44,15 +41,18 @@ export const disputesView = pgView("disputes_view", {
   listingKind: varchar("listing_kind", { length: 32 }),
   listingSellerUsername: varchar("listing_seller_username", { length: 64 }),
 
-  // buyer info
+  // users
   buyerId: uuid("buyer_id"),
   buyerUsername: varchar("buyer_username", { length: 64 }),
   buyerTelegramId: varchar("buyer_telegram_id", { length: 64 }),
-
-  // seller info
   sellerId: uuid("seller_id"),
   sellerUsername: varchar("seller_username", { length: 64 }),
   sellerTelegramId: varchar("seller_telegram_id", { length: 64 }),
+
+  // dispute info
+  reason: varchar("reason", { length: 2048 }),
+  evidence: varchar("evidence", { length: 2048 }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
 }).existing();
 
 /* =========================
