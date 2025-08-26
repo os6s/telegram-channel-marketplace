@@ -116,27 +116,39 @@ export function mountWallet(app: Express) {
     }
   });
 
-  /** 2) Deposit initiate */
-  app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
+  // 2) بدء الإيداع: يولّد TonConnect payload مع تعليق BOC
+app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
+  try {
+    const escrowRaw = (process.env.ESCROW_WALLET || "").trim();
+    if (!escrowRaw) return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
+
+    // ✅ Normalize escrow to EQ... form
+    let escrow: string;
     try {
-      const escrow = (process.env.ESCROW_WALLET || "").trim();
-      if (!escrow) return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
+      escrow = Address.parse(escrowRaw).toString({ bounceable: true });
+    } catch {
+      return res.status(500).json({ ok: false, error: "invalid_ESCROW_WALLET" });
+    }
 
-      const amountTon = Number((req.body as any)?.amountTon);
-      if (!Number.isFinite(amountTon) || amountTon <= 0) {
-        return res.status(400).json({ ok: false, error: "invalid_amount" });
-      }
+    const amountTon = Number((req.body as any)?.amountTon);
+    if (!Number.isFinite(amountTon) || amountTon <= 0) {
+      return res.status(400).json({ ok: false, error: "invalid_amount" });
+    }
 
-      const me = await getMe(req);
-      if (!me) return res.status(404).json({ ok: false, error: "user_not_found" });
-      if (!me.walletAddress) {
-        return res.status(400).json({ ok: false, error: "wallet_not_linked" });
-      }
+    const me = await getMe(req);
+    if (!me) return res.status(404).json({ ok: false, error: "user_not_found" });
+    if (!me.wallet_address) {
+      return res.status(400).json({ ok: false, error: "wallet_not_linked" });
+    }
 
-      const code = genCode();
-      const amountNano = toNano(amountTon);
+    const code = genCode();
 
-      const [p] = await db.insert(payments).values({
+    // ✅ convert TON → nanoTON string
+    const amountNano = toNano(amountTon); // returns string
+
+    const [p] = await db
+      .insert(payments)
+      .values({
         listingId: null,
         buyerId: me.id,
         sellerId: null,
@@ -154,31 +166,40 @@ export function mountWallet(app: Express) {
         sellerConfirmed: false,
         status: "waiting",
         adminAction: "none",
-      }).returning({ id: payments.id });
+      })
+      .returning({ id: payments.id });
 
-      const commentCell = beginCell().storeUint(0, 32).storeStringTail(code).endCell();
-      const payloadB64 = commentCell.toBoc().toString("base64");
+    // تعليق BOC: op=0 + string(code)
+    const commentCell = beginCell().storeUint(0, 32).storeStringTail(code).endCell();
+    const payloadB64 = commentCell.toBoc().toString("base64");
 
-      const txPayload = {
-        validUntil: Math.floor(Date.now() / 1000) + 300,
-        messages: [{ address: escrow, amount: amountNano, payload: payloadB64 }],
-      } as const;
+    // ✅ amount must be string of nanoTON
+    const txPayload = {
+      validUntil: Math.floor(Date.now() / 1000) + 300,
+      messages: [
+        {
+          address: escrow,
+          amount: amountNano, // must be string
+          payload: payloadB64,
+        },
+      ],
+    } as const;
 
-      res.status(201).json({
-        ok: true,
-        code,
-        escrowAddress: escrow,
-        amountTon,
-        amountNano,
-        txPayload,
-        id: String(p.id),
-      });
-    } catch (e: unknown) {
-      const err = e as Error;
-      console.error("deposit/initiate error:", err);
-      res.status(500).json({ ok: false, error: err?.message || "deposit_initiate_failed" });
-    }
-  });
+    res.status(201).json({
+      ok: true,
+      code,
+      escrowAddress: escrow,
+      amountTon,
+      amountNano,
+      txPayload,
+      id: String(p.id), // avoid bigint
+    });
+  } catch (e: unknown) {
+    const err = e as Error;
+    console.error("deposit/initiate error:", err);
+    res.status(500).json({ ok: false, error: err?.message || "deposit_initiate_failed" });
+  }
+});
 
   /** 3) Deposit status check */
   app.post("/api/wallet/deposit/status", tgAuth, async (req: Request, res: Response) => {
