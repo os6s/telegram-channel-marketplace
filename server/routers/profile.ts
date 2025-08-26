@@ -3,35 +3,30 @@ import type { Express, Request, Response } from "express";
 import { db } from "../db.js";
 import { eq } from "drizzle-orm";
 import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
-
-// استيراد موحّد من الإندكس
 import { users, walletBalancesView } from "@shared/schema";
-
-// Base64url TON addresses (bounceable/non‑bounceable, friendly format)
-const RE_TON_ADDR = /^E[QA][A-Za-z0-9_-]{46,}$/;
+import { Address } from "ton-core"; // ✅ better address validation
 
 const norm = (v: unknown) => String(v ?? "").trim();
 
 async function getMeByTelegram(req: Request) {
   const tg = (req as any).telegramUser as { id: number } | undefined;
   if (!tg?.id) return null;
-  const row = await db.query.users.findFirst({
-    where: eq(users.telegramId, Number(tg.id)),
+  return await db.query.users.findFirst({
+    where: eq(users.telegramId, BigInt(tg.id)),
   });
-  return row ?? null;
 }
 
 export function mountProfile(app: Express) {
-  // Current user + balance من الفيو wallet_balances
+  /** ✅ Current user + balance (wallet_balances_view) */
   app.get("/api/me", tgAuth, async (req: Request, res: Response) => {
     const me = await getMeByTelegram(req);
     if (!me) return res.status(404).json({ error: "user_not_found" });
 
-    // نجيب الرصيد من الفيو (إن وُجد)
     const balRow = await db
       .select({
         balance: walletBalancesView.balance,
         currency: walletBalancesView.currency,
+        walletAddress: walletBalancesView.walletAddress,
       })
       .from(walletBalancesView)
       .where(eq(walletBalancesView.userId, me.id))
@@ -39,22 +34,22 @@ export function mountProfile(app: Express) {
 
     const balance = Number(balRow[0]?.balance ?? 0);
 
-    // نرجّع نفس بيانات المستخدم + balance
     return res.json({
       ...me,
       balance: +balance.toFixed(9),
       balanceCurrency: balRow[0]?.currency ?? "TON",
+      walletAddress: balRow[0]?.walletAddress ?? me.walletAddress ?? null,
     });
   });
 
-  // Read payout wallet (wallet_address)
+  /** ✅ Read payout wallet */
   app.get("/api/me/wallet", tgAuth, async (req: Request, res: Response) => {
     const me = await getMeByTelegram(req);
     if (!me) return res.status(404).json({ error: "user_not_found" });
     return res.json({ walletAddress: me.walletAddress ?? null });
   });
 
-  // Update payout wallet (wallet_address)
+  /** ✅ Update payout wallet */
   app.post("/api/me/wallet", tgAuth, async (req: Request, res: Response) => {
     const me = await getMeByTelegram(req);
     if (!me) return res.status(404).json({ error: "user_not_found" });
@@ -71,8 +66,10 @@ export function mountProfile(app: Express) {
       return res.json({ walletAddress: updated?.walletAddress ?? null });
     }
 
-    // Validate TON friendly address format
-    if (!RE_TON_ADDR.test(raw)) {
+    // Validate TON address with ton-core
+    try {
+      Address.parse(raw);
+    } catch {
       return res.status(400).json({ error: "invalid_wallet" });
     }
 
@@ -89,7 +86,6 @@ export function mountProfile(app: Express) {
 
       return res.json({ walletAddress: updated?.walletAddress ?? raw });
     } catch (e: any) {
-      // احتمال فشل بسبب UNIQUE constraint
       const msg = String(e?.message || "");
       if (/duplicate key value|unique/i.test(msg)) {
         return res.status(409).json({ error: "wallet_already_in_use" });
