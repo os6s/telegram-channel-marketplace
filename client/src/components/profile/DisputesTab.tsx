@@ -90,6 +90,7 @@ export function DisputesTab({
       {disputes.map((d) => (
         <Card key={d.id}>
           <CardContent className="p-4 flex flex-col gap-3">
+            {/* header row */}
             <div className="flex items-center justify-between">
               <div className="font-medium truncate">
                 #{d.id} · {d.listingTitle || t("disputes.listing") || "Listing"}
@@ -99,14 +100,22 @@ export function DisputesTab({
               </Badge>
             </div>
 
-            {/* product info */}
-            {d.listingTitle && (
-              <div className="text-sm text-foreground">
-                {d.listingTitle} — {d.listingPrice} {d.listingCurrency}
-              </div>
-            )}
+            {/* product + payment info */}
+            <div className="text-sm text-foreground">
+              {d.listingTitle && (
+                <>
+                  {d.listingTitle} — {d.listingPrice} {d.listingCurrency}
+                </>
+              )}
+              {d.paymentAmount && (
+                <div className="text-xs text-muted-foreground">
+                  {t("disputes.payment") || "Payment"}: {d.paymentAmount}{" "}
+                  {d.paymentCurrency || "TON"}
+                </div>
+              )}
+            </div>
 
-            {/* buyer/seller */}
+            {/* buyer/seller info */}
             <div className="text-xs text-muted-foreground">
               {t("disputes.buyer") || "Buyer"}:{" "}
               {d.buyerUsername || d.buyerTelegramId || "—"} ·{" "}
@@ -114,7 +123,7 @@ export function DisputesTab({
               {d.sellerUsername || d.sellerTelegramId || "—"}
             </div>
 
-            {/* created/resolved */}
+            {/* created + resolved dates */}
             <div className="text-xs text-muted-foreground">
               {t("disputes.created") || "Created"}:{" "}
               {d.createdAt ? new Date(d.createdAt).toLocaleString() : "—"}
