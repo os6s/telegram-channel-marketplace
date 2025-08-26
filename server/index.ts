@@ -1,3 +1,5 @@
+
+
 // server/index.ts
 import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
@@ -24,7 +26,11 @@ if (process.env.NODE_ENV === "production") {
 const app = express();
 app.set("trust proxy", 1);
 
-// Security headers
+// ===== 1) Body parsers (لازم قبل كل الراوترات) =====
+app.use(express.json({ limit: "200kb" }));
+app.use(express.urlencoded({ extended: false, limit: "200kb" }));
+
+// ===== 2) أمن عام =====
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 
 // CSP
@@ -51,7 +57,9 @@ app.use(hpp());
 // CORS
 const allowRenderWildcard = process.env.ALLOW_RENDER_ORIGIN === "true";
 const allowed = (process.env.WEBAPP_URL || process.env.WEBAPP_URLS || "")
-  .split(",").map((s) => s.trim()).filter(Boolean);
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
@@ -79,10 +87,6 @@ app.use(
   })
 );
 
-// Body limits
-app.use(express.json({ limit: "200kb" }));
-app.use(express.urlencoded({ extended: false, limit: "200kb" }));
-
 // Inject Telegram user if initData present
 app.use(tgOptionalAuth);
 
@@ -92,20 +96,27 @@ app.use("/webhook/telegram", rateLimit({ windowMs: 60_000, max: 120 }));
 
 app.get(["/health", "/healthz"], (_req, res) => res.type("text").send("ok"));
 
-// API logger
+// ===== 3) API logger آمن ضد BigInt =====
 app.use((req, res, next) => {
   const t0 = Date.now();
   const pathUrl = req.path;
   let captured: unknown;
-  const orig = res.json as any;
+
+  const origJson = res.json.bind(res);
   (res as any).json = function (body: unknown, ...args: unknown[]) {
     captured = body;
-    return orig.apply(this, [body, ...args]);
+    return origJson(body, ...args);
   };
+
   res.on("finish", () => {
     if (pathUrl.startsWith("/api") || pathUrl.startsWith("/webhook")) {
+      const replacer = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
       let line = `${req.method} ${pathUrl} ${res.statusCode} in ${Date.now() - t0}ms`;
-      if (captured) { try { line += ` :: ${JSON.stringify(captured)}`; } catch {} }
+      if (captured) {
+        try {
+          line += ` :: ${JSON.stringify(captured, replacer)}`;
+        } catch {}
+      }
       if (line.length > 160) line = line.slice(0, 159) + "…";
       log(line);
     }
@@ -113,19 +124,24 @@ app.use((req, res, next) => {
   next();
 });
 
+// ===== 4) Routes mounting =====
 (async () => {
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.WEBAPP_URL || "";
   if (!publicBaseUrl) throw new Error("PUBLIC_BASE_URL or WEBAPP_URL must be set");
 
-  // All routes are mounted inside registerRoutes (webhook + REST)
+  // كل الراوترات (webhook + REST)
   const server = await registerRoutes(app);
 
-  // Error handler
+  // ===== 5) Global error handler يمنع 502 =====
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    console.error("UNCAUGHT:", err);
     const e = err as { status?: number; statusCode?: number; message?: string };
-    res.status(e?.status || e?.statusCode || 500).json({ message: e?.message || "Internal Server Error" });
+    res
+      .status(e?.status || e?.statusCode || 500)
+      .json({ ok: false, error: e?.message || "internal_error" });
   });
 
+  // Dev server أو ملفات الستاتك
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {
@@ -135,10 +151,14 @@ app.use((req, res, next) => {
   // SPA fallback
   app.get("*", (req: Request, res: Response) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/webhook")) {
-      return res.status(404).json({ error: "Not Found" });
+      return res.status(404).json({ ok: false, error: "not_found" });
     }
     return res.sendFile(path.resolve(__dirname, "../public/index.html"));
   });
+
+  // حراس أخطاء عملية
+  process.on("unhandledRejection", (r) => console.error("unhandledRejection:", r));
+  process.on("uncaughtException", (e) => console.error("uncaughtException:", e));
 
   const port = parseInt(process.env.PORT || "5000", 10);
   server.listen(port, "0.0.0.0", () => log(`serving on port ${port}`));
