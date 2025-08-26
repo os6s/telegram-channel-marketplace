@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Settings, ArrowLeft, Plus, Minus } from "lucide-react";
 
-import tonIconUrl from "@/assets/icons/ton.svg?url"; // صورة فقط
+import tonIconUrl from "@/assets/icons/ton.svg?url"; // image only
 
 import { useLanguage } from "@/contexts/language-context";
 import { useToast } from "@/hooks/use-toast";
@@ -63,17 +63,26 @@ export function ProfileHeader({
 
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
+  // ✅ sync wallet only if changed
   useEffect(() => {
-    updateWallet(address || null);
-  }, [address, updateWallet]);
+    if (address && address !== linkedWallet) {
+      updateWallet(address);
+    }
+  }, [address, linkedWallet, updateWallet]);
 
   async function handleConnect() {
     try {
       setBusy(true);
       const addr = await waitForConnect(tonConnectUI);
-      updateWallet(addr);
+      if (addr && addr !== linkedWallet) {
+        updateWallet(addr);
+      }
     } catch (e: any) {
-      toast({ title: t("toast.connectFailed") || "Connect failed", description: e?.message || "", variant: "destructive" });
+      toast({
+        title: t("toast.connectFailed") || "Connect failed",
+        description: e?.message || "",
+        variant: "destructive",
+      });
     } finally {
       setBusy(false);
     }
@@ -97,38 +106,48 @@ export function ProfileHeader({
         return;
       }
 
-      // ضمان اتصال قبل توليد الحمولة
       await waitForConnect(tonConnectUI);
-
-      // طلب حمولة التحويل من السيرفر
       const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
 
-      // إرسال عبر TonConnect (يرجعنا للمحفظة ويؤكد)
       await tonConnectUI.sendTransaction(r.txPayload);
       toast({ title: t("toast.confirmDeposit") });
 
-      // بولينگ تأكيد
+      // ✅ polling with max retries
+      let attempts = 0;
       const poll = async () => {
+        if (attempts++ > 12) return; // ~1 min max
         const status = await apiRequest("POST", "/api/wallet/deposit/status", {
           code: r.code,
           minTon: amt,
         });
         if (status.status === "paid") {
-          toast({ title: t("toast.depositConfirmed"), description: `Tx: ${status.txHash}` });
+          toast({
+            title: t("toast.depositConfirmed"),
+            description: `Tx: ${status.txHash}`,
+          });
           qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
         } else {
           setTimeout(poll, 5000);
         }
       };
       setTimeout(poll, 5000);
+
       setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
-      // إصلاح حالات unlinked بإعادة الربط للمرة التالية
-      if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-        try { await tonConnectUI?.disconnect(); } catch {}
+      if (String(e?.message || "").toLowerCase().includes("wallet_not_linked")) {
+        toast({
+          title: "Wallet not linked",
+          description: "Please reconnect your TON wallet.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: t("toast.depositFailed"),
+          description: e?.message || "",
+          variant: "destructive",
+        });
       }
-      toast({ title: t("toast.depositFailed"), description: e?.message || "", variant: "destructive" });
     }
   }
 
@@ -145,7 +164,11 @@ export function ProfileHeader({
       setWithdrawOpen(false);
       setAmount("");
     } catch (e: any) {
-      toast({ title: "Withdraw failed", description: e?.message || "", variant: "destructive" });
+      toast({
+        title: "Withdraw failed",
+        description: e?.message || "",
+        variant: "destructive",
+      });
     }
   }
 
@@ -173,7 +196,7 @@ export function ProfileHeader({
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-start justify-between gap-6">
-            {/* يسار: الرصيد + +/- + Connect/Disconnect */}
+            {/* Left: balance + +/- + connect */}
             <div className="flex flex-col items-start gap-3">
               <div className="flex items-center gap-2 bg-muted rounded-full pl-3 pr-2 py-1">
                 <img src={tonIconUrl} alt="TON" className="w-4 h-4" />
@@ -202,13 +225,18 @@ export function ProfileHeader({
                   {busy ? "…" : "Connect Wallet"}
                 </Button>
               ) : (
-                <Button onClick={handleDisconnect} className="rounded-full px-5" variant="secondary" disabled={busy}>
+                <Button
+                  onClick={handleDisconnect}
+                  className="rounded-full px-5"
+                  variant="secondary"
+                  disabled={busy}
+                >
                   Disconnect
                 </Button>
               )}
             </div>
 
-            {/* يمين: معلومات المستخدم */}
+            {/* Right: user info */}
             <div className="flex items-center gap-4">
               <Avatar className="w-16 h-16">
                 <AvatarImage src={telegramUser?.photo_url} />
