@@ -1,72 +1,72 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
-/* ===============================
-   1) Wallet Balance
-=============================== */
-export function useWalletBalance() {
-  return useQuery({
-    queryKey: ["/api/wallet/balance"],
-    queryFn: async () => {
-      const r = await apiRequest("GET", "/api/wallet/balance");
-      return r;
-    },
-    staleTime: 15_000, // cache balance for 15s
-  });
-}
-
-/* ===============================
-   2) Wallet Ledger (history)
-=============================== */
-export function useWalletLedger(limit: number = 10) {
-  return useQuery({
-    queryKey: ["/api/wallet/ledger", limit],
-    queryFn: async () => {
-      const r = await apiRequest("GET", `/api/wallet/ledger?limit=${limit}`);
-      return Array.isArray(r.rows) ? r.rows : [];
-    },
-    staleTime: 5_000, // refresh more frequently
-  });
-}
-
-/* ===============================
-   3) Wallet Address (link/unlink)
-=============================== */
+/**
+ * Hook: Fetch linked wallet address from backend
+ */
 export function useWalletAddress() {
   const qc = useQueryClient();
+  const { toast } = useToast();
 
-  // Get current wallet address
-  const addressQuery = useQuery({
-    queryKey: ["/api/wallet/address"],
+  // ✅ Fetch linked wallet
+  const query = useQuery({
+    queryKey: ["/api/me/wallet"],
     queryFn: async () => {
-      const r = await apiRequest("GET", "/api/wallet/address");
-      return r.walletAddress ?? null;
+      const res = await apiRequest("GET", "/api/me/wallet");
+      return res?.walletAddress || null;
     },
-    staleTime: Infinity,
+    staleTime: 30_000,
   });
 
-  // Link wallet
-  const link = useMutation({
-    mutationFn: async (walletAddress: string) =>
-      await apiRequest("POST", "/api/wallet/address", { walletAddress }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
+  // ✅ Mutation: update wallet
+  const mutation = useMutation({
+    mutationFn: async (addr: string | null) => {
+      if (!addr) {
+        return await apiRequest("POST", "/api/me/wallet", { walletAddress: "" });
+      }
+      return await apiRequest("POST", "/api/me/wallet", { walletAddress: addr });
     },
-  });
-
-  // Unlink wallet
-  const unlink = useMutation({
-    mutationFn: async () => await apiRequest("DELETE", "/api/wallet/address"),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["/api/me/wallet"] });
+      qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
+      if (res?.walletAddress) {
+        toast({
+          title: "Wallet linked",
+          description: res.walletAddress.slice(0, 6) + "…" + res.walletAddress.slice(-4),
+        });
+      } else {
+        toast({ title: "Wallet unlinked" });
+      }
+    },
+    onError: (e: any) => {
+      toast({
+        title: "Wallet update failed",
+        description: e?.message || "Unknown error",
+        variant: "destructive",
+      });
     },
   });
 
   return {
-    address: addressQuery.data,
-    isLoading: addressQuery.isLoading,
-    link,
-    unlink,
-    refetch: addressQuery.refetch,
+    ...query,
+    updateWallet: mutation.mutate, // call updateWallet(address | null)
   };
+}
+
+/**
+ * Hook: Fetch wallet balance
+ */
+export function useWalletBalance() {
+  return useQuery({
+    queryKey: ["/api/wallet/balance"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/wallet/balance");
+      return {
+        balance: Number(res.balance ?? 0),
+        currency: res.currency || "TON",
+      };
+    },
+    staleTime: 15_000,
+  });
 }
