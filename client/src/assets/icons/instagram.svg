@@ -1,11 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 551.034 551.034">
-  <linearGradient id="a" x1="275.517" x2="275.517" y1="0" y2="551.034" gradientUnits="userSpaceOnUse">
-    <stop offset="0" stop-color="#f09433"/>
-    <stop offset=".25" stop-color="#e6683c"/>
-    <stop offset=".5" stop-color="#dc2743"/>
-    <stop offset=".75" stop-color="#cc2366"/>
-    <stop offset="1" stop-color="#bc1888"/>
-  </linearGradient>
-  <path fill="url(#a)" d="M387.497 0h-223.96C73.535 0 0 73.535 0 163.537v223.96c0 90.002 73.535 163.537 163.537 163.537h223.96c90.002 0 163.537-73.535 163.537-163.537v-223.96C551.034 73.535 477.499 0 387.497 0z"/>
-  <path fill="#fff" d="M275.517 134.66c-77.78 0-141 63.22-141 141s63.22 141 141 141 141-63.22 141-141-63.22-141-141-141zm0 233c-50.74 0-92-41.26-92-92s41.26-92 92-92 92 41.26 92 92-41.26 92-92 92zM423.636 120.2c0 19.94-16.16 36.1-36.1 36.1-19.94 0-36.1-16.16-36.1-36.1s16.16-36.1 36.1-36.1c19.94 0 36.1 16.16 36.1 36.1z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <radialGradient id="IGg" cx="19.38" cy="42.035" r="44.767" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#fd5"/>
+    <stop offset=".5" stop-color="#ff543e"/>
+    <stop offset="1" stop-color="#c837ab"/>
+  </radialGradient>
+  <path fill="url(#IGg)" d="M34.6 6H13.4C9 6 6 9 6 13.4v21.2C6 39 9 42 13.4 42h21.2c4.4 0 7.4-3 7.4-7.4V13.4C42 9 39 6 34.6 6zM24 34c-5.5 0-10-4.5-10-10s4.5-10 10-10 10 4.5 10 10-4.5 10-10 10zm11-17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>
+  <circle cx="24" cy="24" r="6.5" fill="#fff"/>
 </svg>
