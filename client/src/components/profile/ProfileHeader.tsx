@@ -1,17 +1,23 @@
 // client/src/components/profile/ProfileHeader.tsx
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Settings, ArrowLeft, Plus, Minus, Link2 } from "lucide-react";
 import TonIcon from "@/assets/icons/ton.svg";
 
 import { useLanguage } from "@/contexts/language-context";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 
 import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
@@ -26,10 +32,12 @@ export function ProfileHeader({
   telegramUser,
   onBack,
   onOpenSettings,
+  balance, // ✅ balance is passed from ProfilePage
 }: {
   telegramUser: any;
   onBack: () => void;
   onOpenSettings: () => void;
+  balance?: { balance: number; currency: string } | null;
 }) {
   const { t } = useLanguage();
   const { toast } = useToast();
@@ -42,53 +50,6 @@ export function ProfileHeader({
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [amount, setAmount] = useState("");
 
-  // ✅ Get balance
-  const { data: balanceResp } = useQuery({
-    queryKey: ["/api/wallet/balance"],
-    queryFn: async () => await apiRequest("GET", "/api/wallet/balance"),
-  });
-  const balance = balanceResp?.ok ? balanceResp : null;
-
-  // ✅ Sync wallet address on connect/disconnect
-  useEffect(() => {
-    async function syncWallet() {
-      try {
-        const addr = wallet?.account.address || "";
-        if (addr) {
-          const r = await apiRequest("POST", "/api/wallet/address", { walletAddress: addr });
-          if (r.ok) {
-            toast({
-              title: t("wallet.linked"),
-              description: addr.slice(0, 6) + "…" + addr.slice(-4),
-            });
-          } else {
-            toast({
-              title: "Error",
-              description: r.error || "Invalid wallet",
-              variant: "destructive",
-            });
-          }
-        } else {
-          const r = await apiRequest("DELETE", "/api/wallet/address");
-          if (r.ok) {
-            toast({
-              title: t("wallet.unlinked"),
-              description: t("wallet.disconnected"),
-            });
-          }
-        }
-        qc.invalidateQueries({ queryKey: ["/api/wallet/address"] });
-      } catch (e: any) {
-        toast({
-          title: "Wallet sync failed",
-          description: e?.message || "",
-          variant: "destructive",
-        });
-      }
-    }
-    syncWallet();
-  }, [wallet?.account.address]);
-
   // ✅ Deposit
   async function handleDeposit() {
     try {
@@ -97,19 +58,20 @@ export function ProfileHeader({
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
         return;
       }
-      const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
-      if (!r.ok) throw new Error(r.error || "deposit failed");
+      const r = await apiRequest("POST", "/api/wallet/deposit/initiate", {
+        amountTon: amt,
+      });
 
       await tonConnectUI.sendTransaction(r.txPayload);
       toast({ title: t("toast.confirmDeposit") });
 
-      // Poll deposit status
+      // Poll for confirmation
       const check = async () => {
         const status = await apiRequest("POST", "/api/wallet/deposit/status", {
           code: r.code,
           minTon: amt,
         });
-        if (status.ok && status.status === "paid") {
+        if (status.status === "paid") {
           toast({
             title: t("toast.depositConfirmed"),
             description: `Tx: ${status.txHash}`,
@@ -135,14 +97,14 @@ export function ProfileHeader({
   async function handleWithdraw() {
     try {
       const amt = Number(amount);
-      if (!amt || amt <= 0 || Number(balance?.balance ?? 0) < amt) {
+      if (!amt || amt <= 0 || (balance?.balance || 0) < amt) {
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
         return;
       }
-      const r = await apiRequest("POST", "/api/payouts", { amount: amt });
-      if (!r.ok) throw new Error(r.error || "withdraw failed");
-
-      toast({ title: t("wallet.withdrawRequest") || "Withdrawal request sent" });
+      await apiRequest("POST", "/api/payouts", { amount: amt });
+      toast({
+        title: t("wallet.withdrawRequest") || "Withdrawal request sent",
+      });
       qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
       setWithdrawOpen(false);
     } catch (e: any) {
@@ -182,7 +144,7 @@ export function ProfileHeader({
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
-            {/* 🟢 Profile section */}
+            {/* 🟢 Profile info */}
             <div className="flex items-center gap-4">
               <Avatar className="w-16 h-16">
                 <AvatarImage src={telegramUser?.photo_url} />
@@ -195,7 +157,9 @@ export function ProfileHeader({
                   {S(telegramUser?.first_name)} {S(telegramUser?.last_name)}
                 </h2>
                 {telegramUser?.username && (
-                  <p className="text-muted-foreground">@{telegramUser.username}</p>
+                  <p className="text-muted-foreground">
+                    @{telegramUser.username}
+                  </p>
                 )}
                 <div className="flex items-center gap-2 mt-2">
                   {telegramUser?.is_premium && (
@@ -217,15 +181,27 @@ export function ProfileHeader({
             <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
               <TonIcon className="w-5 h-5" />
               <span className="font-semibold">
-                {balance?.balance ?? "0"} {balance?.currency || "TON"}
+                {balance?.balance ?? 0} {balance?.currency || "TON"}
               </span>
-              <Button variant="ghost" size="icon" onClick={() => setDepositOpen(true)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDepositOpen(true)}
+              >
                 <Plus className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => setWithdrawOpen(true)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setWithdrawOpen(true)}
+              >
                 <Minus className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => tonConnectUI.openModal()}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => tonConnectUI.openModal()}
+              >
                 <Link2 className="w-4 h-4" />
               </Button>
             </div>
