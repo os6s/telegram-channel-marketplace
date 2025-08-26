@@ -10,6 +10,8 @@ import { Address, beginCell } from "@ton/core";
 
 type TgUser = { id: number };
 
+// ===== Helpers =====
+
 // تعليق قصير وفريد
 const genCode = () => "D" + crypto.randomBytes(4).toString("hex");
 
@@ -22,22 +24,27 @@ function toNano(ton: number): string {
   return (BigInt(i) * 1000000000n + BigInt(frac || "0")).toString();
 }
 
+// جلب المستخدم من التلغرام
 async function getMe(req: Request) {
   const tg = (req as any).telegramUser as TgUser | undefined;
   if (!tg?.id) return null;
   return await db.query.users.findFirst({ where: eq(users.telegramId, BigInt(tg.id)) });
 }
 
-// تطبيع إلى EQ… مع احترام الشبكة
-function normalizeTonAddress(input: string): string {
-  const parsed = Address.parse(input.trim());
+// تطبيع/تحقّق عنوان TON محلياً (raw 0:… أو EQ…) → EQ… مع احترام الشبكة
+function normalizeTonAddressStrict(input: string): string {
+  const cleaned = String(input ?? "")
+    .trim()
+    .replace(/[\u200B-\u200D\uFEFF\r\n\t ]+/g, "");
+  if (!cleaned) throw new Error("empty");
   const isTestnet = (process.env.TON_NETWORK || "mainnet") !== "mainnet";
-  return parsed.toString({ bounceable: true, testOnly: isTestnet });
+  return Address.parse(cleaned).toString({ bounceable: true, testOnly: isTestnet });
 }
 
 // JSON replacer لِـ BigInt
 const jsonSafe = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
 
+// ===== Mount =====
 export function mountWallet(app: Express) {
   // 1) إدارة عنوان المحفظة
   app.get("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
@@ -51,7 +58,8 @@ export function mountWallet(app: Express) {
       const me = await getMe(req);
       if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-      const input = String(req.body?.walletAddress || "").trim();
+      const raw = (req.body as any)?.walletAddress;
+      const input = String(raw ?? "").trim();
 
       // إلغاء ربط إذا فارغ
       if (!input) {
@@ -63,18 +71,26 @@ export function mountWallet(app: Express) {
         return res.json({ ok: true, walletAddress: row?.wallet_address ?? null });
       }
 
-      const pretty = normalizeTonAddress(input);
+      // يقبل نص أو كائن { address: "EQ..." }
+      let pretty = "";
+      try {
+        pretty = normalizeTonAddressStrict(input);
+      } catch {
+        if (raw && typeof raw === "object" && (raw as any).address) {
+          pretty = normalizeTonAddressStrict(String((raw as any).address));
+        } else {
+          throw new Error("invalid_address");
+        }
+      }
 
-      // بدون returning() لتفادي TypeError
       await db.update(users).set({ wallet_address: pretty, updatedAt: new Date() }).where(eq(users.id, me.id));
       const row = await db.query.users.findFirst({
         columns: { wallet_address: true },
         where: eq(users.id, me.id),
       });
-
       return res.json({ ok: true, walletAddress: row?.wallet_address ?? pretty });
-    } catch (e) {
-      console.error("wallet/address error:", e);
+    } catch (e: any) {
+      console.error("wallet/address error:", e, "body:", (req as any)?.body);
       return res.status(400).json({ ok: false, error: "invalid_address" });
     }
   });
@@ -97,13 +113,13 @@ export function mountWallet(app: Express) {
     }
   });
 
-  // 2) بدء الإيداع
+  // 2) بدء الإيداع: يولّد TonConnect payload مع تعليق BOC
   app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
     try {
       const escrow = (process.env.ESCROW_WALLET || "").trim();
       if (!escrow) return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
 
-      const amountTon = Number(req.body?.amountTon);
+      const amountTon = Number((req.body as any)?.amountTon);
       if (!Number.isFinite(amountTon) || amountTon <= 0) {
         return res.status(400).json({ ok: false, error: "invalid_amount" });
       }
@@ -140,6 +156,7 @@ export function mountWallet(app: Express) {
         })
         .returning();
 
+      // تعليق BOC: op=0 + string(code)
       const commentCell = beginCell().storeUint(0, 32).storeStringTail(code).endCell();
       const payloadB64 = commentCell.toBoc().toString("base64");
 
@@ -164,14 +181,14 @@ export function mountWallet(app: Express) {
     }
   });
 
-  // 3) التحقق من الإيداع
+  // 3) التحقق من الإيداع عبر التعليق
   app.post("/api/wallet/deposit/status", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
     const escrow = (process.env.ESCROW_WALLET || "").trim();
-    const code = String(req.body?.code || "");
-    const minTon = Number(req.body?.minTon || "0");
+    const code = String((req.body as any)?.code || "");
+    const minTon = Number((req.body as any)?.minTon || "0");
     if (!escrow || !code) return res.status(400).json({ ok: false, error: "bad_request" });
 
     const waiting = await db.query.payments.findFirst({
@@ -243,10 +260,14 @@ export function mountWallet(app: Express) {
   });
 
   // 5) كشف الحركات
-  app.get("/api/wallet/ledger", tgAuth, async (_req: Request, res: Response) => {
+  app.get("/api/wallet/ledger", tgAuth, async (req: Request, res: Response) => {
+    const me = await getMe(req);
+    if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
+
     const rows = await db
       .select()
       .from(walletLedger)
+      .where(eq(walletLedger.userId, me.id))
       .orderBy(desc(walletLedger.createdAt))
       .limit(50);
 
