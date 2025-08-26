@@ -1,5 +1,5 @@
 // client/src/components/profile/ProfileHeader.tsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -21,6 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 
 import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
+import { useWalletAddress } from "@/hooks/use-wallet"; // ✅ new hook
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
 const initialFrom = (v: unknown) => {
@@ -46,9 +47,20 @@ export function ProfileHeader({
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
 
+  const { data: linkedWallet, updateWallet } = useWalletAddress(); // ✅ use hook
+
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [amount, setAmount] = useState("");
+
+  // ✅ Sync wallet automatically when TonConnect changes
+  useEffect(() => {
+    if (wallet?.account.address) {
+      updateWallet(wallet.account.address);
+    } else {
+      updateWallet(null); // unlink if disconnected
+    }
+  }, [wallet?.account.address]);
 
   // ✅ Deposit
   async function handleDeposit() {
@@ -183,25 +195,13 @@ export function ProfileHeader({
               <span className="font-semibold">
                 {balance?.balance ?? 0} {balance?.currency || "TON"}
               </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setDepositOpen(true)}
-              >
+              <Button variant="ghost" size="icon" onClick={() => setDepositOpen(true)}>
                 <Plus className="w-4 h-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setWithdrawOpen(true)}
-              >
+              <Button variant="ghost" size="icon" onClick={() => setWithdrawOpen(true)}>
                 <Minus className="w-4 h-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => tonConnectUI.openModal()}
-              >
+              <Button variant="ghost" size="icon" onClick={() => tonConnectUI.openModal()}>
                 <Link2 className="w-4 h-4" />
               </Button>
             </div>
