@@ -11,13 +11,14 @@ import { ListingsTab } from "@/components/profile/ListingsTab";
 import { ActivityTab } from "@/components/profile/ActivityTab";
 import { ActivityDialog } from "@/components/profile/ActivityDialog";
 import { DisputesTab } from "@/components/profile/DisputesTab";
-import WalletTab from "@/components/profile/WalletTab";
 import {
   useMe,
   useMyListings,
   useMyActivities,
   useMyDisputes,
 } from "@/hooks/use-me";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
 const N = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
@@ -33,6 +34,12 @@ export default function ProfilePage() {
   const tgUser = telegramWebApp.user;
   const { data: user } = useMe();
   const uname = user?.username || tgUser?.username || null;
+
+  // ✅ جلب رصيد المحفظة
+  const { data: balance } = useQuery({
+    queryKey: ["/api/wallet/balance"],
+    queryFn: async () => await apiRequest("GET", "/api/wallet/balance"),
+  });
 
   const { data: myListings = [], isLoading: listingsLoading } = useMyListings(uname || undefined);
   const { data: myActivities = [] } = useMyActivities(uname || undefined);
@@ -86,22 +93,16 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* ✅ Profile + Wallet in same row */}
+    <div className={`min-h-screen bg-background ${lang === "ar" ? "rtl" : "ltr"}`}>
+      {/* ✅ Profile + Wallet merged */}
       <div className="px-4 py-6">
-        <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${lang === "ar" ? "direction-rtl" : ""}`}>
-          <div>
-            <ProfileHeader
-              telegramUser={tgUser}
-              onBack={() => window.history.back()}
-              onOpenSettings={() => setShowSettings(true)}
-              t={t}
-            />
-          </div>
-          <div>
-            <WalletTab compact />
-          </div>
-        </div>
+        <ProfileHeader
+          telegramUser={tgUser}
+          onBack={() => window.history.back()}
+          onOpenSettings={() => setShowSettings(true)}
+          t={t}
+          balance={balance}
+        />
       </div>
 
       {/* Stats Section */}
