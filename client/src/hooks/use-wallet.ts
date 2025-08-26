@@ -42,9 +42,13 @@ export function useWalletAddress() {
       }
     },
     onError: (e: any) => {
+      // 🔴 تحسين عرض الخطأ: إذا السيرفر رجع {error:"..."} اعرضه
+      let msg = e?.message || "Unknown error";
+      if (e?.response?.data?.error) msg = e.response.data.error;
+      if (typeof e === "string") msg = e;
       toast({
         title: "Wallet update failed",
-        description: e?.message || "Unknown error",
+        description: msg,
         variant: "destructive",
       });
     },
