@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Settings, ArrowLeft, Plus, Minus } from "lucide-react";
 
-import tonIconUrl from "@/assets/icons/ton.svg?url"; // image only
+import tonIconUrl from "@/assets/icons/ton.svg?url"; // ✅ image only
 
 import { useLanguage } from "@/contexts/language-context";
 import { useToast } from "@/hooks/use-toast";
@@ -59,47 +59,43 @@ export function ProfileHeader({
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [amount, setAmount] = useState("");
-  const [busy, setBusy] = useState(false);
+
+  // separate busy states
+  const [busyConnect, setBusyConnect] = useState(false);
+  const [busyDeposit, setBusyDeposit] = useState(false);
+  const [busyWithdraw, setBusyWithdraw] = useState(false);
 
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
-  // ✅ sync wallet only if changed
   useEffect(() => {
-    if (address && address !== linkedWallet) {
-      updateWallet(address);
-    }
-  }, [address, linkedWallet, updateWallet]);
+    updateWallet(address || null);
+  }, [address, updateWallet]);
 
   async function handleConnect() {
     try {
-      setBusy(true);
+      setBusyConnect(true);
       const addr = await waitForConnect(tonConnectUI);
-      if (addr && addr !== linkedWallet) {
-        updateWallet(addr);
-      }
+      updateWallet(addr);
     } catch (e: any) {
-      toast({
-        title: t("toast.connectFailed") || "Connect failed",
-        description: e?.message || "",
-        variant: "destructive",
-      });
+      toast({ title: t("toast.connectFailed") || "Connect failed", description: e?.message || "", variant: "destructive" });
     } finally {
-      setBusy(false);
+      setBusyConnect(false);
     }
   }
 
   async function handleDisconnect() {
     try {
-      setBusy(true);
+      setBusyConnect(true);
       await tonConnectUI?.disconnect();
       updateWallet(null);
     } finally {
-      setBusy(false);
+      setBusyConnect(false);
     }
   }
 
   async function handleDeposit() {
     try {
+      setBusyDeposit(true);
       const amt = Number(amount);
       if (!amt || amt <= 0) {
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
@@ -112,47 +108,34 @@ export function ProfileHeader({
       await tonConnectUI.sendTransaction(r.txPayload);
       toast({ title: t("toast.confirmDeposit") });
 
-      // ✅ polling with max retries
-      let attempts = 0;
       const poll = async () => {
-        if (attempts++ > 12) return; // ~1 min max
         const status = await apiRequest("POST", "/api/wallet/deposit/status", {
           code: r.code,
           minTon: amt,
         });
         if (status.status === "paid") {
-          toast({
-            title: t("toast.depositConfirmed"),
-            description: `Tx: ${status.txHash}`,
-          });
+          toast({ title: t("toast.depositConfirmed"), description: `Tx: ${status.txHash}` });
           qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
         } else {
           setTimeout(poll, 5000);
         }
       };
       setTimeout(poll, 5000);
-
       setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
-      if (String(e?.message || "").toLowerCase().includes("wallet_not_linked")) {
-        toast({
-          title: "Wallet not linked",
-          description: "Please reconnect your TON wallet.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: t("toast.depositFailed"),
-          description: e?.message || "",
-          variant: "destructive",
-        });
+      if (String(e?.message || "").toLowerCase().includes("unlinked")) {
+        try { await tonConnectUI?.disconnect(); } catch {}
       }
+      toast({ title: t("toast.depositFailed"), description: e?.message || "", variant: "destructive" });
+    } finally {
+      setBusyDeposit(false);
     }
   }
 
   async function handleWithdraw() {
     try {
+      setBusyWithdraw(true);
       const amt = Number(amount);
       if (!amt || amt <= 0 || (balance?.balance || 0) < amt) {
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
@@ -164,11 +147,9 @@ export function ProfileHeader({
       setWithdrawOpen(false);
       setAmount("");
     } catch (e: any) {
-      toast({
-        title: "Withdraw failed",
-        description: e?.message || "",
-        variant: "destructive",
-      });
+      toast({ title: "Withdraw failed", description: e?.message || "", variant: "destructive" });
+    } finally {
+      setBusyWithdraw(false);
     }
   }
 
@@ -196,42 +177,29 @@ export function ProfileHeader({
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-start justify-between gap-6">
-            {/* Left: balance + +/- + connect */}
+            {/* Left: wallet actions */}
             <div className="flex flex-col items-start gap-3">
               <div className="flex items-center gap-2 bg-muted rounded-full pl-3 pr-2 py-1">
                 <img src={tonIconUrl} alt="TON" className="w-4 h-4" />
                 <span className="text-foreground/90 text-sm font-semibold">
                   {(balance?.balance ?? 0).toLocaleString()} {balance?.currency || "TON"}
                 </span>
-                <button
-                  className="ml-1 h-8 w-8 rounded-full bg-secondary text-secondary-foreground grid place-items-center"
-                  onClick={() => setDepositOpen(true)}
-                  aria-label="Deposit"
-                >
+                <button className="ml-1 h-8 w-8 rounded-full bg-secondary text-secondary-foreground grid place-items-center" onClick={() => setDepositOpen(true)} aria-label="Deposit">
                   <Plus className="w-4 h-4" />
                 </button>
-                <button
-                  className="h-8 w-8 rounded-full bg-secondary text-secondary-foreground grid place-items-center"
-                  onClick={() => setWithdrawOpen(true)}
-                  aria-label="Withdraw"
-                >
+                <button className="h-8 w-8 rounded-full bg-secondary text-secondary-foreground grid place-items-center" onClick={() => setWithdrawOpen(true)} aria-label="Withdraw">
                   <Minus className="w-4 h-4" />
                 </button>
               </div>
 
               {!address ? (
-                <Button onClick={handleConnect} className="rounded-full px-5" disabled={busy}>
+                <Button onClick={handleConnect} className="rounded-full px-5" disabled={busyConnect}>
                   <img src={tonIconUrl} alt="" className="w-4 h-4 mr-2" />
-                  {busy ? "…" : "Connect Wallet"}
+                  {busyConnect ? "…" : "Connect Wallet"}
                 </Button>
               ) : (
-                <Button
-                  onClick={handleDisconnect}
-                  className="rounded-full px-5"
-                  variant="secondary"
-                  disabled={busy}
-                >
-                  Disconnect
+                <Button onClick={handleDisconnect} className="rounded-full px-5" variant="secondary" disabled={busyConnect}>
+                  {busyConnect ? "…" : "Disconnect"}
                 </Button>
               )}
             </div>
@@ -281,8 +249,8 @@ export function ProfileHeader({
             inputMode="decimal"
           />
           <DialogFooter>
-            <Button onClick={handleDeposit} disabled={busy || !address}>
-              {busy ? "…" : t("wallet.deposit")}
+            <Button onClick={handleDeposit} disabled={busyDeposit || !address}>
+              {busyDeposit ? "…" : t("wallet.deposit")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -301,8 +269,8 @@ export function ProfileHeader({
             inputMode="decimal"
           />
           <DialogFooter>
-            <Button onClick={handleWithdraw} disabled={busy}>
-              {busy ? "…" : t("wallet.withdraw")}
+            <Button onClick={handleWithdraw} disabled={busyWithdraw}>
+              {busyWithdraw ? "…" : t("wallet.withdraw")}
             </Button>
           </DialogFooter>
         </DialogContent>
