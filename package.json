@@ -94,7 +94,7 @@
 
     "@ton/core": "^0.58.0",
     "@ton/crypto": "^3.2.0",
-    "@ton/ton": "^13.12.0"
+    "@ton/ton": "^13.0.0"
   },
   "devDependencies": {
     "express-rate-limit": "^7.5.0"
