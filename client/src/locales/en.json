@@ -7,27 +7,36 @@
   "market": {
     "title": "Digital Marketplace",
     "subtitle": "Platform for Buying & Selling Digital Assets",
-    "activeListings": "Active Listings",
+    "activeListings": "Active listings",
     "totalVolume": "Sales Volume",
     "sold": "Sales Count",
-    "searchPlaceholder": "Search channels, usernames, or services...",
-    "allTypes": "All Types",
+    "searchPlaceholder": "Search for channels, usernames, or services...",
+    "allTypes": "All",
     "type": {
-      "telegramUser": "Telegram User",
-      "instagramUser": "Instagram User",
-      "twitterUser": "Twitter User",
-      "snapchatUser": "Snapchat User",
-      "tiktokUser": "TikTok User",
+      "telegramUser": "Telegram Username",
+      "instagramUser": "Instagram Username",
+      "twitterUser": "Twitter Username",
+      "snapchatUser": "Snapchat Username",
+      "tiktokUser": "TikTok Username",
       "serviceFollowers": "Followers Service",
       "serviceSubscribers": "Subscribers Service"
     },
-    "noFound": "No channels or listings found",
+    "noFound": "No listings found",
     "tryFilters": "Try adjusting your filters or search query",
-    "sortByPrice": "Sort: Price Low to High",
-    "loadMore": "Load More Listings",
+    "sortByPrice": "Sort: Price Low → High",
+    "loadMore": "Load More",
     "salesCountLabel": "Sales Count",
     "salesVolumeLabel": "Sales Volume",
-    "activeListingsLabel": "Active Listings"
+    "activeListingsLabel": "Active Listings",
+
+    "toastDeleted": "Listing deleted successfully",
+    "toastDeleteError": "Failed to delete listing",
+    "toastBuyConfirm": "Do you want to buy this item?",
+    "toastBuySuccess": "Order created. Funds locked in escrow.",
+    "toastBuyError": "Failed to create order",
+    "toastInsufficient": "Insufficient funds — please deposit first.",
+    "toastUnauthorized": "Unauthorized. Open the mini app inside Telegram to login.",
+    "buyPrompt": "Are you sure you want to buy"
   },
 
   "sell": {
@@ -40,19 +49,19 @@
     "platform": "Platform",
     "choosePlatform": "Choose platform",
     "usernameLabel": "Username/Link (without @ or t.me/)",
-    "tgInvalid": "Invalid Telegram: 4–15 letters/digits/_ only, no dot.",
-    "genInvalid": "Invalid: 2–15 letters/digits/_/dot.",
-    "tgUserType": "Username type",
+    "tgInvalid": "Invalid Telegram username: 4–15 letters/numbers/_ only, no dot.",
+    "genInvalid": "Invalid: 2–15 letters/numbers/_/dot.",
+    "tgUserType": "Telegram user type",
     "NFT": "NFT",
     "NORMAL": "Normal",
     "price": "Price",
     "currency": "Currency",
     "desc": "Description (optional)",
-    "post": "Publish",
+    "post": "Post",
     "back": "Back",
-    "openFromTelegram": "Open this app from Telegram.",
-    "sent": "Your listing is live",
-    "channelMode": "Channel mode",
+    "openFromTelegram": "Open the app from Telegram.",
+    "sent": "Your listing has been posted",
+    "channelMode": "Channel type",
     "modeSubscribers": "Subscribers channel",
     "modeGifts": "Gifts channel",
     "channelLinkOpt": "Channel link (optional)",
@@ -60,7 +69,7 @@
     "needLinkOrUser": "Enter link or username",
     "subsCount": "Subscribers count",
     "giftsCount": "Gifts count",
-    "giftKind": "Gift kind",
+    "giftKind": "Gift type",
     "upgraded": "Upgraded",
     "regular": "Regular",
     "both": "Both",
@@ -74,8 +83,8 @@
   },
 
   "card": {
-    "viewDetails": "View Details",
-    "buyNow": "Buy Now",
+    "viewDetails": "View details",
+    "buyNow": "Buy now",
     "verified": "Verified",
     "subscribers": "Subscribers",
     "engagement": "Engagement",
@@ -89,7 +98,7 @@
     "connect": "Connect TON Wallet",
     "disconnect": "Disconnect",
     "balance": "Balance",
-    "connected": "Wallet Connected",
+    "connected": "Wallet connected",
     "connectTelegram": "Connect Telegram Wallet"
   },
 
@@ -105,19 +114,19 @@
 
   "activityPage": {
     "title": "Activity",
-    "subtitle": "Your channel transaction history",
-    "bannerTitle": "Activity Tracking",
-    "bannerDesc": "Track all your channel purchases and sales. Monitor transaction history, volumes, and completion status in real-time.",
-    "searchPlaceholder": "Search activities...",
+    "subtitle": "Your transaction history",
+    "bannerTitle": "Track Activity",
+    "bannerDesc": "Follow your purchases and sales. Monitor deal history and status in real time.",
+    "searchPlaceholder": "Search in activity...",
     "stats": {
       "completed": "Completed",
       "volume": "TON Volume",
       "total": "Total Activities"
     },
-    "recent": "Recent Activities",
-    "noneTitle": "No activities found",
+    "recent": "Recent activity",
+    "noneTitle": "No activity",
     "noneHint": "Your transaction history will appear here",
-    "tryAdjust": "Try adjusting your search terms",
+    "tryAdjust": "Try changing search terms",
     "tx": {
       "title": "Channel Transaction",
       "amount": "Amount:",
@@ -126,7 +135,7 @@
     "locked": "Funds locked in escrow",
     "released": "Funds release approved",
     "refunded": "Order refunded/cancelled",
-    "unauthorized": "⚠️ Please open this app from Telegram.",
+    "unauthorized": "⚠️ Please open the app from Telegram.",
     "empty": "No activity yet",
     "updated": "Activity"
   },
@@ -141,9 +150,9 @@
     "deposit": "Deposit",
     "depositPlaceholder": "Enter amount",
     "stats": {
-      "activeListings": "Active Listings",
-      "totalValueTon": "Total Value (TON)",
-      "totalReach": "Total Reach"
+      "activeListings": "Active listings",
+      "totalValueTon": "Total value (TON)",
+      "totalReach": "Total reach"
     },
     "tabs": {
       "listings": "My Listings",
@@ -151,11 +160,11 @@
       "disputes": "Disputes"
     },
     "listingsHeader": "My Listings",
-    "listChannel": "List Channel",
+    "listChannel": "Add Channel",
     "emptyTitle": "No listings yet",
-    "emptyDesc": "Start selling on the marketplace",
-    "listFirst": "List Your First Item",
-    "openActivity": "Open Activity Page",
+    "emptyDesc": "Start selling in the marketplace",
+    "listFirst": "Add your first listing",
+    "openActivity": "Open activity page",
     "cta": {
       "list": "List for sale"
     }
@@ -164,10 +173,10 @@
   "toast": {
     "error": "Error",
     "success": "Success",
-    "somethingWrong": "Something went wrong. Please try again.",
-    "openFromTelegram": "Open this app from Telegram.",
-    "saved": "Saved",
-    "published": "Listing submitted",
+    "somethingWrong": "Something went wrong, try again.",
+    "openFromTelegram": "Open the app from Telegram.",
+    "saved": "Saved successfully",
+    "published": "Listing published",
     "invalidAmount": "Invalid amount",
     "confirmDeposit": "Confirm deposit in your wallet",
     "depositConfirmed": "Deposit confirmed ✅",
@@ -175,24 +184,24 @@
   },
 
   "notFound": {
-    "title": "Page Not Found",
-    "desc": "The page you're looking for doesn't exist.",
-    "back": "Go back home"
+    "title": "Page not found",
+    "desc": "The page you are looking for does not exist.",
+    "back": "Back to home"
   },
 
   "errors": {
-    "PRICE": "Enter a valid price (e.g. 12 or 12.5).",
+    "PRICE": "Enter a valid price (example: 12 or 12.5).",
     "TG": "Invalid Telegram username/link.",
-    "TG_USER_TYPE_REQ": "Select a Telegram username type.",
-    "TT": "Invalid TikTok handle.",
+    "TG_USER_TYPE_REQ": "Select a Telegram user type.",
+    "TT": "Invalid TikTok username.",
     "GEN": "Invalid username/handle.",
     "MONTH": "Use YYYY-MM format.",
-    "NEED_LINK_OR_USER": "Enter a channel link or username.",
+    "NEED_LINK_OR_USER": "Enter channel link or username.",
     "SUBS": "Enter a valid subscribers count (≥ 1).",
     "GIFS": "Enter a valid gifts count (≥ 1).",
-    "GIFT_KIND": "Select a gift kind.",
+    "GIFT_KIND": "Select a gift type.",
     "COUNT_MIN": "Count must be at least 1.",
-    "TARGET_MISMATCH": "Service type does not match the selected target."
+    "TARGET_MISMATCH": "Service type does not match target."
   },
 
   "adminPage": {
@@ -203,16 +212,16 @@
       "all": "All",
       "held": "Held",
       "disputed": "Disputed",
-      "awaitingBuyerConfirm": "Awaiting confirm",
+      "awaitingBuyerConfirm": "Awaiting Buyer Confirm",
       "released": "Released",
       "refunded": "Refunded",
       "cancelled": "Cancelled"
     },
     "orders": {
       "loading": "Loading…",
-      "noResults": "No results.",
+      "noResults": "No results found.",
       "order": "Order #{id}",
-      "orderInfo": "{date} · {amount} {currency} · buyer:{buyer} · seller:{seller}"
+      "orderInfo": "{date} · {amount} {currency} · Buyer:{buyer} · Seller:{seller}"
     },
     "actions": {
       "release": "Release",
@@ -222,16 +231,16 @@
       "markSent": "Mark as Sent"
     },
     "chat": {
-      "title": "Dispute chat · #{id}",
+      "title": "Dispute Chat · #{id}",
       "noMessages": "No messages.",
       "loading": "Loading…",
-      "placeholder": "Write a message…",
+      "placeholder": "Type a message…",
       "send": "Send"
     },
     "badges": {
       "held": "Held",
       "disputed": "Disputed",
-      "awaitingBuyerConfirm": "Awaiting confirm",
+      "awaitingBuyerConfirm": "Awaiting Confirm",
       "released": "Released",
       "refunded": "Refunded",
       "cancelled": "Cancelled",
@@ -240,11 +249,15 @@
     "toast": {
       "released": "Funds released",
       "refunded": "Order refunded",
-      "releaseFailed": "Release failed",
-      "refundFailed": "Refund failed",
-      "sendFailed": "Send failed",
+      "releaseFailed": "Failed to release",
+      "refundFailed": "Failed to refund",
+      "sendFailed": "Failed to send",
       "loadFailed": "Failed to load orders",
       "disputeLoadFailed": "Failed to load dispute"
     }
-  }
+  },
+
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "loading": "Loading..."
 }
