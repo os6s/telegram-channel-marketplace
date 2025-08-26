@@ -7,34 +7,35 @@ const RE_NUMERIC = /^[0-9]+(\.[0-9]+)?$/;
 /* ===== Enums ===== */
 export const Currency = z.enum(["TON", "USDT"]);
 
-/* ===== Deposit Request (إيداع) ===== */
+/* ===== Deposit Request ===== */
 export const DepositRequestSchema = z.object({
-  userId: z.string().uuid(),                 // المستخدم صاحب العملية
-  amount: z.string().regex(RE_NUMERIC),      // قيمة الإيداع كنص
-  currency: Currency.default("TON"),         // العملة (افتراضياً TON)
-  comment: z.string().optional(),            // ملاحظة / مرجع للتحويل
+  userId: z.string().uuid(),
+  amount: z.string().regex(RE_NUMERIC),
+  currency: Currency.default("TON"),
+  comment: z.string().optional(),
 });
 export type DepositRequestDTO = z.infer<typeof DepositRequestSchema>;
 
-/* ===== Withdraw Request (سحب) ===== */
-/* ملاحظة: السحب يُعالج عادة عبر payouts؛ هذا DTO لطلب السحب فقط */
+/* ===== Withdraw Request ===== */
 export const WithdrawRequestSchema = z.object({
   userId: z.string().uuid(),
   amount: z.string().regex(RE_NUMERIC),
   currency: Currency.default("TON"),
-  toAddress: z.string().min(20),             // عنوان المحفظة الخارجية
-  note: z.string().optional(),               // ملاحظة اختيارية
+  toAddress: z.string().min(20),
+  note: z.string().optional(),
 });
 export type WithdrawRequestDTO = z.infer<typeof WithdrawRequestSchema>;
 
-/* ===== Wallet Balance DTO (كما في الفيو wallet_balances) ===== */
+/* ===== Wallet Balance DTO (from wallet_balances_view) ===== */
 export const WalletBalanceSchema = z.object({
   userId: z.string().uuid(),
+  telegramId: z.string().nullable().optional(),   // new from view
   username: z.string().nullable().optional(),
-  balance: z.string(),                       // NUMERIC كنص
+  walletAddress: z.string().nullable().optional(), // new from view
+  balance: z.string(),                             // keep as string for NUMERIC precision
   currency: Currency,
   txCount: z.union([z.string(), z.number()]).optional(),
-  lastTx: z.string().nullable().optional(),  // ISO أو null
+  lastTx: z.string().nullable().optional(),
 });
 export type WalletBalanceDTO = z.infer<typeof WalletBalanceSchema>;
 
@@ -42,13 +43,20 @@ export type WalletBalanceDTO = z.infer<typeof WalletBalanceSchema>;
 export const WalletLedgerSchema = z.object({
   id: z.string().uuid(),
   userId: z.string().uuid(),
-  direction: z.enum(["in", "out"]),          // in = زيادة, out = نقصان
+  direction: z.enum(["in", "out"]),
   amount: z.string().regex(RE_NUMERIC),
   currency: Currency,
-  // مطابق لـ walletRefEnum في السكيمة: deposit | order_hold | order_release | refund | adjustment
-  refType: z.enum(["deposit", "order_hold", "order_release", "refund", "adjustment"]),
+  refType: z.enum([
+    "deposit",
+    "order_hold",
+    "order_release",
+    "refund",
+    "adjustment",
+    "payout_request",  // ✅ added
+    "payout_refund",   // ✅ added
+  ]),
   refId: z.string().uuid().optional(),
   note: z.string().nullable().optional(),
-  createdAt: z.string(),                     // ISO string
+  createdAt: z.string(),
 });
 export type WalletLedgerDTO = z.infer<typeof WalletLedgerSchema>;
