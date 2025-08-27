@@ -7,15 +7,13 @@ const RE_NUMERIC = /^[0-9]+(\.[0-9]+)?$/;
 /* ===== Enums ===== */
 export const Currency = z.enum(["TON", "USDT"]);
 
-/* ===== Deposit Request ===== */
+
+
+/* ===== Deposit Request (TonConnect flow only) ===== */
 export const DepositRequestSchema = z.object({
-  userId: z.string().uuid(),
-  amount: z.string().regex(RE_NUMERIC),
-  currency: Currency.default("TON"),
-  comment: z.string().optional(),
+  amountTon: z.number().positive(),   // backend expects a numeric TON amount
 });
 export type DepositRequestDTO = z.infer<typeof DepositRequestSchema>;
-
 /* ===== Withdraw Request ===== */
 export const WithdrawRequestSchema = z.object({
   userId: z.string().uuid(),
