@@ -115,14 +115,12 @@ export function mountWallet(app: Express) {
     }
   });
 /** 2) Deposit initiate */
-app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
+app.post("/api/wallet/deposit/initiate", tgAuth, async (req, res) => {
   try {
     const escrowRaw = (process.env.ESCROW_WALLET || "").trim();
-    if (!escrowRaw) {
-      return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
-    }
+    if (!escrowRaw) return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
 
-    // Normalize escrow address (EQ... format)
+    // escrow بصيغة EQ… قابلة للارتداد
     let escrow: string;
     try {
       escrow = Address.parse(escrowRaw).toString({ bounceable: true });
@@ -130,147 +128,136 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       return res.status(500).json({ ok: false, error: "invalid_ESCROW_WALLET" });
     }
 
-    // Parse requested amount
     const amountTon = Number((req.body as any)?.amountTon);
     if (!Number.isFinite(amountTon) || amountTon <= 0) {
       return res.status(400).json({ ok: false, error: "invalid_amount" });
     }
 
-    // Get current user
     const me = await getMe(req);
     if (!me) return res.status(404).json({ ok: false, error: "user_not_found" });
-    if (!me.walletAddress) {
-      return res.status(400).json({ ok: false, error: "wallet_not_linked" });
-    }
+    if (!me.walletAddress) return res.status(400).json({ ok: false, error: "wallet_not_linked" });
 
-    // Convert TON → nanoTON (string)
+    const code = genCode();
     const amountNano = toNano(amountTon);
 
-    // Insert pending payment into DB
-    const [p] = await db
-      .insert(payments)
-      .values({
-        listingId: null,
-        buyerId: me.id,
-        sellerId: null,
-        kind: "deposit",
-        locked: false,
-        amount: amountNano, // store nanoTON only
-        currency: "TON",
-        feePercent: "0",
-        feeAmount: "0",
-        sellerAmount: "0",
-        escrowAddress: escrow,
-        comment: null,
-        txHash: null,
-        buyerConfirmed: false,
-        sellerConfirmed: false,
-        status: "waiting",
-        adminAction: "none",
-      })
-      .returning({ id: payments.id });
+    // خزّن TON في الـ DB، وليس nano
+    const [p] = await db.insert(payments).values({
+      listingId: null,
+      buyerId: me.id,
+      sellerId: null,
+      kind: "deposit",
+      locked: false,
+      amount: String(amountTon),       // TON
+      currency: "TON",
+      feePercent: "0",
+      feeAmount: "0",
+      sellerAmount: "0",
+      escrowAddress: escrow,
+      comment: code,                   // مهم
+      txHash: null,
+      buyerConfirmed: false,
+      sellerConfirmed: false,
+      status: "waiting",
+      adminAction: "none",
+    }).returning({ id: payments.id });
 
-    // Build TonConnect payload
+    // استخدم تعليق نصّي (text) وتجنّب payload فارغ
     const txPayload = {
-      validUntil: Math.floor(Date.now() / 1000) + 3600, // 1 hour
+      validUntil: Math.floor(Date.now() / 1000) + 600,
       messages: [
         {
           address: escrow,
-          amount: amountNano, // ⚡ ONLY nanoTON string
+          amount: amountNano, // nano كسترنغ
+          text: code,         // التعليق
         },
       ],
     } as const;
 
-    // Respond
-    res.status(201).json({
+    return res.status(201).json({
       ok: true,
-      txPayload,
       id: String(p.id),
+      code,                 // يرجع للفرونت حتى ي.poll
+      escrowAddress: escrow,
+      amountTon,
+      amountNano,
+      txPayload,
     });
-  } catch (e: unknown) {
-    const err = e as Error;
-    console.error("deposit/initiate error:", err);
-    res.status(500).json({ ok: false, error: err?.message || "deposit_initiate_failed" });
+  } catch (e: any) {
+    console.error("deposit/initiate error:", e);
+    return res.status(500).json({ ok: false, error: e?.message || "deposit_initiate_failed" });
   }
 });
-  /** 3) Deposit status check */
-  app.post("/api/wallet/deposit/status", tgAuth, async (req: Request, res: Response) => {
-    const me = await getMe(req);
-    if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-    const escrow = (process.env.ESCROW_WALLET || "").trim();
-    const code = String((req.body as any)?.code || "");
-    const minTon = Number((req.body as any)?.minTon || "0");
-    if (!escrow || !code) return res.status(400).json({ ok: false, error: "bad_request" });
+/** 3) Deposit status check */
+app.post("/api/wallet/deposit/status", tgAuth, async (req, res) => {
+  const me = await getMe(req);
+  if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-    const waitingRows = await db.select({
-      id: payments.id,
-      buyerId: payments.buyerId,
-      kind: payments.kind,
-      status: payments.status,
-      comment: payments.comment,
-      createdAt: payments.createdAt,
-    })
-      .from(payments)
-      .where(
-        and(
-          eq(payments.buyerId, me.id),
-          eq(payments.kind, "deposit" as any),
-          eq(payments.status, "waiting" as any),
-          eq(payments.comment, code)
-        )
-      )
-      .orderBy(desc(payments.createdAt))
-      .limit(1);
+  const escrow = (process.env.ESCROW_WALLET || "").trim();
+  const code = String((req.body as any)?.code || "");
+  const minTon = Number((req.body as any)?.minTon || "0");
+  if (!escrow || !code) return res.status(400).json({ ok: false, error: "bad_request" });
 
-    const waiting = waitingRows[0];
-    if (!waiting) return res.status(404).json({ ok: false, status: "not_found" });
+  const waitingRows = await db.select({
+    id: payments.id, buyerId: payments.buyerId, kind: payments.kind,
+    status: payments.status, comment: payments.comment, createdAt: payments.createdAt,
+  })
+  .from(payments)
+  .where(
+    and(
+      eq(payments.buyerId, me.id),
+      eq(payments.kind, "deposit" as any),
+      eq(payments.status, "waiting" as any),
+      eq(payments.comment, code)
+    )
+  )
+  .orderBy(desc(payments.createdAt))
+  .limit(1);
 
-    const v = await verifyTonDepositByComment({
-      escrow,
-      code,
-      minAmountTon: Number.isFinite(minTon) && minTon > 0 ? minTon : 0,
-    });
+  const waiting = waitingRows[0];
+  if (!waiting) return res.status(404).json({ ok: false, status: "not_found" });
 
-    if (!v.ok) return res.json({ ok: true, status: "pending" });
-
-    await db.update(payments)
-      .set({
-        amount: String(v.amountTon),
-        txHash: v.txHash ?? null,
-        status: "paid",
-        confirmedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(payments.id, waiting.id), eq(payments.status, "waiting")));
-
-    const updatedRows = await db.select({
-      id: payments.id,
-      amount: payments.amount,
-      txHash: payments.txHash,
-    }).from(payments).where(eq(payments.id, waiting.id)).limit(1);
-
-    const updated = updatedRows[0];
-
-    await db.insert(walletLedger).values({
-      userId: me.id,
-      direction: "in",
-      amount: String(v.amountTon),
-      currency: "TON",
-      refType: "deposit",
-      refId: updated.id,
-      note: "Deposit confirmed",
-    });
-
-    res.json({
-      ok: true,
-      status: "paid",
-      amount: Number(updated.amount),
-      txHash: updated.txHash,
-      id: String(updated.id),
-    });
+  const v = await verifyTonDepositByComment({
+    escrow,
+    code,
+    minAmountTon: Number.isFinite(minTon) && minTon > 0 ? minTon : 0,
   });
 
+  if (!v.ok) return res.json({ ok: true, status: "pending" });
+
+  // ثبّت الوحدات: خزّن TON دائمًا
+  await db.update(payments)
+    .set({
+      amount: String(v.amountTon), // TON
+      txHash: v.txHash ?? null,
+      status: "paid",
+      confirmedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(payments.id, waiting.id), eq(payments.status, "waiting")));
+
+  const [updated] = await db.select({
+    id: payments.id, amount: payments.amount, txHash: payments.txHash,
+  }).from(payments).where(eq(payments.id, waiting.id)).limit(1);
+
+  await db.insert(walletLedger).values({
+    userId: me.id,
+    direction: "in",
+    amount: String(v.amountTon), // TON
+    currency: "TON",
+    refType: "deposit",
+    refId: updated.id,
+    note: "Deposit confirmed",
+  });
+
+  return res.json({
+    ok: true,
+    status: "paid",
+    amount: Number(updated.amount),
+    txHash: updated.txHash,
+    id: String(updated.id),
+  });
+});
   /** 4) Balance */
   app.get("/api/wallet/balance", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
