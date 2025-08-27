@@ -1,4 +1,5 @@
 // client/src/lib/tg-fetch-shim.ts
+
 function getInitData(): string | null {
   try {
     // @ts-ignore
@@ -27,15 +28,16 @@ export function installTgFetchShim() {
       const url = new URL(urlStr, window.location.href);
       const isSameOrigin = url.origin === window.location.origin;
 
-      // نبني الهيدرز مع x-telegram-init-data لطلبات نفس الدومين فقط
       const headers = new Headers(init.headers || undefined);
+
       if (isSameOrigin) {
+        // Telegram auth header only for same-origin API calls
         const initData = getInitData();
         if (initData && !headers.has("x-telegram-init-data")) {
           headers.set("x-telegram-init-data", initData);
         }
       } else {
-        // لطلبات cross-origin (جسور TonConnect) لا نرسل أي كوكيز/اعتمادات
+        // For cross-origin (e.g., Tonkeeper bridge) strip credentials-ish headers
         headers.delete("cookie");
         headers.delete("Cookie");
         headers.delete("authorization");
@@ -45,15 +47,14 @@ export function installTgFetchShim() {
       const nextInit: RequestInit = {
         ...init,
         headers,
-        // Same-origin: نسمح بالكوكيز لو احتجناها للـ API
-        // Cross-origin: نمنعها حتى لا تفشل CORS
         credentials: isSameOrigin ? "include" : "omit",
-        mode: "cors",
+        // preserve caller's mode (don’t break things unintentionally)
+        mode: init.mode,
       };
 
       return origFetch(url.toString(), nextInit);
     } catch {
-      // لو صار parsing error نرجع للسلوك الافتراضي
+      // Fallback to original if URL parsing fails
       return origFetch(input as any, init);
     }
   };
