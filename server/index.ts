@@ -1,5 +1,3 @@
-
-
 // server/index.ts
 import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
@@ -26,11 +24,11 @@ if (process.env.NODE_ENV === "production") {
 const app = express();
 app.set("trust proxy", 1);
 
-// ===== 1) Body parsers (لازم قبل كل الراوترات) =====
+// ===== 1) Body parsers =====
 app.use(express.json({ limit: "200kb" }));
 app.use(express.urlencoded({ extended: false, limit: "200kb" }));
 
-// ===== 2) أمن عام =====
+// ===== 2) Security =====
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 
 // CSP
@@ -96,7 +94,7 @@ app.use("/webhook/telegram", rateLimit({ windowMs: 60_000, max: 120 }));
 
 app.get(["/health", "/healthz"], (_req, res) => res.type("text").send("ok"));
 
-// ===== 3) API logger آمن ضد BigInt =====
+// ===== 3) API logger =====
 app.use((req, res, next) => {
   const t0 = Date.now();
   const pathUrl = req.path;
@@ -112,12 +110,14 @@ app.use((req, res, next) => {
     if (pathUrl.startsWith("/api") || pathUrl.startsWith("/webhook")) {
       const replacer = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
       let line = `${req.method} ${pathUrl} ${res.statusCode} in ${Date.now() - t0}ms`;
+
       if (captured) {
         try {
+          // اطبع الجسم كامل بدون قص
           line += ` :: ${JSON.stringify(captured, replacer)}`;
         } catch {}
       }
-      if (line.length > 160) line = line.slice(0, 159) + "…";
+
       log(line);
     }
   });
@@ -129,10 +129,9 @@ app.use((req, res, next) => {
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.WEBAPP_URL || "";
   if (!publicBaseUrl) throw new Error("PUBLIC_BASE_URL or WEBAPP_URL must be set");
 
-  // كل الراوترات (webhook + REST)
   const server = await registerRoutes(app);
 
-  // ===== 5) Global error handler يمنع 502 =====
+  // ===== 5) Global error handler =====
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     console.error("UNCAUGHT:", err);
     const e = err as { status?: number; statusCode?: number; message?: string };
@@ -141,7 +140,6 @@ app.use((req, res, next) => {
       .json({ ok: false, error: e?.message || "internal_error" });
   });
 
-  // Dev server أو ملفات الستاتك
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {
@@ -156,7 +154,6 @@ app.use((req, res, next) => {
     return res.sendFile(path.resolve(__dirname, "../public/index.html"));
   });
 
-  // حراس أخطاء عملية
   process.on("unhandledRejection", (r) => console.error("unhandledRejection:", r));
   process.on("uncaughtException", (e) => console.error("uncaughtException:", e));
 
