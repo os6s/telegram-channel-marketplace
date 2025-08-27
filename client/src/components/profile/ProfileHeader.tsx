@@ -118,13 +118,18 @@ export function ProfileHeader({
       console.log("Deposit txPayload (raw):", r.txPayload);
 
       const tx = {
-        validUntil: r.txPayload.validUntil,
-        messages: r.txPayload.messages.map((m: any) => ({
-          address: String(m.address),
-          amount: String(m.amount ?? "0"),
-          payload: m.payload || "",
-        })),
-      };
+  validUntil: r.txPayload.validUntil ?? Math.floor(Date.now() / 1000) + 600,
+  messages: r.txPayload.messages.map((m: any) => {
+    const msg: any = {
+      address: String(m.address),
+      amount: String(m.amount), // نانو كسترنغ
+    };
+    if (m.text) msg.text = String(m.text);
+    if (m.payload) msg.payload = String(m.payload);
+    if (m.stateInit) msg.stateInit = String(m.stateInit);
+    return msg;
+  }),
+};
 
       console.log("Deposit txPayload (normalized):", tx);
 
