@@ -114,7 +114,7 @@ export function mountWallet(app: Express) {
       return res.status(500).json({ ok: false, error: "wallet_unlink_failed" });
     }
   });
-/** 2) Deposit initiate */
+/** 2) Deposit initiate (NO CODE / NO PAYLOAD) */
 app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
   try {
     const escrowRaw = (process.env.ESCROW_WALLET || "").trim();
@@ -138,7 +138,7 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       return res.status(400).json({ ok: false, error: "wallet_not_linked" });
     }
 
-    const code = genCode();
+    const code = genCode(); // still store in DB for tracking
     const amountNano = toNano(amountTon);
 
     const [p] = await db
@@ -155,7 +155,7 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
         feeAmount: "0",
         sellerAmount: "0",
         escrowAddress: escrow,
-        comment: code,      // we still store the code for later verification
+        comment: code,     // we still keep code in DB, but don’t send payload
         txHash: null,
         buyerConfirmed: false,
         sellerConfirmed: false,
@@ -164,13 +164,13 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       })
       .returning({ id: payments.id });
 
-    // ⚡ No payload for now (Tonkeeper rejects short BOCs)
+    // ⚡ No payload attached
     const txPayload = {
       validUntil: Math.floor(Date.now() / 1000) + 300,
       messages: [
         {
           address: escrow,
-          amount: amountNano, // string, nanoTON
+          amount: amountNano, // string nanoTON
         },
       ],
     } as const;
@@ -186,7 +186,7 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
     });
   } catch (e: unknown) {
     const err = e as Error;
-    console.error("deposit/initiate error:", err);
+    console.error("deposit/initiate error (no payload):", err);
     res.status(500).json({ ok: false, error: err?.message || "deposit_initiate_failed" });
   }
 });
