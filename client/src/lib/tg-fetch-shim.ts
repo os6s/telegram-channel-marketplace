@@ -1,3 +1,4 @@
+// client/src/lib/tg-fetch-shim.ts
 function getInitData(): string | null {
   try {
     // @ts-ignore
@@ -14,8 +15,11 @@ export function installTgFetchShim() {
 
   const origFetch = window.fetch.bind(window);
 
-  window.fetch = (input: RequestInfo | URL, init: RequestInit = {}) => {
+  window.fetch = (input: RequestInfo | URL, initArg?: RequestInit) => {
     try {
+      const init: RequestInit = initArg ?? {};
+
+      // 1) حدد الـ URL وكونه same-origin أو لا
       const urlStr =
         typeof input === "string"
           ? input
@@ -26,28 +30,57 @@ export function installTgFetchShim() {
       const url = new URL(urlStr, window.location.href);
       const isSameOrigin = url.origin === window.location.origin;
 
-      const headers = new Headers(init.headers || undefined);
-      if (isSameOrigin) {
-        const initData = getInitData();
-        if (initData && !headers.has("x-telegram-init-data")) {
-          headers.set("x-telegram-init-data", initData);
+      // 2) جهّز الهيدرز بشكل دفاعي (يدعم object/Headers)
+      const merged = new Headers();
+      // أولوية: headers من Request إن وُجد
+      if (typeof input === "object" && input instanceof Request) {
+        try {
+          (input.headers as Headers)?.forEach((v, k) => merged.set(k, v));
+        } catch {}
+      }
+      // ثم headers القادمين من init
+      if (init.headers) {
+        try {
+          const h2 = new Headers(init.headers as any);
+          h2.forEach((v, k) => merged.set(k, v));
+        } catch {
+          // لو init.headers كان object عادي
+          try {
+            Object.entries(init.headers as Record<string, string>).forEach(([k, v]) =>
+              merged.set(k, String(v))
+            );
+          } catch {}
         }
-      } else {
-        // امنع الكوكيز/التوكينات للـ bridges الخارجية
-        headers.delete("cookie");
-        headers.delete("Cookie");
-        headers.delete("authorization");
-        headers.delete("Authorization");
       }
 
-      return origFetch(url.toString(), {
+      // 3) أضف initData لطلبات نفس الدومين فقط
+      if (isSameOrigin) {
+        const initData = getInitData();
+        if (initData && !merged.has("x-telegram-init-data")) {
+          merged.set("x-telegram-init-data", initData);
+        }
+      } else {
+        // 4) لطلبات الـ bridge (cross-origin) لا نرسل كوكيز/توكنات
+        try { merged.delete("cookie"); } catch {}
+        try { merged.delete("Cookie"); } catch {}
+        try { merged.delete("authorization"); } catch {}
+        try { merged.delete("Authorization"); } catch {}
+      }
+
+      // 5) جهّز init النهائي—لا نغيّر mode (iOS/Safari حساس)
+      const nextInit: RequestInit = {
         ...init,
-        headers,
-        credentials: isSameOrigin ? "include" : "omit",
-        mode: "cors",
-      });
+        headers: merged,
+        credentials:
+          init.credentials ??
+          (isSameOrigin ? "include" : "omit"),
+        // اترك mode كما هو (لا نفرض "cors")
+      };
+
+      return origFetch(url.toString(), nextInit);
     } catch {
-      return origFetch(input as any, init);
+      // fallback لو صار parsing error
+      return origFetch(input as any, initArg);
     }
   };
 }
