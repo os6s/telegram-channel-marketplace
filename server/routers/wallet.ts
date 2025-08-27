@@ -122,6 +122,7 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
     }
 
+    // normalize escrow
     let escrow: string;
     try {
       escrow = Address.parse(escrowRaw).toString({ bounceable: true });
@@ -129,20 +130,23 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       return res.status(500).json({ ok: false, error: "invalid_ESCROW_WALLET" });
     }
 
-    const amountInput = Number((req.body as any)?.amountTon); // client sends TON
-    if (!Number.isFinite(amountInput) || amountInput <= 0) {
+    // parse amount
+    const amountTon = Number((req.body as any)?.amountTon);
+    if (!Number.isFinite(amountTon) || amountTon <= 0) {
       return res.status(400).json({ ok: false, error: "invalid_amount" });
     }
 
+    // get user
     const me = await getMe(req);
     if (!me) return res.status(404).json({ ok: false, error: "user_not_found" });
     if (!me.walletAddress) {
       return res.status(400).json({ ok: false, error: "wallet_not_linked" });
     }
 
-    // 🔥 only keep nanoTON everywhere
-    const amountNano = toNano(amountInput);
+    // convert to nanoTON
+    const amountNano = toNano(amountTon);
 
+    // insert payment (still use amount column internally, but that doesn’t matter for the test)
     const [p] = await db
       .insert(payments)
       .values({
@@ -151,7 +155,7 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
         sellerId: null,
         kind: "deposit",
         locked: false,
-        amount: amountNano,  // ✅ store only nanoTON
+        amount: amountNano, // ⚡ store nanoTON into amount column
         currency: "TON",
         feePercent: "0",
         feeAmount: "0",
@@ -166,20 +170,20 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       })
       .returning({ id: payments.id });
 
+    // build txPayload for TonConnect
     const txPayload = {
       validUntil: Math.floor(Date.now() / 1000) + 3600,
       messages: [
         {
           address: escrow,
-          amount: amountNano, // ✅ nanoTON string
+          amount: amountNano, // ✅ this is the ONLY amount TonConnect cares about
         },
       ],
     } as const;
 
+    // response
     res.status(201).json({
       ok: true,
-      escrowAddress: escrow,
-      amountNano, // ✅ only nanoTON returned
       txPayload,
       id: String(p.id),
     });
