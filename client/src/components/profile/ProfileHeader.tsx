@@ -74,14 +74,14 @@ export function ProfileHeader({ telegramUser, onBack, onOpenSettings, balance }:
       console.log("Deposit txPayload (raw):", r?.txPayload);
 
       tx = {
-        validUntil: r.txPayload.validUntil ?? Math.floor(Date.now()/1000)+360,
-        messages: (r.txPayload.messages||[]).map((m:any)=>({
-          address: String(m.address),
-          amount:  String(m.amount),
-          ...(m.payload   ? { payload:   String(m.payload) }   : {}),
-          ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
-        })),
-      };
+  validUntil: r.txPayload.validUntil ?? Math.floor(new Date() / 1000) + 360,
+  messages: (r.txPayload.messages || []).map((m: any) => ({
+    address: String(m.address),
+    amount: String(m.amount),
+    ...(m.payload   ? { payload:   String(m.payload) }   : {}),
+    ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
+  })),
+};
 
       console.log("Deposit txPayload (normalized):", tx);
 
