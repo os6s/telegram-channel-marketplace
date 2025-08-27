@@ -120,10 +120,11 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req, res) => {
     const escrowRaw = (process.env.ESCROW_WALLET || "").trim();
     if (!escrowRaw) return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
 
-    // escrow بصيغة EQ… قابلة للارتداد
+    // حول أي صيغة (UQ/0:) إلى EQ… bounceable وبحسب الشبكة
+    const isTest = (process.env.TON_NETWORK || "mainnet") !== "mainnet";
     let escrow: string;
     try {
-      escrow = Address.parse(escrowRaw).toString({ bounceable: true });
+      escrow = Address.parse(escrowRaw).toString({ bounceable: true, testOnly: isTest });
     } catch {
       return res.status(500).json({ ok: false, error: "invalid_ESCROW_WALLET" });
     }
@@ -137,23 +138,23 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req, res) => {
     if (!me) return res.status(404).json({ ok: false, error: "user_not_found" });
     if (!me.walletAddress) return res.status(400).json({ ok: false, error: "wallet_not_linked" });
 
-    const code = genCode();
-    const amountNano = toNano(amountTon);
+    const code = genCode();               // تعليق فريد
+    const amountNano = toNano(amountTon); // نانو كسترنغ
 
-    // خزّن TON في الـ DB، وليس nano
+    // خزّن TON في الـ DB وليس nano
     const [p] = await db.insert(payments).values({
       listingId: null,
       buyerId: me.id,
       sellerId: null,
       kind: "deposit",
       locked: false,
-      amount: String(amountTon),       // TON
+      amount: String(amountTon), // TON
       currency: "TON",
       feePercent: "0",
       feeAmount: "0",
       sellerAmount: "0",
       escrowAddress: escrow,
-      comment: code,                   // مهم
+      comment: code,             // نتحقق به لاحقاً
       txHash: null,
       buyerConfirmed: false,
       sellerConfirmed: false,
@@ -161,14 +162,14 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req, res) => {
       adminAction: "none",
     }).returning({ id: payments.id });
 
-    // استخدم تعليق نصّي (text) وتجنّب payload فارغ
+    // استخدم text بدل payload الفارغ
     const txPayload = {
       validUntil: Math.floor(Date.now() / 1000) + 600,
       messages: [
         {
           address: escrow,
-          amount: amountNano, // nano كسترنغ
-          text: code,         // التعليق
+          amount: amountNano,
+          text: code, // التعليق
         },
       ],
     } as const;
@@ -176,7 +177,7 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req, res) => {
     return res.status(201).json({
       ok: true,
       id: String(p.id),
-      code,                 // يرجع للفرونت حتى ي.poll
+      code,
       escrowAddress: escrow,
       amountTon,
       amountNano,
