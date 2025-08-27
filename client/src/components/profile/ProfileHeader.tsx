@@ -118,18 +118,18 @@ export function ProfileHeader({
       console.log("Deposit txPayload (raw):", r.txPayload);
 
       const tx = {
-  validUntil: r.txPayload.validUntil ?? Math.floor(Date.now() / 1000) + 600,
-  messages: r.txPayload.messages.map((m: any) => {
-    const msg: any = {
-      address: String(m.address),
-      amount: String(m.amount), // نانو كسترنغ
-    };
-    if (m.text) msg.text = String(m.text);
-    if (m.payload) msg.payload = String(m.payload);
-    if (m.stateInit) msg.stateInit = String(m.stateInit);
-    return msg;
-  }),
-};
+        validUntil: r.txPayload.validUntil ?? Math.floor(Date.now() / 1000) + 600,
+        messages: r.txPayload.messages.map((m: any) => {
+          const msg: any = {
+            address: String(m.address),
+            amount: String(m.amount), // نانو كسترنغ
+          };
+          if (m.text) msg.text = String(m.text);
+          if (m.payload) msg.payload = String(m.payload);
+          if (m.stateInit) msg.stateInit = String(m.stateInit);
+          return msg;
+        }),
+      };
 
       console.log("Deposit txPayload (normalized):", tx);
 
@@ -151,31 +151,29 @@ export function ProfileHeader({
       setTimeout(poll, 5000);
       setDepositOpen(false);
       setAmount("");
-
     } catch (e: any) {
-  if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-    try { await tonConnectUI?.disconnect(); } catch {}
-  }
+      if (String(e?.message || "").toLowerCase().includes("unlinked")) {
+        try { await tonConnectUI?.disconnect(); } catch {}
+      }
 
-  // اطبع كل التفاصيل للكونسول
-  console.log("TonConnect error raw:", e);
+      console.log("TonConnect error raw:", e);
 
-  const details = {
-    name: e?.name,
-    code: e?.code ?? e?.data?.code,
-    message: e?.message ?? e?.data?.message ?? "TonConnect send failed",
-    data: e?.data ?? e
-  };
+      const details = {
+        name: e?.name,
+        code: e?.code ?? e?.data?.code,
+        message: e?.message ?? e?.data?.message ?? "TonConnect send failed",
+        data: e?.data ?? e
+      };
 
-  // اظهار الخطأ الحقيقي داخل الميني-app
-  alert(`TonConnect error:\n${JSON.stringify(details, null, 2)}`);
+      alert(`TonConnect error:\n${JSON.stringify(details, null, 2)}`);
 
-  toast({
-    title: t("toast.depositFailed"),
-    description: `${details.code || ""} ${details.message || ""}`,
-    variant: "destructive"
-  });
-}
+      toast({
+        title: t("toast.depositFailed"),
+        description: `${details.code || ""} ${details.message || ""}`,
+        variant: "destructive"
+      });
+    }
+   // ←← هذا القوس كان مفقود ويغلق الدالة كاملة
 
   async function handleWithdraw() {
     try {
