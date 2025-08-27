@@ -114,11 +114,13 @@ export function mountWallet(app: Express) {
       return res.status(500).json({ ok: false, error: "wallet_unlink_failed" });
     }
   });
-/** 2) Deposit initiate (no code, no payload) */
+/** 2) Deposit initiate */
 app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
   try {
     const escrowRaw = (process.env.ESCROW_WALLET || "").trim();
-    if (!escrowRaw) return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
+    if (!escrowRaw) {
+      return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
+    }
 
     let escrow: string;
     try {
@@ -138,7 +140,6 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       return res.status(400).json({ ok: false, error: "wallet_not_linked" });
     }
 
-    // ⚡ Removed code
     const amountNano = toNano(amountTon);
 
     const [p] = await db
@@ -149,13 +150,13 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
         sellerId: null,
         kind: "deposit",
         locked: false,
-        amount: String(amountTon),
+        amount: amountNano,   // store in nanoTON
         currency: "TON",
         feePercent: "0",
         feeAmount: "0",
         sellerAmount: "0",
         escrowAddress: escrow,
-        // ⚡ no comment
+        comment: null,
         txHash: null,
         buyerConfirmed: false,
         sellerConfirmed: false,
@@ -164,9 +165,9 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       })
       .returning({ id: payments.id });
 
-    // ⚡ no payload
+    // ⚡ Only nanoTON string goes to TonConnect
     const txPayload = {
-      validUntil: Math.floor(Date.now() / 1000) + 300,
+      validUntil: Math.floor(Date.now() / 1000) + 3600, // 1 hour window
       messages: [
         {
           address: escrow,
@@ -178,8 +179,6 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
     res.status(201).json({
       ok: true,
       escrowAddress: escrow,
-      amountTon,
-      amountNano,
       txPayload,
       id: String(p.id),
     });
