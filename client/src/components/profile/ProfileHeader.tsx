@@ -63,8 +63,9 @@ export function ProfileHeader({
 
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
+  // لا ترسل DELETE تلقائياً إذا العنوان فاضي
   useEffect(() => {
-    updateWallet(address || null);
+    if (address) updateWallet(address);
   }, [address, updateWallet]);
 
   async function handleConnect() {
@@ -73,7 +74,11 @@ export function ProfileHeader({
       const addr = await waitForConnect(tonConnectUI);
       updateWallet(addr);
     } catch (e: any) {
-      toast({ title: t("toast.connectFailed") || "Connect failed", description: e?.message || "", variant: "destructive" });
+      toast({
+        title: t("toast.connectFailed") || "Connect failed",
+        description: e?.message || "",
+        variant: "destructive",
+      });
     } finally {
       setBusy(false);
     }
@@ -99,12 +104,19 @@ export function ProfileHeader({
 
       await waitForConnect(tonConnectUI);
 
+      // تحقق الشبكة بين الفرونت والمحفظة
+      const appNet = (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
+      const chain = tonConnectUI?.wallet?.account?.chain; // "-239" mainnet, "-3" testnet
+      const walletNet = chain === "-3" ? "TESTNET" : "MAINNET";
+      if (walletNet !== appNet) {
+        throw new Error(`Wallet on ${walletNet}. Switch to ${appNet}.`);
+      }
+
       const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
 
-      // ✅ Log raw payload
+      // Debug
       console.log("Deposit txPayload (raw):", r.txPayload);
 
-      // ✅ Normalize for TonConnect
       const tx = {
         validUntil: r.txPayload.validUntil,
         messages: r.txPayload.messages.map((m: any) => ({
@@ -114,7 +126,6 @@ export function ProfileHeader({
         })),
       };
 
-      // ✅ Log normalized payload
       console.log("Deposit txPayload (normalized):", tx);
 
       await tonConnectUI.sendTransaction(tx);
@@ -139,7 +150,10 @@ export function ProfileHeader({
       if (String(e?.message || "").toLowerCase().includes("unlinked")) {
         try { await tonConnectUI?.disconnect(); } catch {}
       }
-      toast({ title: t("toast.depositFailed"), description: e?.message || "", variant: "destructive" });
+      const code = e?.code ?? e?.data?.code ?? "";
+      const msg = e?.message ?? e?.data?.message ?? "TonConnect send failed";
+      console.error("sendTransaction error:", e);
+      toast({ title: t("toast.depositFailed"), description: `${code} ${msg}`, variant: "destructive" });
     }
   }
 
