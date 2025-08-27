@@ -18,24 +18,21 @@ import { useWalletAddress } from "@/hooks/use-wallet";
 const S = (v: unknown) => (typeof v === "string" ? v : "");
 const initialFrom = (v: unknown) => { const s = S(v); return s ? s[0].toUpperCase() : "U"; };
 
-// ✅ محمية ضد SDK empty error
+// ✅ لا يفتح المودال إلا إذا غير متصل
 async function waitForConnect(tonConnectUI: any, timeoutMs = 15000) {
-  // إذا متصل، رجّع العنوان فورًا
   const addrNow = tonConnectUI?.wallet?.account?.address;
   if (addrNow) return addrNow;
 
-  // افتح مودال الربط مرة وحدة
-  await tonConnectUI.openModal();
+  if (typeof tonConnectUI?.openModal === "function") {
+    await tonConnectUI.openModal();
+  }
 
   const start = Date.now();
   return await new Promise<string>((resolve, reject) => {
     const iv = setInterval(() => {
       const addr = tonConnectUI?.wallet?.account?.address;
       if (addr) { clearInterval(iv); resolve(addr); }
-      else if (Date.now() - start > timeoutMs) {
-        clearInterval(iv);
-        reject(new Error("Connection timeout"));
-      }
+      else if (Date.now() - start > timeoutMs) { clearInterval(iv); reject(new Error("Connection timeout")); }
     }, 250);
   });
 }
@@ -62,6 +59,7 @@ export function ProfileHeader({
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
+
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
   useEffect(() => { if (address) updateWallet(address); }, [address, updateWallet]);
@@ -100,32 +98,45 @@ export function ProfileHeader({
         return;
       }
 
-      const addr = await waitForConnect(tonConnectUI);
-      if (!addr) throw new Error("Wallet not connected");
+      // ✅ لا تستدعِ waitForConnect إذا كان متصلاً أصلاً
+      const isConnected = !!tonConnectUI?.wallet?.account?.address;
+      if (!isConnected) {
+        const addr = await waitForConnect(tonConnectUI);
+        if (!addr) throw new Error("Wallet not connected");
+      }
 
+      // تحقق توافق الشبكة
       const appNet = (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
       const chain = tonConnectUI?.wallet?.account?.chain; // "-239" mainnet, "-3" testnet
       const walletNet = chain === "-3" ? "TESTNET" : "MAINNET";
       if (walletNet !== appNet) throw new Error(`Wallet on ${walletNet}. Switch to ${appNet}.`);
 
+      // اطلب تهيئة الإرسال من السيرفر
       r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
       console.log("Deposit txPayload (raw):", r?.txPayload);
 
+      // ✅ تحضير آمن مع مهلة أكبر والتحقق من وجود رسائل
+      const raw = r?.txPayload || {};
+      const messages = Array.isArray(raw.messages) ? raw.messages : [];
+      if (messages.length === 0) throw new Error("No messages in txPayload");
+
       tx = {
-        validUntil: r.txPayload.validUntil ?? Math.floor(new Date() / 1000) + 360,
-        messages: (r.txPayload.messages || []).map((m: any) => ({
+        validUntil: Number(raw.validUntil) > 0 ? Number(raw.validUntil) : Math.floor(Date.now() / 1000) + 900, // 15m
+        messages: messages.map((m: any) => ({
           address: String(m.address),
           amount: String(m.amount),
-          ...(m.payload ? { payload: String(m.payload) } : {}),
+          ...(m.payload   ? { payload:   String(m.payload) }   : {}),
           ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
         })),
       };
 
       console.log("Deposit txPayload (normalized):", tx);
 
+      // ✅ إرسال مرة واحدة فقط
       await tonConnectUI.sendTransaction(tx);
       toast({ title: t("toast.confirmDeposit") });
 
+      // تتبّع التأكيد
       const poll = async () => {
         const status = await apiRequest("POST", "/api/wallet/deposit/status", { code: r.code, minTon: amt });
         if (status.status === "paid") {
@@ -140,6 +151,7 @@ export function ProfileHeader({
       setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
+      // احتمال unlink
       if (String(e?.message || "").toLowerCase().includes("unlinked")) {
         try { await tonConnectUI?.disconnect(); } catch {}
       }
