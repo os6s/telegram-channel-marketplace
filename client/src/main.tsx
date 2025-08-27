@@ -5,7 +5,7 @@ import "./index.css";
 import { ErrorBoundary } from "./ErrorBoundary";
 import "./bootstrap";
 import { installTgFetchShim } from "@/lib/tg-fetch-shim";
-import { installRemoteLogger } from "@/lib/remote-logger"; // ✅ يرسل لوغات الآيفون/الموبايل للسيرفر
+import { installRemoteLogger } from "@/lib/remote-logger"; // يرسل لوغات الآيفون/الموبايل للسيرفر
 
 // ========== 1) Error logging (مثلاً Sentry أو fallback للباك) ==========
 function reportError(error: any, context: string) {
