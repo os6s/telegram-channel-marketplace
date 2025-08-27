@@ -1,3 +1,4 @@
+// client/src/components/profile/ProfileHeader.tsx
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -74,14 +75,14 @@ export function ProfileHeader({ telegramUser, onBack, onOpenSettings, balance }:
       console.log("Deposit txPayload (raw):", r?.txPayload);
 
       tx = {
-  validUntil: r.txPayload.validUntil ?? Math.floor(new Date() / 1000) + 360,
-  messages: (r.txPayload.messages || []).map((m: any) => ({
-    address: String(m.address),
-    amount: String(m.amount),
-    ...(m.payload   ? { payload:   String(m.payload) }   : {}),
-    ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
-  })),
-};
+        validUntil: r.txPayload.validUntil ?? Math.floor(new Date() / 1000) + 360,
+        messages: (r.txPayload.messages || []).map((m: any) => ({
+          address: String(m.address),
+          amount: String(m.amount),
+          ...(m.payload   ? { payload:   String(m.payload) }   : {}),
+          ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
+        })),
+      };
 
       console.log("Deposit txPayload (normalized):", tx);
 
@@ -99,33 +100,34 @@ export function ProfileHeader({ telegramUser, onBack, onOpenSettings, balance }:
       setDepositOpen(false);
       setAmount("");
     } catch (e:any) {
-  if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-    try { await tonConnectUI?.disconnect(); } catch {}
+      if (String(e?.message || "").toLowerCase().includes("unlinked")) {
+        try { await tonConnectUI?.disconnect(); } catch {}
+      }
+      const safe = (_k:string,v:any)=>(typeof v==="bigint"?v.toString():v);
+      console.log("[TON] wallet account:", tonConnectUI?.wallet?.account);
+      console.log("[TON] last txPayload (raw):", r?.txPayload);
+      console.log("[TON] last txPayload (normalized):", tx);
+
+      const details = {
+        name: e?.name,
+        code: e?.code ?? e?.data?.code,
+        message: e?.message ?? e?.data?.message,
+        data: e?.data ?? e
+      };
+
+      console.error("TonConnect error raw:", e);
+      alert(`TonConnect error:\n${JSON.stringify(details, safe, 2)}`);
+
+      // أرسل تفاصيل الخطأ للباك لظهورها في لوغ Render
+      fetch("/api/log-client-error", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ context: "TonConnect send", details }),
+      });
+
+      toast({ title: "Deposit failed", description: details.message, variant: "destructive" });
+    }
   }
-  const safe = (_k:string,v:any)=>(typeof v==="bigint"?v.toString():v);
-  console.log("[TON] wallet account:", tonConnectUI?.wallet?.account);
-  console.log("[TON] last txPayload (raw):", r?.txPayload);
-  console.log("[TON] last txPayload (normalized):", tx);
-
-  const details = {
-    name: e?.name,
-    code: e?.code ?? e?.data?.code,
-    message: e?.message ?? e?.data?.message,
-    data: e?.data ?? e
-  };
-
-  console.error("TonConnect error raw:", e);
-  alert(`TonConnect error:\n${JSON.stringify(details, safe, 2)}`);
-
-  // ⬇️ إرسال الخطأ للسيرفر ليتسجل في لوغ Render
-  fetch("/api/log-client-error", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ context: "TonConnect send", details }),
-  });
-
-  toast({ title: "Deposit failed", description: details.message, variant: "destructive" });
-}
 
   async function handleWithdraw() {
     try {
