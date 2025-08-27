@@ -114,86 +114,83 @@ export function mountWallet(app: Express) {
       return res.status(500).json({ ok: false, error: "wallet_unlink_failed" });
     }
   });
+/** 2) Deposit initiate */
+app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
+  try {
+    const escrowRaw = (process.env.ESCROW_WALLET || "").trim();
+    if (!escrowRaw) return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
 
-  /** 2) Deposit initiate */
-  app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Response) => {
+    let escrow: string;
     try {
-      const escrowRaw = (process.env.ESCROW_WALLET || "").trim();
-      if (!escrowRaw) return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
-
-      let escrow: string;
-      try {
-        escrow = Address.parse(escrowRaw).toString({ bounceable: true });
-      } catch {
-        return res.status(500).json({ ok: false, error: "invalid_ESCROW_WALLET" });
-      }
-
-      const amountTon = Number((req.body as any)?.amountTon);
-      if (!Number.isFinite(amountTon) || amountTon <= 0) {
-        return res.status(400).json({ ok: false, error: "invalid_amount" });
-      }
-
-      const me = await getMe(req);
-      if (!me) return res.status(404).json({ ok: false, error: "user_not_found" });
-      if (!me.walletAddress) {  // ✅ FIXED here
-        return res.status(400).json({ ok: false, error: "wallet_not_linked" });
-      }
-
-      const code = genCode();
-      const amountNano = toNano(amountTon);
-
-      const [p] = await db
-        .insert(payments)
-        .values({
-          listingId: null,
-          buyerId: me.id,
-          sellerId: null,
-          kind: "deposit",
-          locked: false,
-          amount: String(amountTon),
-          currency: "TON",
-          feePercent: "0",
-          feeAmount: "0",
-          sellerAmount: "0",
-          escrowAddress: escrow,
-          comment: code,
-          txHash: null,
-          buyerConfirmed: false,
-          sellerConfirmed: false,
-          status: "waiting",
-          adminAction: "none",
-        })
-        .returning({ id: payments.id });
-
-      const commentCell = beginCell().storeUint(0, 32).storeStringTail(code).endCell();
-      const payloadB64 = commentCell.toBoc().toString("base64");
-
-      const txPayload = {
-        validUntil: Math.floor(Date.now() / 1000) + 300,
-        messages: [
-          {
-            address: escrow,
-            amount: amountNano,
-            payload: payloadB64,
-          },
-        ],
-      } as const;
-
-      res.status(201).json({
-        ok: true,
-        code,
-        escrowAddress: escrow,
-        amountTon,
-        amountNano,
-        txPayload,
-        id: String(p.id),
-      });
-    } catch (e: unknown) {
-      const err = e as Error;
-      console.error("deposit/initiate error:", err);
-      res.status(500).json({ ok: false, error: err?.message || "deposit_initiate_failed" });
+      escrow = Address.parse(escrowRaw).toString({ bounceable: true });
+    } catch {
+      return res.status(500).json({ ok: false, error: "invalid_ESCROW_WALLET" });
     }
-  });
+
+    const amountTon = Number((req.body as any)?.amountTon);
+    if (!Number.isFinite(amountTon) || amountTon <= 0) {
+      return res.status(400).json({ ok: false, error: "invalid_amount" });
+    }
+
+    const me = await getMe(req);
+    if (!me) return res.status(404).json({ ok: false, error: "user_not_found" });
+    if (!me.walletAddress) {
+      return res.status(400).json({ ok: false, error: "wallet_not_linked" });
+    }
+
+    const code = genCode();
+    const amountNano = toNano(amountTon);
+
+    const [p] = await db
+      .insert(payments)
+      .values({
+        listingId: null,
+        buyerId: me.id,
+        sellerId: null,
+        kind: "deposit",
+        locked: false,
+        amount: String(amountTon),
+        currency: "TON",
+        feePercent: "0",
+        feeAmount: "0",
+        sellerAmount: "0",
+        escrowAddress: escrow,
+        comment: code,      // we still store the code for later verification
+        txHash: null,
+        buyerConfirmed: false,
+        sellerConfirmed: false,
+        status: "waiting",
+        adminAction: "none",
+      })
+      .returning({ id: payments.id });
+
+    // ⚡ No payload for now (Tonkeeper rejects short BOCs)
+    const txPayload = {
+      validUntil: Math.floor(Date.now() / 1000) + 300,
+      messages: [
+        {
+          address: escrow,
+          amount: amountNano, // string, nanoTON
+        },
+      ],
+    } as const;
+
+    res.status(201).json({
+      ok: true,
+      code,
+      escrowAddress: escrow,
+      amountTon,
+      amountNano,
+      txPayload,
+      id: String(p.id),
+    });
+  } catch (e: unknown) {
+    const err = e as Error;
+    console.error("deposit/initiate error:", err);
+    res.status(500).json({ ok: false, error: err?.message || "deposit_initiate_failed" });
+  }
+});
+  
 
   /** 3) Deposit status check */
   app.post("/api/wallet/deposit/status", tgAuth, async (req: Request, res: Response) => {
