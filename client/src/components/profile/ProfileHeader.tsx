@@ -29,8 +29,15 @@ async function waitForConnect(tonConnectUI: any, timeoutMs = 30000) {
   throw new Error("Connection timeout");
 }
 
-export function ProfileHeader({ telegramUser, onBack, onOpenSettings, balance }: {
-  telegramUser: any; onBack: () => void; onOpenSettings: () => void;
+export function ProfileHeader({
+  telegramUser,
+  onBack,
+  onOpenSettings,
+  balance,
+}: {
+  telegramUser: any;
+  onBack: () => void;
+  onOpenSettings: () => void;
   balance?: { balance: number; currency: string } | null;
 }) {
   const { t } = useLanguage();
@@ -49,25 +56,42 @@ export function ProfileHeader({ telegramUser, onBack, onOpenSettings, balance }:
   useEffect(() => { if (address) updateWallet(address); }, [address, updateWallet]);
 
   async function handleConnect() {
-    try { setBusy(true); const addr = await waitForConnect(tonConnectUI); updateWallet(addr); }
-    catch (e:any) { toast({ title: t("toast.connectFailed"), description: e?.message || "", variant: "destructive" }); }
-    finally { setBusy(false); }
+    try {
+      setBusy(true);
+      const addr = await waitForConnect(tonConnectUI);
+      updateWallet(addr);
+    } catch (e: any) {
+      toast({ title: t("toast.connectFailed"), description: e?.message || "", variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleDisconnect() {
-    try { setBusy(true); await tonConnectUI?.disconnect(); updateWallet(null); }
-    finally { setBusy(false); }
+    try {
+      setBusy(true);
+      await tonConnectUI?.disconnect();
+      updateWallet(null);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleDeposit() {
-    let r:any; let tx:any;
+    let r: any;
+    let tx: any;
+
     try {
       const amt = Number(amount);
-      if (!amt || amt <= 0) { toast({ title: t("toast.invalidAmount"), variant: "destructive" }); return; }
+      if (!amt || amt <= 0) {
+        toast({ title: t("toast.invalidAmount"), variant: "destructive" });
+        return;
+      }
 
       await waitForConnect(tonConnectUI);
+
       const appNet = (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
-      const chain = tonConnectUI?.wallet?.account?.chain; 
+      const chain = tonConnectUI?.wallet?.account?.chain; // "-239" mainnet, "-3" testnet
       const walletNet = chain === "-3" ? "TESTNET" : "MAINNET";
       if (walletNet !== appNet) throw new Error(`Wallet on ${walletNet}. Switch to ${appNet}.`);
 
@@ -79,7 +103,7 @@ export function ProfileHeader({ telegramUser, onBack, onOpenSettings, balance }:
         messages: (r.txPayload.messages || []).map((m: any) => ({
           address: String(m.address),
           amount: String(m.amount),
-          ...(m.payload   ? { payload:   String(m.payload) }   : {}),
+          ...(m.payload ? { payload: String(m.payload) } : {}),
           ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
         })),
       };
@@ -94,63 +118,68 @@ export function ProfileHeader({ telegramUser, onBack, onOpenSettings, balance }:
         if (status.status === "paid") {
           toast({ title: t("toast.depositConfirmed"), description: `Tx: ${status.txHash}` });
           qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
-        } else setTimeout(poll, 5000);
+        } else {
+          setTimeout(poll, 5000);
+        }
       };
       setTimeout(poll, 5000);
+
       setDepositOpen(false);
       setAmount("");
-    } catch (e:any) {
-  if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-    try { await tonConnectUI?.disconnect(); } catch {}
+    } catch (e: any) {
+      if (String(e?.message || "").toLowerCase().includes("unlinked")) {
+        try { await tonConnectUI?.disconnect(); } catch {}
+      }
+
+      const safe = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
+      console.log("[TON] wallet account:", tonConnectUI?.wallet?.account);
+      console.log("[TON] last txPayload (raw):", r?.txPayload);
+      console.log("[TON] last txPayload (normalized):", tx);
+
+      const details = {
+        name: e?.name,
+        code: e?.code ?? e?.data?.code,
+        message: e?.message ?? e?.data?.message,
+        data: e?.data ?? e,
+      };
+
+      console.error("TonConnect error raw:", e);
+      alert(`TonConnect error:\n${JSON.stringify(details, safe, 2)}`);
+
+      // أرسل للوج السيرفر
+      fetch("/api/log-client-error", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          context: "deposit/sendTransaction",
+          details,
+          tx,
+          init: r,
+          wallet: tonConnectUI?.wallet?.account,
+          url: window.location.href,
+          ua: navigator.userAgent,
+          ts: new Date().toISOString(),
+        }),
+      });
+
+      toast({ title: "Deposit failed", description: details.message, variant: "destructive" });
+    }
   }
-
-  const safe = (_k:string,v:any)=>(typeof v==="bigint"?v.toString():v);
-  console.log("[TON] wallet account:", tonConnectUI?.wallet?.account);
-  console.log("[TON] last txPayload (raw):", r?.txPayload);
-  console.log("[TON] last txPayload (normalized):", tx);
-
-  const details = {
-    name: e?.name,
-    code: e?.code ?? e?.data?.code,
-    message: e?.message ?? e?.data?.message,
-    data: e?.data ?? e
-  };
-
-  console.error("TonConnect error raw:", e);
-  alert(`TonConnect error:\n${JSON.stringify(details, safe, 2)}`);
-
-  // ⬇️ إرسال اللوگ للسيرفر
-  fetch("/api/log-client-error", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      context: "deposit/sendTransaction",
-      details,
-      tx,
-      init: r,
-      wallet: tonConnectUI?.wallet?.account,
-      url: window.location.href,
-      ua: navigator.userAgent,
-      ts: new Date().toISOString(),
-    }),
-  });
-
-  toast({ title: "Deposit failed", description: details.message, variant: "destructive" });
-}
-
-      
 
   async function handleWithdraw() {
     try {
       const amt = Number(amount);
-      if (!amt || amt <= 0 || (balance?.balance||0) < amt) { toast({ title: t("toast.invalidAmount"), variant: "destructive" }); return; }
+      if (!amt || amt <= 0 || (balance?.balance || 0) < amt) {
+        toast({ title: t("toast.invalidAmount"), variant: "destructive" });
+        return;
+      }
       await apiRequest("POST", "/api/payouts", { amount: amt });
       toast({ title: t("wallet.withdrawRequest") || "Withdrawal request sent" });
       qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
       setWithdrawOpen(false);
       setAmount("");
-    } catch (e:any) {
-      toast({ title: "Withdraw failed", description: e?.message||"", variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "Withdraw failed", description: e?.message || "", variant: "destructive" });
     }
   }
 
@@ -159,13 +188,17 @@ export function ProfileHeader({ telegramUser, onBack, onOpenSettings, balance }:
       <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" onClick={onBack}>
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
             <div>
               <h1 className="text-lg font-semibold">{t("profilePage.title")}</h1>
               <p className="text-xs text-muted-foreground">{t("profilePage.subtitle")}</p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onOpenSettings}><Settings className="w-4 h-4" /></Button>
+          <Button variant="ghost" size="sm" onClick={onOpenSettings}>
+            <Settings className="w-4 h-4" />
+          </Button>
         </div>
       </header>
 
@@ -174,9 +207,23 @@ export function ProfileHeader({ telegramUser, onBack, onOpenSettings, balance }:
           <div className="flex flex-col items-start gap-3">
             <div className="flex items-center gap-2 bg-muted rounded-full pl-3 pr-2 py-1">
               <img src={tonIconUrl} alt="TON" className="w-4 h-4" />
-              <span className="text-sm font-semibold">{(balance?.balance??0).toLocaleString()} {balance?.currency||"TON"}</span>
-              <button onClick={()=>setDepositOpen(true)} className="ml-1 h-8 w-8 rounded-full bg-secondary grid place-items-center"><Plus className="w-4 h-4"/></button>
-              <button onClick={()=>setWithdrawOpen(true)} className="h-8 w-8 rounded-full bg-secondary grid place-items-center"><Minus className="w-4 h-4"/></button>
+              <span className="text-sm font-semibold">
+                {(balance?.balance ?? 0).toLocaleString()} {balance?.currency || "TON"}
+              </span>
+              <button
+                onClick={() => setDepositOpen(true)}
+                className="ml-1 h-8 w-8 rounded-full bg-secondary grid place-items-center"
+                aria-label="Deposit"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setWithdrawOpen(true)}
+                className="h-8 w-8 rounded-full bg-secondary grid place-items-center"
+                aria-label="Withdraw"
+              >
+                <Minus className="w-4 h-4" />
+              </button>
             </div>
 
             {!address ? (
@@ -194,10 +241,14 @@ export function ProfileHeader({ telegramUser, onBack, onOpenSettings, balance }:
           <div className="flex items-center gap-4">
             <Avatar className="w-16 h-16">
               <AvatarImage src={telegramUser?.photo_url} />
-              <AvatarFallback className="bg-telegram-500 text-white text-xl">{initialFrom(telegramUser?.first_name)}</AvatarFallback>
+              <AvatarFallback className="bg-telegram-500 text-white text-xl">
+                {initialFrom(telegramUser?.first_name)}
+              </AvatarFallback>
             </Avatar>
             <div className="min-w-[200px]">
-              <h2 className="text-xl font-semibold">{S(telegramUser?.first_name)} {S(telegramUser?.last_name)}</h2>
+              <h2 className="text-xl font-semibold">
+                {S(telegramUser?.first_name)} {S(telegramUser?.last_name)}
+              </h2>
               {telegramUser?.username && <p className="text-muted-foreground">@{telegramUser.username}</p>}
               <div className="flex items-center gap-2 mt-2">
                 {telegramUser?.is_premium && <Badge variant="secondary">⭐</Badge>}
@@ -214,19 +265,43 @@ export function ProfileHeader({ telegramUser, onBack, onOpenSettings, balance }:
         </CardContent>
       </Card>
 
+      {/* Deposit Dialog */}
       <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{t("wallet.deposit")}</DialogTitle></DialogHeader>
-          <Input placeholder={t("profilePage.depositPlaceholder")} value={amount} onChange={(e)=>setAmount(e.target.value)} inputMode="decimal" />
-          <DialogFooter><Button onClick={handleDeposit} disabled={busy||!address}>{busy?"…":t("wallet.deposit")}</Button></DialogFooter>
+          <DialogHeader>
+            <DialogTitle>{t("wallet.deposit")}</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder={t("profilePage.depositPlaceholder")}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            inputMode="decimal"
+          />
+          <DialogFooter>
+            <Button onClick={handleDeposit} disabled={busy || !address}>
+              {busy ? "…" : t("wallet.deposit")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Withdraw Dialog */}
       <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{t("wallet.withdraw")}</DialogTitle></DialogHeader>
-          <Input placeholder={t("profilePage.depositPlaceholder")} value={amount} onChange={(e)=>setAmount(e.target.value)} inputMode="decimal" />
-          <DialogFooter><Button onClick={handleWithdraw} disabled={busy}>{busy?"…":t("wallet.withdraw")}</Button></DialogFooter>
+          <DialogHeader>
+            <DialogTitle>{t("wallet.withdraw")}</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder={t("profilePage.depositPlaceholder")}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            inputMode="decimal"
+          />
+          <DialogFooter>
+            <Button onClick={handleWithdraw} disabled={busy}>
+              {busy ? "…" : t("wallet.withdraw")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
