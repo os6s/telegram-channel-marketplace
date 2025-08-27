@@ -173,7 +173,7 @@ export function ProfileHeader({
         variant: "destructive"
       });
     }
-   // ←← هذا القوس كان مفقود ويغلق الدالة كاملة
+  } // ←← هذا القوس كان مفقود ويغلق الدالة كاملة
 
   async function handleWithdraw() {
     try {
