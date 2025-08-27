@@ -129,8 +129,8 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       return res.status(500).json({ ok: false, error: "invalid_ESCROW_WALLET" });
     }
 
-    const amountTon = Number((req.body as any)?.amountTon);
-    if (!Number.isFinite(amountTon) || amountTon <= 0) {
+    const amountInput = Number((req.body as any)?.amountTon); // client sends TON
+    if (!Number.isFinite(amountInput) || amountInput <= 0) {
       return res.status(400).json({ ok: false, error: "invalid_amount" });
     }
 
@@ -140,7 +140,8 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       return res.status(400).json({ ok: false, error: "wallet_not_linked" });
     }
 
-    const amountNano = toNano(amountTon);
+    // 🔥 only keep nanoTON everywhere
+    const amountNano = toNano(amountInput);
 
     const [p] = await db
       .insert(payments)
@@ -150,7 +151,7 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
         sellerId: null,
         kind: "deposit",
         locked: false,
-        amount: amountNano,   // store in nanoTON
+        amount: amountNano,  // ✅ store only nanoTON
         currency: "TON",
         feePercent: "0",
         feeAmount: "0",
@@ -165,13 +166,12 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       })
       .returning({ id: payments.id });
 
-    // ⚡ Only nanoTON string goes to TonConnect
     const txPayload = {
-      validUntil: Math.floor(Date.now() / 1000) + 3600, // 1 hour window
+      validUntil: Math.floor(Date.now() / 1000) + 3600,
       messages: [
         {
           address: escrow,
-          amount: amountNano, // nanoTON string
+          amount: amountNano, // ✅ nanoTON string
         },
       ],
     } as const;
@@ -179,6 +179,7 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
     res.status(201).json({
       ok: true,
       escrowAddress: escrow,
+      amountNano, // ✅ only nanoTON returned
       txPayload,
       id: String(p.id),
     });
@@ -188,7 +189,6 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
     res.status(500).json({ ok: false, error: err?.message || "deposit_initiate_failed" });
   }
 });
-
   /** 3) Deposit status check */
   app.post("/api/wallet/deposit/status", tgAuth, async (req: Request, res: Response) => {
     const me = await getMe(req);
