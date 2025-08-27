@@ -19,20 +19,25 @@ const S = (v: unknown) => (typeof v === "string" ? v : "");
 const initialFrom = (v: unknown) => { const s = S(v); return s ? s[0].toUpperCase() : "U"; };
 
 // ✅ محمية ضد SDK empty error
-async function waitForConnect(tonConnectUI: any, timeoutMs = 30000) {
-  if (!tonConnectUI || typeof tonConnectUI.openModal !== "function") {
-    throw new Error("TonConnect UI not ready");
-  }
+async function waitForConnect(tonConnectUI: any, timeoutMs = 15000) {
+  // إذا متصل، رجّع العنوان فورًا
+  const addrNow = tonConnectUI?.wallet?.account?.address;
+  if (addrNow) return addrNow;
 
-  try { await tonConnectUI.openModal(); } catch { /* ignore SDK DOMException {} */ }
+  // افتح مودال الربط مرة وحدة
+  await tonConnectUI.openModal();
 
   const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const addr = tonConnectUI?.wallet?.account?.address;
-    if (addr) return addr;
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  throw new Error("Connection timeout");
+  return await new Promise<string>((resolve, reject) => {
+    const iv = setInterval(() => {
+      const addr = tonConnectUI?.wallet?.account?.address;
+      if (addr) { clearInterval(iv); resolve(addr); }
+      else if (Date.now() - start > timeoutMs) {
+        clearInterval(iv);
+        reject(new Error("Connection timeout"));
+      }
+    }, 250);
+  });
 }
 
 export function ProfileHeader({
