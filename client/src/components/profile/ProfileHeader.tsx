@@ -16,24 +16,21 @@ import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
 import { useWalletAddress } from "@/hooks/use-wallet";
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
-const initialFrom = (v: unknown) => {
-  const s = S(v);
-  return s ? s[0].toUpperCase() : "U";
-};
+const initialFrom = (v: unknown) => { const s = S(v); return s ? s[0].toUpperCase() : "U"; };
 
+// ✅ محمية ضد SDK empty error
 async function waitForConnect(tonConnectUI: any, timeoutMs = 30000) {
   if (!tonConnectUI || typeof tonConnectUI.openModal !== "function") {
-    throw new Error("TonConnectUI not ready");
+    throw new Error("TonConnect UI not ready");
   }
-  if (tonConnectUI?.wallet?.account?.address) return tonConnectUI.wallet.account.address;
 
-  // must be called from a user gesture
-  await tonConnectUI.openModal();
+  try { await tonConnectUI.openModal(); } catch { /* ignore SDK DOMException {} */ }
 
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
+    const addr = tonConnectUI?.wallet?.account?.address;
+    if (addr) return addr;
     await new Promise((r) => setTimeout(r, 250));
-    if (tonConnectUI?.wallet?.account?.address) return tonConnectUI.wallet.account.address;
   }
   throw new Error("Connection timeout");
 }
@@ -60,20 +57,15 @@ export function ProfileHeader({
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
-
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
-  useEffect(() => {
-    if (address) updateWallet(address);
-  }, [address, updateWallet]);
+  useEffect(() => { if (address) updateWallet(address); }, [address, updateWallet]);
 
   async function handleConnect() {
     try {
       setBusy(true);
-      if (!tonConnectUI || typeof tonConnectUI.openModal !== "function") {
-        throw new Error("TonConnectUI not ready");
-      }
       const addr = await waitForConnect(tonConnectUI);
+      if (!addr) throw new Error("Wallet not connected");
       updateWallet(addr);
     } catch (e: any) {
       toast({ title: t("toast.connectFailed"), description: e?.message || "", variant: "destructive" });
@@ -103,10 +95,8 @@ export function ProfileHeader({
         return;
       }
 
-      if (!tonConnectUI || typeof tonConnectUI.openModal !== "function") {
-        throw new Error("TonConnectUI not ready");
-      }
-      await waitForConnect(tonConnectUI);
+      const addr = await waitForConnect(tonConnectUI);
+      if (!addr) throw new Error("Wallet not connected");
 
       const appNet = (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
       const chain = tonConnectUI?.wallet?.account?.chain; // "-239" mainnet, "-3" testnet
@@ -131,7 +121,6 @@ export function ProfileHeader({
       await tonConnectUI.sendTransaction(tx);
       toast({ title: t("toast.confirmDeposit") });
 
-      // polling
       const poll = async () => {
         const status = await apiRequest("POST", "/api/wallet/deposit/status", { code: r.code, minTon: amt });
         if (status.status === "paid") {
@@ -147,12 +136,9 @@ export function ProfileHeader({
       setAmount("");
     } catch (e: any) {
       if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-        try {
-          await tonConnectUI?.disconnect();
-        } catch {}
+        try { await tonConnectUI?.disconnect(); } catch {}
       }
 
-      // normalize Safari/DOMException
       const normalizeError = (err: any) => {
         if (!err) return { name: "UnknownError", message: "Empty rejection from SDK" };
         if (err instanceof Error) return { name: err.name, message: err.message, stack: err.stack };
@@ -162,8 +148,8 @@ export function ProfileHeader({
       };
 
       const details = normalizeError(e);
-
       const safe = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
+
       console.log("[TON] wallet account:", tonConnectUI?.wallet?.account);
       console.log("[TON] last txPayload (raw):", r?.txPayload);
       console.log("[TON] last txPayload (normalized):", tx);
@@ -171,7 +157,6 @@ export function ProfileHeader({
 
       alert(`TonConnect error:\n${JSON.stringify(details, safe, 2)}`);
 
-      // server log
       fetch("/api/log-client-error", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -291,7 +276,6 @@ export function ProfileHeader({
         </CardContent>
       </Card>
 
-      {/* Deposit Dialog */}
       <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
         <DialogContent>
           <DialogHeader>
@@ -311,7 +295,6 @@ export function ProfileHeader({
         </DialogContent>
       </Dialog>
 
-      {/* Withdraw Dialog */}
       <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
         <DialogContent>
           <DialogHeader>
