@@ -122,7 +122,7 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
     }
 
-    // normalize escrow
+    // Normalize escrow address (EQ... format)
     let escrow: string;
     try {
       escrow = Address.parse(escrowRaw).toString({ bounceable: true });
@@ -130,23 +130,23 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       return res.status(500).json({ ok: false, error: "invalid_ESCROW_WALLET" });
     }
 
-    // parse amount
+    // Parse requested amount
     const amountTon = Number((req.body as any)?.amountTon);
     if (!Number.isFinite(amountTon) || amountTon <= 0) {
       return res.status(400).json({ ok: false, error: "invalid_amount" });
     }
 
-    // get user
+    // Get current user
     const me = await getMe(req);
     if (!me) return res.status(404).json({ ok: false, error: "user_not_found" });
     if (!me.walletAddress) {
       return res.status(400).json({ ok: false, error: "wallet_not_linked" });
     }
 
-    // convert to nanoTON
+    // Convert TON → nanoTON (string)
     const amountNano = toNano(amountTon);
 
-    // insert payment (still use amount column internally, but that doesn’t matter for the test)
+    // Insert pending payment into DB
     const [p] = await db
       .insert(payments)
       .values({
@@ -155,7 +155,7 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
         sellerId: null,
         kind: "deposit",
         locked: false,
-        amount: amountNano, // ⚡ store nanoTON into amount column
+        amount: amountNano, // store nanoTON only
         currency: "TON",
         feePercent: "0",
         feeAmount: "0",
@@ -170,18 +170,18 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req: Request, res: Respo
       })
       .returning({ id: payments.id });
 
-    // build txPayload for TonConnect
+    // Build TonConnect payload
     const txPayload = {
-      validUntil: Math.floor(Date.now() / 1000) + 3600,
+      validUntil: Math.floor(Date.now() / 1000) + 3600, // 1 hour
       messages: [
         {
           address: escrow,
-          amount: amountNano, // ✅ this is the ONLY amount TonConnect cares about
+          amount: amountNano, // ⚡ ONLY nanoTON string
         },
       ],
     } as const;
 
-    // response
+    // Respond
     res.status(201).json({
       ok: true,
       txPayload,
