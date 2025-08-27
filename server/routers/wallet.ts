@@ -169,11 +169,10 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req, res) => {
     
 const txPayload = {
   validUntil: Math.floor(Date.now()/1000) + 3600, // 1h
-  messages: [{ address: escrow, amount: amountNano, payload: payloadB64 }],
-};
-      ],
-    } as const;
-
+  messages: [
+    { address: escrow, amount: amountNano, payload: payloadB64 }
+  ],
+} as const;
     return res.status(201).json({
       ok: true,
       id: String(p.id),
