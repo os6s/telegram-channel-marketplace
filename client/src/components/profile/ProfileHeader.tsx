@@ -151,17 +151,31 @@ export function ProfileHeader({
       setTimeout(poll, 5000);
       setDepositOpen(false);
       setAmount("");
+
     } catch (e: any) {
-      if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-        try { await tonConnectUI?.disconnect(); } catch {}
-      }
-      const code = e?.code ?? e?.data?.code ?? e?.name ?? "";
-      const msg  = e?.message ?? e?.data?.message ?? "TonConnect send failed";
-      console.error("sendTransaction error:", e);
-      alert(`TonConnect error: ${code} | ${msg}`); // ← عرض كود الخطأ الحقيقي
-      toast({ title: t("toast.depositFailed"), description: `${code} ${msg}`, variant: "destructive" });
-    }
+  if (String(e?.message || "").toLowerCase().includes("unlinked")) {
+    try { await tonConnectUI?.disconnect(); } catch {}
   }
+
+  // اطبع كل التفاصيل للكونسول
+  console.log("TonConnect error raw:", e);
+
+  const details = {
+    name: e?.name,
+    code: e?.code ?? e?.data?.code,
+    message: e?.message ?? e?.data?.message ?? "TonConnect send failed",
+    data: e?.data ?? e
+  };
+
+  // اظهار الخطأ الحقيقي داخل الميني-app
+  alert(`TonConnect error:\n${JSON.stringify(details, null, 2)}`);
+
+  toast({
+    title: t("toast.depositFailed"),
+    description: `${details.code || ""} ${details.message || ""}`,
+    variant: "destructive"
+  });
+}
 
   async function handleWithdraw() {
     try {
