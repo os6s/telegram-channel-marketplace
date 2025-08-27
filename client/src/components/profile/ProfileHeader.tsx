@@ -120,18 +120,16 @@ async function handleDeposit() {
     console.log("Deposit txPayload (raw):", r?.txPayload);
 
     // طبّع الرسالة لـ TonConnect
-    tx = {
-  validUntil: r.txPayload.validUntil ?? Math.floor(Date.now() / 1000) + 600,
-  messages: (r.txPayload.messages || []).map((m: any) => {
-    const msg: any = {
-      address: String(m.address),
-      amount: String(m.amount),
-    };
-    if (m.payload)   msg.payload   = String(m.payload);   // ✅ فقط payload/stateInit
-    if (m.stateInit) msg.stateInit = String(m.stateInit);
-    return msg;
-  }),
+const tx = {
+  validUntil: r.txPayload.validUntil ?? Math.floor(Date.now()/1000)+3600,
+  messages: (r.txPayload.messages||[]).map((m:any)=>({
+    address: String(m.address),            // EQ… bounceable
+    amount:  String(m.amount),             // nanoTON as string
+    ...(m.payload   ? { payload:   String(m.payload) }   : {}),
+    ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
+  })),
 };
+await tonConnectUI.sendTransaction(tx);
 
     console.log("Deposit txPayload (normalized):", tx);
 
