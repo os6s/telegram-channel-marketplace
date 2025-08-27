@@ -123,9 +123,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// ===== ✅ Client error log endpoint (will be logged by the middleware above) =====
+// ===== ✅ Client error log endpoint =====
 app.post("/api/log-client-error", (req: Request, res: Response) => {
-  console.log("[CLIENT LOG]", req.body);
+  console.log("[CLIENT LOG]", JSON.stringify(req.body));
   res.json({ ok: true });
 });
 
