@@ -105,7 +105,6 @@ function App() {
     (window as any)?.Telegram?.WebApp?.Bot?.username ||
     "";
 
-  // شبكة الواجهة
   const APP_NET =
     (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
 
@@ -115,7 +114,6 @@ function App() {
         manifestUrl={manifestUrl}
         returnStrategy="back"
         actionsConfiguration={{
-          // الأفضل  للرجوع المباشر
           twaReturnUrl: botUsername ? `https://t.me/${botUsername}?startapp` : undefined,
         }}
         walletsListConfiguration={{
