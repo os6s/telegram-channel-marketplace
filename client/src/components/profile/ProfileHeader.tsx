@@ -16,14 +16,23 @@ import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
 import { useWalletAddress } from "@/hooks/use-wallet";
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
-const initialFrom = (v: unknown) => { const s = S(v); return s ? s[0].toUpperCase() : "U"; };
+const initialFrom = (v: unknown) => {
+  const s = S(v);
+  return s ? s[0].toUpperCase() : "U";
+};
 
 async function waitForConnect(tonConnectUI: any, timeoutMs = 30000) {
+  if (!tonConnectUI || typeof tonConnectUI.openModal !== "function") {
+    throw new Error("TonConnectUI not ready");
+  }
   if (tonConnectUI?.wallet?.account?.address) return tonConnectUI.wallet.account.address;
+
+  // must be called from a user gesture
   await tonConnectUI.openModal();
+
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 250));
     if (tonConnectUI?.wallet?.account?.address) return tonConnectUI.wallet.account.address;
   }
   throw new Error("Connection timeout");
@@ -51,13 +60,19 @@ export function ProfileHeader({
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
+
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
-  useEffect(() => { if (address) updateWallet(address); }, [address, updateWallet]);
+  useEffect(() => {
+    if (address) updateWallet(address);
+  }, [address, updateWallet]);
 
   async function handleConnect() {
     try {
       setBusy(true);
+      if (!tonConnectUI || typeof tonConnectUI.openModal !== "function") {
+        throw new Error("TonConnectUI not ready");
+      }
       const addr = await waitForConnect(tonConnectUI);
       updateWallet(addr);
     } catch (e: any) {
@@ -88,6 +103,9 @@ export function ProfileHeader({
         return;
       }
 
+      if (!tonConnectUI || typeof tonConnectUI.openModal !== "function") {
+        throw new Error("TonConnectUI not ready");
+      }
       await waitForConnect(tonConnectUI);
 
       const appNet = (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
@@ -113,6 +131,7 @@ export function ProfileHeader({
       await tonConnectUI.sendTransaction(tx);
       toast({ title: t("toast.confirmDeposit") });
 
+      // polling
       const poll = async () => {
         const status = await apiRequest("POST", "/api/wallet/deposit/status", { code: r.code, minTon: amt });
         if (status.status === "paid") {
@@ -127,12 +146,13 @@ export function ProfileHeader({
       setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
-      // إذا انفصلت المحفظة يرجّع يدوياً
       if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-        try { await tonConnectUI?.disconnect(); } catch {}
+        try {
+          await tonConnectUI?.disconnect();
+        } catch {}
       }
 
-      // تطبيع خطأ Safari/DOMException (قد يرجع {} فقط)
+      // normalize Safari/DOMException
       const normalizeError = (err: any) => {
         if (!err) return { name: "UnknownError", message: "Empty rejection from SDK" };
         if (err instanceof Error) return { name: err.name, message: err.message, stack: err.stack };
@@ -151,7 +171,7 @@ export function ProfileHeader({
 
       alert(`TonConnect error:\n${JSON.stringify(details, safe, 2)}`);
 
-      // إرسال للوج السيرفر
+      // server log
       fetch("/api/log-client-error", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -170,7 +190,7 @@ export function ProfileHeader({
       const msgShort = details.message || "Transaction failed";
       toast({ title: "Deposit failed", description: msgShort, variant: "destructive" });
     }
-  } // <-- ✅ قوس إغلاق دالة handleDeposit كان ناقصًا
+  }
 
   async function handleWithdraw() {
     try {
