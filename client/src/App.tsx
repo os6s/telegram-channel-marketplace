@@ -1,4 +1,3 @@
-
 // client/src/App.tsx
 import { Switch, Route, Link, useLocation } from "wouter";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
@@ -35,69 +34,14 @@ function Router() {
   return (
     <Suspense fallback={<LoadingSpinner />}>
       <Switch>
-        <Route
-          path="/"
-          component={() => (
-            <ErrorBoundary>
-              <Marketplace />
-            </ErrorBoundary>
-          )}
-        />
-        <Route
-          path="/sell"
-          component={() => (
-            <ErrorBoundary>
-              <SellPage />
-            </ErrorBoundary>
-          )}
-        />
-        <Route
-          path="/activity"
-          component={() => (
-            <ErrorBoundary>
-              <Activity />
-            </ErrorBoundary>
-          )}
-        />
-        <Route
-          path="/profile"
-          component={() => (
-            <ErrorBoundary>
-              <Profile />
-            </ErrorBoundary>
-          )}
-        />
-        <Route
-          path="/admin"
-          component={() => (
-            <ErrorBoundary>
-              <AdminPage />
-            </ErrorBoundary>
-          )}
-        />
-        <Route
-          path="/disputes"
-          component={() => (
-            <ErrorBoundary>
-              <DisputesIndex />
-            </ErrorBoundary>
-          )}
-        />
-        <Route
-          path="/disputes/:id"
-          component={() => (
-            <ErrorBoundary>
-              <DisputeDetailsPage />
-            </ErrorBoundary>
-          )}
-        />
-        <Route
-          component={() => (
-            <ErrorBoundary>
-              <NotFound />
-            </ErrorBoundary>
-          )}
-        />
+        <Route path="/" component={() => (<ErrorBoundary><Marketplace /></ErrorBoundary>)} />
+        <Route path="/sell" component={() => (<ErrorBoundary><SellPage /></ErrorBoundary>)} />
+        <Route path="/activity" component={() => (<ErrorBoundary><Activity /></ErrorBoundary>)} />
+        <Route path="/profile" component={() => (<ErrorBoundary><Profile /></ErrorBoundary>)} />
+        <Route path="/admin" component={() => (<ErrorBoundary><AdminPage /></ErrorBoundary>)} />
+        <Route path="/disputes" component={() => (<ErrorBoundary><DisputesIndex /></ErrorBoundary>)} />
+        <Route path="/disputes/:id" component={() => (<ErrorBoundary><DisputeDetailsPage /></ErrorBoundary>)} />
+        <Route component={() => (<ErrorBoundary><NotFound /></ErrorBoundary>)} />
       </Switch>
     </Suspense>
   );
@@ -109,16 +53,11 @@ function BottomNavigation() {
   const { t } = useLanguage();
   const { hapticFeedback } = useTelegram();
 
-  // ✅ صلاحيات الأدمن
   const { data: me } = useQuery({
     queryKey: ["/api/me"],
     queryFn: async () => {
-      try {
-        const r = await fetch("/api/me");
-        return r.ok ? await r.json() : null;
-      } catch {
-        return null;
-      }
+      try { const r = await fetch("/api/me"); return r.ok ? await r.json() : null; }
+      catch { return null; }
     },
     retry: false,
   });
@@ -135,18 +74,13 @@ function BottomNavigation() {
 
   return (
     <div className="bg-background border-t border-border px-4 py-2 sticky bottom-0 z-40 safe-area-inset">
-      <div
-        className="grid gap-1"
-        style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}
-      >
+      <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
         {navItems.map((item) => (
           <Link
             key={item.path}
             href={item.path}
             className={`flex flex-col items-center py-2 transition-colors ${
-              location === item.path
-                ? "text-primary"
-                : "text-muted-foreground hover:text-foreground"
+              location === item.path ? "text-primary" : "text-muted-foreground hover:text-foreground"
             }`}
             onClick={() => hapticFeedback?.selection?.()}
           >
@@ -171,13 +105,21 @@ function App() {
     (window as any)?.Telegram?.WebApp?.Bot?.username ||
     "";
 
+  // شبكة الواجهة
+  const APP_NET =
+    (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
+
   return (
     <QueryClientProvider client={queryClient}>
       <TonConnectUIProvider
         manifestUrl={manifestUrl}
         returnStrategy="back"
         actionsConfiguration={{
-          twaReturnUrl: botUsername ? `https://t.me/${botUsername}` : undefined,
+          // الأفضل  للرجوع المباشر
+          twaReturnUrl: botUsername ? `https://t.me/${botUsername}?startapp` : undefined,
+        }}
+        walletsListConfiguration={{
+          network: APP_NET,
         }}
       >
         <ThemeProvider>
@@ -186,14 +128,11 @@ function App() {
               <TelegramApp>
                 <Toaster />
                 <Router />
-
-                {/* زر البيع */}
                 <Link href="/sell" className="fixed bottom-20 right-4 z-50">
                   <Button className="rounded-full w-14 h-14 bg-green-500 hover:bg-green-600 shadow-lg text-white text-2xl">
                     +
                   </Button>
                 </Link>
-
                 <BottomNavigation />
               </TelegramApp>
             </TooltipProvider>
