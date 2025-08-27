@@ -126,54 +126,51 @@ export function ProfileHeader({
 
       setDepositOpen(false);
       setAmount("");
-} catch (e: any) {
-  // إذا انفصلت المحفظة يرجّع يدوياً
-  if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-    try { await tonConnectUI?.disconnect(); } catch {}
-  }
+    } catch (e: any) {
+      // إذا انفصلت المحفظة يرجّع يدوياً
+      if (String(e?.message || "").toLowerCase().includes("unlinked")) {
+        try { await tonConnectUI?.disconnect(); } catch {}
+      }
 
-  // تطبيع خطأ Safari/DOMException (يطلع {} في JSON)
-  const normalizeError = (err: any) => {
-    if (!err) return { name: "UnknownError", message: "Empty rejection from SDK" };
-    if (err instanceof Error) return { name: err.name, message: err.message, stack: err.stack };
-    // بعض المتصفحات ترجع DOMException بلا خصائص enumerable
-    const msg = String(err?.message || err?.reason || err?.toString?.() || "Unknown");
-    const name = String(err?.name || "SDKError");
-    return { name, message: msg, raw: err };
-  };
+      // تطبيع خطأ Safari/DOMException (قد يرجع {} فقط)
+      const normalizeError = (err: any) => {
+        if (!err) return { name: "UnknownError", message: "Empty rejection from SDK" };
+        if (err instanceof Error) return { name: err.name, message: err.message, stack: err.stack };
+        const msg = String(err?.message || err?.reason || err?.toString?.() || "Unknown");
+        const name = String(err?.name || "SDKError");
+        return { name, message: msg, raw: err };
+      };
 
-  const details = normalizeError(e);
+      const details = normalizeError(e);
 
-  // لوج مفيد
-  const safe = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
-  console.log("[TON] wallet account:", tonConnectUI?.wallet?.account);
-  console.log("[TON] last txPayload (raw):", r?.txPayload);
-  console.log("[TON] last txPayload (normalized):", tx);
-  console.error("TonConnect error raw:", details);
+      const safe = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
+      console.log("[TON] wallet account:", tonConnectUI?.wallet?.account);
+      console.log("[TON] last txPayload (raw):", r?.txPayload);
+      console.log("[TON] last txPayload (normalized):", tx);
+      console.error("TonConnect error raw:", details);
 
-  alert(`TonConnect error:\n${JSON.stringify(details, safe, 2)}`);
+      alert(`TonConnect error:\n${JSON.stringify(details, safe, 2)}`);
 
-  // أرسل للسيرفر حتى نشوفه على Render
-  fetch("/api/log-client-error", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      context: "deposit/sendTransaction",
-      details,
-      tx,
-      init: r,
-      wallet: tonConnectUI?.wallet?.account,
-      url: window.location.href,
-      ua: navigator.userAgent,
-      ts: new Date().toISOString(),
-    }),
-  });
+      // إرسال للوج السيرفر
+      fetch("/api/log-client-error", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          context: "deposit/sendTransaction",
+          details,
+          tx,
+          init: r,
+          wallet: tonConnectUI?.wallet?.account,
+          url: window.location.href,
+          ua: navigator.userAgent,
+          ts: new Date().toISOString(),
+        }),
+      });
 
-  // توست للمستخدم
-  const msgShort = details.message || "Transaction failed";
-  // eslint-disable-next-line no-undef
-  toast({ title: "Deposit failed", description: msgShort, variant: "destructive" });
-}
+      const msgShort = details.message || "Transaction failed";
+      toast({ title: "Deposit failed", description: msgShort, variant: "destructive" });
+    }
+  } // <-- ✅ قوس إغلاق دالة handleDeposit كان ناقصًا
 
   async function handleWithdraw() {
     try {
