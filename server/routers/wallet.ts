@@ -120,7 +120,7 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req, res) => {
     const escrowRaw = (process.env.ESCROW_WALLET || "").trim();
     if (!escrowRaw) return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
 
-    // حول أي صيغة (UQ/0:) إلى EQ… bounceable وبحسب الشبكة
+    // حوّل أي صيغة (UQ/0:) إلى EQ… bounceable وبحسب الشبكة
     const isTest = (process.env.TON_NETWORK || "mainnet") !== "mainnet";
     let escrow: string;
     try {
@@ -162,14 +162,17 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req, res) => {
       adminAction: "none",
     }).returning({ id: payments.id });
 
-    // استخدم text بدل payload الفارغ
+    // ✅ حوّل التعليق إلى BOC payload base64
+    const commentCell = beginCell().storeUint(0, 32).storeStringTail(code).endCell();
+    const payloadB64 = commentCell.toBoc().toString("base64");
+
     const txPayload = {
       validUntil: Math.floor(Date.now() / 1000) + 600,
       messages: [
         {
           address: escrow,
-          amount: amountNano,
-          text: code, // التعليق
+          amount: amountNano,  // string (nanoton)
+          payload: payloadB64, // التعليق كـ BOC
         },
       ],
     } as const;
