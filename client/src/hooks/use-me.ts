@@ -2,13 +2,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 
-/** ✅ Fetch current user (via /api/me) 
+/** ✅ Fetch current user (via /api/me)
  * Includes: user info + balance + walletAddress
  */
 export function useMe() {
   return useQuery({
     queryKey: ["me"],
     staleTime: 60_000, // cache for 1 min
+    retry: false,
     queryFn: async () => {
       return await apiRequest("GET", "/api/me");
     },
@@ -22,12 +23,17 @@ export function useMyListings(username?: string) {
     enabled: !!uname,
     queryKey: ["listings/by-seller-username", uname],
     staleTime: 0,
+    retry: false,
     queryFn: async () => {
-      const res = await fetch(`/api/listings?sellerUsername=${encodeURIComponent(uname)}`, {
-        credentials: "include",
-      });
-      if (!res.ok) return [];
-      return await res.json();
+      try {
+        const res = await apiRequest(
+          "GET",
+          `/api/listings?sellerUsername=${encodeURIComponent(uname)}`
+        );
+        return Array.isArray(res) ? res : [];
+      } catch {
+        return [];
+      }
     },
   });
 }
@@ -39,12 +45,19 @@ export function useMyActivities(username?: string) {
     enabled: !!uname,
     queryKey: ["activities/by-seller-username", uname],
     staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
-      const res = await fetch(`/api/activities?sellerUsername=${encodeURIComponent(uname)}`, {
-        credentials: "include",
-      });
-      if (!res.ok) return [];
-      return await res.json();
+      try {
+        const res = await apiRequest(
+          "GET",
+          `/api/activities?sellerUsername=${encodeURIComponent(uname)}`
+        );
+        return Array.isArray(res) ? res : [];
+      } catch {
+        // 400 / 401 / 5xx -> رجّع مصفوفة فاضية بدون رمي خطأ
+        return [];
+      }
     },
   });
 }
@@ -68,10 +81,15 @@ export function useMyDisputes(username?: string | null) {
   return useQuery({
     enabled: !!uname,
     queryKey: ["disputes/by-user", uname],
-    queryFn: async () => {
-      const res = await apiRequest("GET", `/api/disputes?user=${encodeURIComponent(uname)}`);
-      return Array.isArray(res) ? res : [];
-    },
     staleTime: 30_000,
+    retry: false,
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", `/api/disputes?user=${encodeURIComponent(uname)}`);
+        return Array.isArray(res) ? res : [];
+      } catch {
+        return [];
+      }
+    },
   });
 }
