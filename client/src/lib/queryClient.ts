@@ -75,6 +75,8 @@ async function fetchJson(method: string, url: string, data?: unknown, signal?: A
   const base = await getApiBase();
   const fullUrl = joinBase(base, url);
 
+  console.log("[fetchJson] →", fullUrl); // ✅ log URL
+
   const headers: Record<string, string> = { Accept: "application/json" };
   if (data) headers["Content-Type"] = "application/json";
 
@@ -119,7 +121,6 @@ async function fetchJson(method: string, url: string, data?: unknown, signal?: A
 /* ------------ public API ------------ */
 export async function apiRequest(method: string, url: string, data?: unknown): Promise<any> {
   const ac = new AbortController();
-  // ألغِ الطلب بعد 20s (حماية UI)
   const t = setTimeout(() => ac.abort(), 20_000);
   try {
     return await fetchJson(method, url, data, ac.signal);
@@ -134,7 +135,6 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
   async ({ queryKey, signal }) => {
     const base = await getApiBase();
 
-    // السماح بأن يكون العنصر الأول مساراً كاملاً
     const first = (queryKey as any)[0];
     let path = Array.isArray(queryKey) ? (queryKey as any[]).join("/") : String(queryKey);
     if (typeof first === "string" && (first.startsWith("/") || /^https?:\/\//i.test(first))) {
@@ -142,6 +142,7 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
     }
 
     const url = joinBase(base, path);
+    console.log("[getQueryFn] →", url); // ✅ log URL
 
     const headers: Record<string, string> = { Accept: "application/json" };
     const initData = getInitData();
