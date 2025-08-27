@@ -93,87 +93,100 @@ export function ProfileHeader({
       setBusy(false);
     }
   }
+async function handleDeposit() {
+  // نحتاج r و tx خارج try حتى نقدر نطبعهم بالـ catch
+  let r: any | undefined;
+  let tx: any | undefined;
 
-  async function handleDeposit() {
-    try {
-      const amt = Number(amount);
-      if (!amt || amt <= 0) {
-        toast({ title: t("toast.invalidAmount"), variant: "destructive" });
-        return;
-      }
-
-      await waitForConnect(tonConnectUI);
-
-      // تحقق الشبكة بين الفرونت والمحفظة
-      const appNet = (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
-      const chain = tonConnectUI?.wallet?.account?.chain; // "-239" mainnet, "-3" testnet
-      const walletNet = chain === "-3" ? "TESTNET" : "MAINNET";
-      if (walletNet !== appNet) {
-        throw new Error(`Wallet on ${walletNet}. Switch to ${appNet}.`);
-      }
-
-      const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
-
-      // Debug
-      console.log("Deposit txPayload (raw):", r.txPayload);
-
-      const tx = {
-        validUntil: r.txPayload.validUntil ?? Math.floor(Date.now() / 1000) + 600,
-        messages: r.txPayload.messages.map((m: any) => {
-          const msg: any = {
-            address: String(m.address),
-            amount: String(m.amount), // نانو كسترنغ
-          };
-          if (m.text) msg.text = String(m.text);
-          if (m.payload) msg.payload = String(m.payload);
-          if (m.stateInit) msg.stateInit = String(m.stateInit);
-          return msg;
-        }),
-      };
-
-      console.log("Deposit txPayload (normalized):", tx);
-
-      await tonConnectUI.sendTransaction(tx);
-      toast({ title: t("toast.confirmDeposit") });
-
-      const poll = async () => {
-        const status = await apiRequest("POST", "/api/wallet/deposit/status", {
-          code: r.code,
-          minTon: amt,
-        });
-        if (status.status === "paid") {
-          toast({ title: t("toast.depositConfirmed"), description: `Tx: ${status.txHash}` });
-          qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
-        } else {
-          setTimeout(poll, 5000);
-        }
-      };
-      setTimeout(poll, 5000);
-      setDepositOpen(false);
-      setAmount("");
-    } catch (e: any) {
-      if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-        try { await tonConnectUI?.disconnect(); } catch {}
-      }
-
-      console.log("TonConnect error raw:", e);
-
-      const details = {
-        name: e?.name,
-        code: e?.code ?? e?.data?.code,
-        message: e?.message ?? e?.data?.message ?? "TonConnect send failed",
-        data: e?.data ?? e
-      };
-
-      alert(`TonConnect error:\n${JSON.stringify(details, null, 2)}`);
-
-      toast({
-        title: t("toast.depositFailed"),
-        description: `${details.code || ""} ${details.message || ""}`,
-        variant: "destructive"
-      });
+  try {
+    const amt = Number(amount);
+    if (!amt || amt <= 0) {
+      toast({ title: t("toast.invalidAmount"), variant: "destructive" });
+      return;
     }
-  } // ←← هذا القوس كان مفقود ويغلق الدالة كاملة
+
+    await waitForConnect(tonConnectUI);
+
+    // تحقق توافق الشبكة
+    const appNet = (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
+    const chain = tonConnectUI?.wallet?.account?.chain; // "-239" mainnet, "-3" testnet
+    const walletNet = chain === "-3" ? "TESTNET" : "MAINNET";
+    if (walletNet !== appNet) {
+      throw new Error(`Wallet on ${walletNet}. Switch to ${appNet}.`);
+    }
+
+    // اطلب تهيئة الإرسال من السيرفر
+    r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
+    console.log("Deposit txPayload (raw):", r?.txPayload);
+
+    // طبّع الرسالة لـ TonConnect
+    tx = {
+      validUntil: r.txPayload?.validUntil ?? Math.floor(Date.now() / 1000) + 600,
+      messages: (r.txPayload?.messages || []).map((m: any) => {
+        const msg: any = {
+          address: String(m.address),
+          amount: String(m.amount), // nanoTON كـ string
+        };
+        if (m.text) msg.text = String(m.text);
+        if (m.payload) msg.payload = String(m.payload);
+        if (m.stateInit) msg.stateInit = String(m.stateInit);
+        return msg;
+      }),
+    };
+
+    console.log("Deposit txPayload (normalized):", tx);
+
+    // أرسل المعاملة
+    await tonConnectUI.sendTransaction(tx);
+    toast({ title: t("toast.confirmDeposit") });
+
+    // polling للتأكيد
+    const poll = async () => {
+      const status = await apiRequest("POST", "/api/wallet/deposit/status", {
+        code: r.code,
+        minTon: amt,
+      });
+      if (status.status === "paid") {
+        toast({ title: t("toast.depositConfirmed"), description: `Tx: ${status.txHash}` });
+        qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
+      } else {
+        setTimeout(poll, 5000);
+      }
+    };
+    setTimeout(poll, 5000);
+    setDepositOpen(false);
+    setAmount("");
+  } catch (e: any) {
+    // إذا انفصلت المحفظة يرجّع يدوياً
+    if (String(e?.message || "").toLowerCase().includes("unlinked")) {
+      try { await tonConnectUI?.disconnect(); } catch {}
+    }
+
+    const appNet = (import.meta as any).env?.VITE_TON_NETWORK;
+    // replacer آمن للـ BigInt
+    const safe = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
+
+    // سجّل كل شيء مفيد
+    console.log("[TON] appNet:", appNet);
+    console.log("[TON] wallet account:", tonConnectUI?.wallet?.account);
+    console.log("[TON] last txPayload (raw):", r?.txPayload);
+    console.log("[TON] last txPayload (normalized):", tx);
+
+    const details = {
+      name: e?.name,
+      code: e?.code ?? e?.data?.code,
+      message: e?.message ?? e?.data?.message,
+      data: e?.data ?? e
+    };
+
+    console.error("TonConnect error raw:", e);
+    alert(`TonConnect error:\n${JSON.stringify(details, safe, 2)}`);
+
+    const msgShort = (details.code ? `${details.code} — ` : "") + (details.message || "send failed");
+    toast({ title: "Deposit failed", description: msgShort, variant: "destructive" });
+  }
+}
+ // ←← هذا القوس كان مفقود ويغلق الدالة كاملة
 
   async function handleWithdraw() {
     try {
