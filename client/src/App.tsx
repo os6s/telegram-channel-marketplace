@@ -102,9 +102,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TonConnectUIProvider
         manifestUrl={manifestUrl}
-        returnStrategy="back"
+        returnStrategy="twa"   // ✅ Required inside Telegram WebApp
         actionsConfiguration={{
-          twaReturnUrl: "https://t.me/Giftspremarketbot?startapp",
+          twaReturnUrl: "https://t.me/Giftspremarketbot/startapp", // ✅ deep link back to your bot
         }}
         walletsListConfiguration={{ network: APP_NET }}
       >
