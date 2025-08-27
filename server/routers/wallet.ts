@@ -166,14 +166,11 @@ app.post("/api/wallet/deposit/initiate", tgAuth, async (req, res) => {
     const commentCell = beginCell().storeUint(0, 32).storeStringTail(code).endCell();
     const payloadB64 = commentCell.toBoc().toString("base64");
 
-    const txPayload = {
-      validUntil: Math.floor(Date.now() / 1000) + 600,
-      messages: [
-        {
-          address: escrow,
-          amount: amountNano,  // string (nanoton)
-          payload: payloadB64, // التعليق كـ BOC
-        },
+    
+const txPayload = {
+  validUntil: Math.floor(Date.now()/1000) + 3600, // 1h
+  messages: [{ address: escrow, amount: amountNano, payload: payloadB64 }],
+};
       ],
     } as const;
 
