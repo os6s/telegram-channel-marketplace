@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Settings, ArrowLeft, Plus, Minus } from "lucide-react";
 
-import tonIconUrl from "@/assets/icons/ton.svg?url"; // ✅ fixed to ?url for vite
+import tonIconUrl from "@/assets/icons/ton.svg?url";
 
 import { useLanguage } from "@/contexts/language-context";
 import { useToast } from "@/hooks/use-toast";
@@ -63,11 +63,8 @@ export function ProfileHeader({
 
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
-  // ✅ FIX: do not unlink automatically if no address
   useEffect(() => {
-    if (address) {
-      updateWallet(address);
-    }
+    updateWallet(address || null);
   }, [address, updateWallet]);
 
   async function handleConnect() {
@@ -76,11 +73,7 @@ export function ProfileHeader({
       const addr = await waitForConnect(tonConnectUI);
       updateWallet(addr);
     } catch (e: any) {
-      toast({
-        title: t("toast.connectFailed") || "Connect failed",
-        description: e?.message || "",
-        variant: "destructive",
-      });
+      toast({ title: t("toast.connectFailed") || "Connect failed", description: e?.message || "", variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -90,7 +83,7 @@ export function ProfileHeader({
     try {
       setBusy(true);
       await tonConnectUI?.disconnect();
-      updateWallet(null); // unlink explicitly
+      updateWallet(null);
     } finally {
       setBusy(false);
     }
@@ -107,8 +100,24 @@ export function ProfileHeader({
       await waitForConnect(tonConnectUI);
 
       const r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
-      await tonConnectUI.sendTransaction(r.txPayload);
 
+      // ✅ Log raw payload
+      console.log("Deposit txPayload (raw):", r.txPayload);
+
+      // ✅ Normalize for TonConnect
+      const tx = {
+        validUntil: r.txPayload.validUntil,
+        messages: r.txPayload.messages.map((m: any) => ({
+          address: String(m.address),
+          amount: String(m.amount ?? "0"),
+          payload: m.payload || "",
+        })),
+      };
+
+      // ✅ Log normalized payload
+      console.log("Deposit txPayload (normalized):", tx);
+
+      await tonConnectUI.sendTransaction(tx);
       toast({ title: t("toast.confirmDeposit") });
 
       const poll = async () => {
@@ -117,30 +126,20 @@ export function ProfileHeader({
           minTon: amt,
         });
         if (status.status === "paid") {
-          toast({
-            title: t("toast.depositConfirmed"),
-            description: `Tx: ${status.txHash}`,
-          });
+          toast({ title: t("toast.depositConfirmed"), description: `Tx: ${status.txHash}` });
           qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
         } else {
           setTimeout(poll, 5000);
         }
       };
       setTimeout(poll, 5000);
-
       setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
       if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-        try {
-          await tonConnectUI?.disconnect();
-        } catch {}
+        try { await tonConnectUI?.disconnect(); } catch {}
       }
-      toast({
-        title: t("toast.depositFailed"),
-        description: e?.message || "",
-        variant: "destructive",
-      });
+      toast({ title: t("toast.depositFailed"), description: e?.message || "", variant: "destructive" });
     }
   }
 
@@ -157,11 +156,7 @@ export function ProfileHeader({
       setWithdrawOpen(false);
       setAmount("");
     } catch (e: any) {
-      toast({
-        title: "Withdraw failed",
-        description: e?.message || "",
-        variant: "destructive",
-      });
+      toast({ title: "Withdraw failed", description: e?.message || "", variant: "destructive" });
     }
   }
 
@@ -189,7 +184,7 @@ export function ProfileHeader({
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-start justify-between gap-6">
-            {/* Wallet */}
+            {/* Balance + actions */}
             <div className="flex flex-col items-start gap-3">
               <div className="flex items-center gap-2 bg-muted rounded-full pl-3 pr-2 py-1">
                 <img src={tonIconUrl} alt="TON" className="w-4 h-4" />
@@ -218,18 +213,13 @@ export function ProfileHeader({
                   {busy ? "…" : "Connect Wallet"}
                 </Button>
               ) : (
-                <Button
-                  onClick={handleDisconnect}
-                  className="rounded-full px-5"
-                  variant="secondary"
-                  disabled={busy}
-                >
+                <Button onClick={handleDisconnect} className="rounded-full px-5" variant="secondary" disabled={busy}>
                   Disconnect
                 </Button>
               )}
             </div>
 
-            {/* User Info */}
+            {/* User info */}
             <div className="flex items-center gap-4">
               <Avatar className="w-16 h-16">
                 <AvatarImage src={telegramUser?.photo_url} />
@@ -242,9 +232,7 @@ export function ProfileHeader({
                 <h2 className="text-xl font-semibold text-foreground">
                   {S(telegramUser?.first_name)} {S(telegramUser?.last_name)}
                 </h2>
-                {telegramUser?.username && (
-                  <p className="text-muted-foreground">@{telegramUser.username}</p>
-                )}
+                {telegramUser?.username && <p className="text-muted-foreground">@{telegramUser.username}</p>}
                 <div className="flex items-center gap-2 mt-2">
                   {telegramUser?.is_premium && <Badge variant="secondary">⭐</Badge>}
                   <Badge variant="secondary">
