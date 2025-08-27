@@ -114,7 +114,15 @@ function App() {
         manifestUrl={manifestUrl}
         returnStrategy="back"
         actionsConfiguration={{
-          twaReturnUrl: botUsername ? `https://t.me/Giftspremarketbot?startapp` : undefined,
+          // ✅ الرجوع للميني-أب بعد الموافقة بالمحفظة
+          twaReturnUrl: botUsername ? `https://t.me/${botUsername}?startapp` : undefined,
+          // ✅ فتح رابط المحفظة رسمياً داخل WebView
+          openLink: (url) => {
+            const tg = (window as any)?.Telegram?.WebApp;
+            if (tg?.openTelegramLink) tg.openTelegramLink(url);
+            else if (tg?.openLink) tg.openLink(url, { try_instant_view: false });
+            else window.location.href = url;
+          },
         }}
         walletsListConfiguration={{
           network: APP_NET,
