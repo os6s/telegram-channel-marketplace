@@ -15,14 +15,46 @@ export function installTgFetchShim() {
 
   const origFetch = window.fetch.bind(window);
 
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    const headers = new Headers((init && init.headers) || undefined);
-    const initData = getInitData();
-    if (initData && !headers.has("x-telegram-init-data")) {
-      headers.set("x-telegram-init-data", initData);
+  window.fetch = (input: RequestInfo | URL, init: RequestInit = {}) => {
+    try {
+      const urlStr =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+          ? input.toString()
+          : (input as Request).url;
+
+      const url = new URL(urlStr, window.location.href);
+      const isSameOrigin = url.origin === window.location.origin;
+
+      // نبني الهيدرز مع x-telegram-init-data لطلبات نفس الدومين فقط
+      const headers = new Headers(init.headers || undefined);
+      if (isSameOrigin) {
+        const initData = getInitData();
+        if (initData && !headers.has("x-telegram-init-data")) {
+          headers.set("x-telegram-init-data", initData);
+        }
+      } else {
+        // لطلبات cross-origin (جسور TonConnect) لا نرسل أي كوكيز/اعتمادات
+        headers.delete("cookie");
+        headers.delete("Cookie");
+        headers.delete("authorization");
+        headers.delete("Authorization");
+      }
+
+      const nextInit: RequestInit = {
+        ...init,
+        headers,
+        // Same-origin: نسمح بالكوكيز لو احتجناها للـ API
+        // Cross-origin: نمنعها حتى لا تفشل CORS
+        credentials: isSameOrigin ? "include" : "omit",
+        mode: "cors",
+      };
+
+      return origFetch(url.toString(), nextInit);
+    } catch {
+      // لو صار parsing error نرجع للسلوك الافتراضي
+      return origFetch(input as any, init);
     }
-    // نضمن الكوكيز إذا استعملتوها لاحقاً
-    const nextInit: RequestInit = { ...init, headers, credentials: "include" };
-    return origFetch(input, nextInit);
   };
 }
