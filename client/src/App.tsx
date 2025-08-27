@@ -1,4 +1,3 @@
-// client/src/App.tsx
 import { Switch, Route, Link, useLocation } from "wouter";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
@@ -13,7 +12,6 @@ import { TonConnectUIProvider } from "@tonconnect/ui-react";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Button } from "@/components/ui/button";
 
-/* -------- Lazy pages -------- */
 const Marketplace = lazy(() => import("@/pages/marketplace"));
 const SellPage = lazy(() => import("@/pages/sell/sellpage"));
 const Activity = lazy(() => import("@/pages/activity"));
@@ -29,7 +27,6 @@ const LoadingSpinner = () => (
   </div>
 );
 
-/* -------- Router -------- */
 function Router() {
   return (
     <Suspense fallback={<LoadingSpinner />}>
@@ -47,7 +44,6 @@ function Router() {
   );
 }
 
-/* -------- Bottom Navigation -------- */
 function BottomNavigation() {
   const [location] = useLocation();
   const { t } = useLanguage();
@@ -63,7 +59,6 @@ function BottomNavigation() {
   });
 
   const isAdmin = me?.role === "admin";
-
   const navItems = [
     { path: "/", label: t("marketplace"), icon: "🏠" },
     { path: "/activity", label: t("activity"), icon: "📊" },
@@ -100,11 +95,6 @@ function App() {
       : "/tonconnect-manifest.json";
   }, []);
 
-  const botUsername =
-    (window as any)?.Telegram?.WebApp?.initDataUnsafe?.bot_username ||
-    (window as any)?.Telegram?.WebApp?.Bot?.username ||
-    "";
-
   const APP_NET =
     (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
 
@@ -114,19 +104,9 @@ function App() {
         manifestUrl={manifestUrl}
         returnStrategy="back"
         actionsConfiguration={{
-          // ✅ الرجوع للميني-أب بعد الموافقة بالمحفظة
-          twaReturnUrl: botUsername ? `https://t.me/${botUsername}?startapp` : undefined,
-          // ✅ فتح رابط المحفظة رسمياً داخل WebView
-          openLink: (url) => {
-            const tg = (window as any)?.Telegram?.WebApp;
-            if (tg?.openTelegramLink) tg.openTelegramLink(url);
-            else if (tg?.openLink) tg.openLink(url, { try_instant_view: false });
-            else window.location.href = url;
-          },
+          twaReturnUrl: "https://t.me/Giftspremarketbot?startapp",
         }}
-        walletsListConfiguration={{
-          network: APP_NET,
-        }}
+        walletsListConfiguration={{ network: APP_NET }}
       >
         <ThemeProvider>
           <LanguageProvider>
