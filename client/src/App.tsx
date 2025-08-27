@@ -114,7 +114,7 @@ function App() {
         manifestUrl={manifestUrl}
         returnStrategy="back"
         actionsConfiguration={{
-          twaReturnUrl: botUsername ? `https://t.me/${botUsername}?startapp` : undefined,
+          twaReturnUrl: botUsername ? `https://t.me/Giftspremarketbot?startapp` : undefined,
         }}
         walletsListConfiguration={{
           network: APP_NET,
