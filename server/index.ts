@@ -113,7 +113,6 @@ app.use((req, res, next) => {
 
       if (captured) {
         try {
-          // اطبع الجسم كامل بدون قص
           line += ` :: ${JSON.stringify(captured, replacer)}`;
         } catch {}
       }
@@ -122,6 +121,12 @@ app.use((req, res, next) => {
     }
   });
   next();
+});
+
+// ===== ✅ Client error log endpoint (will be logged by the middleware above) =====
+app.post("/api/log-client-error", (req: Request, res: Response) => {
+  console.log("[CLIENT LOG]", req.body);
+  res.json({ ok: true });
 });
 
 // ===== 4) Routes mounting =====
