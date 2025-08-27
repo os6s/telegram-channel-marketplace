@@ -150,9 +150,10 @@ export function ProfileHeader({
       if (String(e?.message || "").toLowerCase().includes("unlinked")) {
         try { await tonConnectUI?.disconnect(); } catch {}
       }
-      const code = e?.code ?? e?.data?.code ?? "";
-      const msg = e?.message ?? e?.data?.message ?? "TonConnect send failed";
+      const code = e?.code ?? e?.data?.code ?? e?.name ?? "";
+      const msg  = e?.message ?? e?.data?.message ?? "TonConnect send failed";
       console.error("sendTransaction error:", e);
+      alert(`TonConnect error: ${code} | ${msg}`); // ← عرض كود الخطأ الحقيقي
       toast({ title: t("toast.depositFailed"), description: `${code} ${msg}`, variant: "destructive" });
     }
   }
