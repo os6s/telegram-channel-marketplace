@@ -104,7 +104,7 @@ function App() {
         manifestUrl={manifestUrl}
         returnStrategy="twa"   // ✅ Required inside Telegram WebApp
         actionsConfiguration={{
-          twaReturnUrl: "https://t.me/Giftspremarketbot?startapp", // ✅ deep link back to your bot
+          twaReturnUrl: "https://t.me/Giftspremarketbot/startapp", //deep link back to your bot
         }}
         walletsListConfiguration={{ network: APP_NET }}
       >
