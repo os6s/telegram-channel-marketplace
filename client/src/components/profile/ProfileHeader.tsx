@@ -14,12 +14,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
 import { useWalletAddress } from "@/hooks/use-wallet";
-import { beginCell } from "@ton/ton"; // ⬅️ لإضافة تعليق "For TG Marketplace"
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
-const initialFrom = (v: unknown) => { const s = S(v); return s ? s[0].toUpperCase() : "U"; };
+const initialFrom = (v: unknown) => {
+  const s = S(v);
+  return s ? s[0].toUpperCase() : "U";
+};
 
-// ✅ لا يفتح المودال إلا إذا غير متصل
+// ✅ Open modal ONLY if not connected
 async function waitForConnect(tonConnectUI: any, timeoutMs = 15000) {
   const addrNow = tonConnectUI?.wallet?.account?.address;
   if (addrNow) return addrNow;
@@ -32,8 +34,13 @@ async function waitForConnect(tonConnectUI: any, timeoutMs = 15000) {
   return await new Promise<string>((resolve, reject) => {
     const iv = setInterval(() => {
       const addr = tonConnectUI?.wallet?.account?.address;
-      if (addr) { clearInterval(iv); resolve(addr); }
-      else if (Date.now() - start > timeoutMs) { clearInterval(iv); reject(new Error("Connection timeout")); }
+      if (addr) {
+        clearInterval(iv);
+        resolve(addr);
+      } else if (Date.now() - start > timeoutMs) {
+        clearInterval(iv);
+        reject(new Error("Connection timeout"));
+      }
     }, 250);
   });
 }
@@ -63,7 +70,9 @@ export function ProfileHeader({
 
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
-  useEffect(() => { if (address) updateWallet(address); }, [address, updateWallet]);
+  useEffect(() => {
+    if (address) updateWallet(address);
+  }, [address, updateWallet]);
 
   async function handleConnect() {
     try {
@@ -72,7 +81,11 @@ export function ProfileHeader({
       if (!addr) throw new Error("Wallet not connected");
       updateWallet(addr);
     } catch (e: any) {
-      toast({ title: t("toast.connectFailed"), description: e?.message || "", variant: "destructive" });
+      toast({
+        title: t("toast.connectFailed"),
+        description: e?.message || "",
+        variant: "destructive",
+      });
     } finally {
       setBusy(false);
     }
@@ -93,66 +106,63 @@ export function ProfileHeader({
     let tx: any;
 
     try {
+      setBusy(true);
+
       const amt = Number(amount);
       if (!amt || amt <= 0) {
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
         return;
       }
 
-      // ✅ لا تستدعِ waitForConnect إذا كان متصلاً أصلاً
+      // ✅ Don’t call waitForConnect if already connected
       const isConnected = !!tonConnectUI?.wallet?.account?.address;
       if (!isConnected) {
         const addr = await waitForConnect(tonConnectUI);
         if (!addr) throw new Error("Wallet not connected");
       }
 
-      // تحقق توافق الشبكة
-      const appNet = (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
+      // Network check
+      const appNet =
+        (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
       const chain = tonConnectUI?.wallet?.account?.chain; // "-239" mainnet, "-3" testnet
       const walletNet = chain === "-3" ? "TESTNET" : "MAINNET";
       if (walletNet !== appNet) throw new Error(`Wallet on ${walletNet}. Switch to ${appNet}.`);
 
-      // اطلب تهيئة الإرسال من السيرفر
+      // Get tx payload from backend
       r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
-      console.log("Deposit txPayload (raw):", r?.txPayload);
-
-      // ✅ تحضير آمن مع مهلة أكبر والتحقق من وجود رسائل
       const raw = r?.txPayload || {};
       const messages = Array.isArray(raw.messages) ? raw.messages : [];
       if (messages.length === 0) throw new Error("No messages in txPayload");
 
+      // ✅ Guard validUntil (fallback 15m) and pass payload AS-IS
       tx = {
-        validUntil: Number(raw.validUntil) > 0 ? Number(raw.validUntil) : Math.floor(Date.now() / 1000) + 900, // 15m
+        validUntil:
+          Number(raw.validUntil) > 0
+            ? Number(raw.validUntil)
+            : Math.floor(Date.now() / 1000) + 900,
         messages: messages.map((m: any) => ({
           address: String(m.address),
           amount: String(m.amount),
-          ...(m.payload   ? { payload:   String(m.payload) }   : {}),
+          ...(m.payload ? { payload: String(m.payload) } : {}),
           ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
         })),
       };
 
-      // ⬇️ إضافة تعليق "For TG Marketplace" إذا ماكو payload بالرسالة
-      const commentCell = beginCell()
-        .storeUint(0, 32) // comment opcode
-        .storeStringTail("For TG Marketplace")
-        .endCell();
-      const commentB64 = commentCell.toBoc().toString("base64");
-
-      tx.messages = tx.messages.map((m: any) =>
-        m.payload ? m : { ...m, payload: commentB64 }
-      );
-
-      console.log("Deposit txPayload (normalized + comment):", tx);
-
-      // ✅ إرسال مرة واحدة فقط
+      // Send ONCE
       await tonConnectUI.sendTransaction(tx);
       toast({ title: t("toast.confirmDeposit") });
 
-      // تتبّع التأكيد
+      // Poll confirmation
       const poll = async () => {
-        const status = await apiRequest("POST", "/api/wallet/deposit/status", { code: r.code, minTon: amt });
+        const status = await apiRequest("POST", "/api/wallet/deposit/status", {
+          code: r.code,
+          minTon: amt,
+        });
         if (status.status === "paid") {
-          toast({ title: t("toast.depositConfirmed"), description: `Tx: ${status.txHash}` });
+          toast({
+            title: t("toast.depositConfirmed"),
+            description: `Tx: ${status.txHash}`,
+          });
           qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
         } else {
           setTimeout(poll, 5000);
@@ -163,9 +173,10 @@ export function ProfileHeader({
       setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
-      // احتمال unlink
       if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-        try { await tonConnectUI?.disconnect(); } catch {}
+        try {
+          await tonConnectUI?.disconnect();
+        } catch {}
       }
 
       const normalizeError = (err: any) => {
@@ -203,11 +214,14 @@ export function ProfileHeader({
 
       const msgShort = details.message || "Transaction failed";
       toast({ title: "Deposit failed", description: msgShort, variant: "destructive" });
+    } finally {
+      setBusy(false);
     }
   }
 
   async function handleWithdraw() {
     try {
+      setBusy(true);
       const amt = Number(amount);
       if (!amt || amt <= 0 || (balance?.balance || 0) < amt) {
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
@@ -220,6 +234,8 @@ export function ProfileHeader({
       setAmount("");
     } catch (e: any) {
       toast({ title: "Withdraw failed", description: e?.message || "", variant: "destructive" });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -292,7 +308,9 @@ export function ProfileHeader({
               {telegramUser?.username && <p className="text-muted-foreground">@{telegramUser.username}</p>}
               <div className="flex items-center gap-2 mt-2">
                 {telegramUser?.is_premium && <Badge variant="secondary">⭐</Badge>}
-                <Badge variant="secondary">{t("profilePage.memberSince")} {new Date().getFullYear()}</Badge>
+                <Badge variant="secondary">
+                  {t("profilePage.memberSince")} {new Date().getFullYear()}
+                </Badge>
                 {linkedWallet && (
                   <Badge variant="secondary" className="truncate max-w-[180px]">
                     <img src={tonIconUrl} className="w-3 h-3 mr-1" alt="" />
