@@ -1,106 +1,86 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telegram Channel Marketplace - Redirecting...</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-        }
-        .container {
-            text-align: center;
-            max-width: 400px;
-            padding: 2rem;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        .logo {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-        }
-        h1 {
-            margin: 0 0 1rem 0;
-            font-size: 1.5rem;
-            font-weight: 600;
-        }
-        p {
-            margin: 0 0 2rem 0;
-            opacity: 0.9;
-            line-height: 1.5;
-        }
-        .btn {
-            display: inline-block;
-            background: #0088cc;
-            color: white;
-            text-decoration: none;
-            padding: 12px 24px;
-            border-radius: 25px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(0, 136, 204, 0.3);
-        }
-        .btn:hover {
-            background: #006699;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 136, 204, 0.4);
-        }
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1s ease-in-out infinite;
-            margin-left: 10px;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  />
+  <title>Telegram Channel Marketplace - Redirecting…</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+    .container {
+      text-align: center;
+      max-width: 420px;
+      padding: 2rem;
+      background: rgba(255,255,255,.12);
+      border-radius: 20px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0,0,0,.15);
+    }
+    .logo { font-size: 3rem; margin-bottom: 1rem; }
+    h1 { margin: 0 0 1rem; font-size: 1.4rem; font-weight: 600; }
+    p { margin: 0 0 1.5rem; opacity: .9; line-height: 1.5; }
+    .btn {
+      display: inline-block;
+      background: #0088cc;
+      color: #fff;
+      text-decoration: none;
+      padding: 12px 22px;
+      border-radius: 24px;
+      font-weight: 600;
+      transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+      box-shadow: 0 6px 18px rgba(0,136,204,.35);
+    }
+    .btn:hover { background: #0a74a6; transform: translateY(-1px); }
+    .loading {
+      display: inline-block; width: 18px; height: 18px; margin-left: 8px;
+      border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+      border-radius: 50%; animation: spin 1s linear infinite;
+      vertical-align: -3px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="logo">🚀</div>
-        <h1>Telegram Channel Marketplace</h1>
-        <p>This app runs exclusively within Telegram as a Mini App. Redirecting you to our bot...</p>
-        <a href="https://t.me/giftspremarketbot" class="btn" id="redirectBtn">
-            Open in Telegram
-            <span class="loading"></span>
-        </a>
-    </div>
+  <div class="container">
+    <div class="logo">🚀</div>
+    <h1>Telegram Channel Marketplace</h1>
+    <p>This app runs inside Telegram Mini App. If you're not in Telegram, open it below.</p>
+    <a href="https://t.me/giftspremarketbot/startapp" class="btn" id="redirectBtn">
+      Open in Telegram
+      <span class="loading"></span>
+    </a>
+  </div>
 
-    <script>
-        // Auto-redirect after 3 seconds
-        setTimeout(function() {
-            window.location.href = 'https://t.me/giftspremarketbot';
-        }, 3000);
+  <script>
+    const BOT_URL = "https://t.me/giftspremarketbot/startapp";
+    const inTelegram = !!(window.Telegram && window.Telegram.WebApp);
 
-        // Manual redirect on button click
-        document.getElementById('redirectBtn').addEventListener('click', function(e) {
-            e.preventDefault();
-            window.location.href = 'https://t.me/giftspremarketbot';
-        });
+    // لا نعمل إعادة توجيه تلقائية إن كنا داخل Telegram WebApp
+    if (!inTelegram) {
+      setTimeout(() => { window.location.href = BOT_URL; }, 3000);
+    } else {
+      document.querySelector(".container").innerHTML = `
+        <div class="logo">✅</div>
+        <h1>Welcome to Channel Marketplace</h1>
+        <p>You're already inside Telegram. The Mini App should load automatically.</p>
+      `;
+    }
 
-        // Try to detect if already in Telegram and show different message
-        if (window.Telegram && window.Telegram.WebApp) {
-            document.querySelector('.container').innerHTML = `
-                <div class="logo">✅</div>
-                <h1>Welcome to Channel Marketplace</h1>
-                <p>You're already in Telegram! The app should load automatically.</p>
-            `;
-        }
-    </script>
+    document.getElementById("redirectBtn").addEventListener("click", (e) => {
+      e.preventDefault();
+      window.location.href = BOT_URL;
+    });
+  </script>
 </body>
 </html>
