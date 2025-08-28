@@ -92,6 +92,8 @@ export function ProfileHeader({
     let tx: any;
 
     try {
+      setBusy(true);
+
       const amt = Number(amount);
       if (!amt || amt <= 0) {
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
@@ -107,7 +109,7 @@ export function ProfileHeader({
 
       // تحقق توافق الشبكة
       const appNet = (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
-      const chain = tonConnectUI?.wallet?.account?.chain; // "-239" mainnet, "-3" testnet
+      const chain = tonConnectUI?.wallet?.account?.chain; // "-239" MAINNET, "-3" TESTNET
       const walletNet = chain === "-3" ? "TESTNET" : "MAINNET";
       if (walletNet !== appNet) throw new Error(`Wallet on ${walletNet}. Switch to ${appNet}.`);
 
@@ -151,7 +153,6 @@ export function ProfileHeader({
       setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
-      // احتمال unlink
       if (String(e?.message || "").toLowerCase().includes("unlinked")) {
         try { await tonConnectUI?.disconnect(); } catch {}
       }
@@ -172,8 +173,7 @@ export function ProfileHeader({
       console.log("[TON] last txPayload (normalized):", tx);
       console.error("TonConnect error raw:", details);
 
-      alert(`TonConnect error:\n${JSON.stringify(details, safe, 2)}`);
-
+      // لا تستخدم alert — يتعارض مع TWA/Deep links
       fetch("/api/log-client-error", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -191,6 +191,8 @@ export function ProfileHeader({
 
       const msgShort = details.message || "Transaction failed";
       toast({ title: "Deposit failed", description: msgShort, variant: "destructive" });
+    } finally {
+      setBusy(false);
     }
   }
 
