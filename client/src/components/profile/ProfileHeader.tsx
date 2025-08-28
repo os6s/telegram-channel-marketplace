@@ -1,5 +1,5 @@
 // client/src/components/profile/ProfileHeader.tsx
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -12,19 +12,31 @@ import { useLanguage } from "@/contexts/language-context";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import {
-  useTonWallet,
-  useTonConnectUI,
-  useTonConnectModal,
-  useIsConnectionRestored,
-} from "@tonconnect/ui-react";
+import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
 import { useWalletAddress } from "@/hooks/use-wallet";
+import { beginCell } from "@ton/ton"; // ⬅️ لإضافة تعليق "For TG Marketplace"
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
-const initialFrom = (v: unknown) => {
-  const s = S(v);
-  return s ? s[0].toUpperCase() : "U";
-};
+const initialFrom = (v: unknown) => { const s = S(v); return s ? s[0].toUpperCase() : "U"; };
+
+// ✅ لا يفتح المودال إلا إذا غير متصل
+async function waitForConnect(tonConnectUI: any, timeoutMs = 15000) {
+  const addrNow = tonConnectUI?.wallet?.account?.address;
+  if (addrNow) return addrNow;
+
+  if (typeof tonConnectUI?.openModal === "function") {
+    await tonConnectUI.openModal();
+  }
+
+  const start = Date.now();
+  return await new Promise<string>((resolve, reject) => {
+    const iv = setInterval(() => {
+      const addr = tonConnectUI?.wallet?.account?.address;
+      if (addr) { clearInterval(iv); resolve(addr); }
+      else if (Date.now() - start > timeoutMs) { clearInterval(iv); reject(new Error("Connection timeout")); }
+    }, 250);
+  });
+}
 
 export function ProfileHeader({
   telegramUser,
@@ -40,42 +52,27 @@ export function ProfileHeader({
   const { t } = useLanguage();
   const { toast } = useToast();
   const qc = useQueryClient();
-
   const [tonConnectUI] = useTonConnectUI();
   const wallet = useTonWallet();
-  const { open, state } = useTonConnectModal();
-  const connectionRestored = useIsConnectionRestored();
-
   const { data: linkedWallet, updateWallet } = useWalletAddress();
 
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
-  const sendingRef = useRef(false); // منع الإرسال المزدوج
 
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
-  useEffect(() => {
-    if (address) updateWallet(address);
-  }, [address, updateWallet]);
-
-  const ensureConnected = async () => {
-    if (wallet) return true; // متصل
-    if (state?.status !== "opened") await open(); // افتح المودال فقط إذا مغلق
-    return false; // لسة ما متصل، ينتظر المستخدم
-  };
+  useEffect(() => { if (address) updateWallet(address); }, [address, updateWallet]);
 
   async function handleConnect() {
     try {
       setBusy(true);
-      await ensureConnected();
+      const addr = await waitForConnect(tonConnectUI);
+      if (!addr) throw new Error("Wallet not connected");
+      updateWallet(addr);
     } catch (e: any) {
-      toast({
-        title: t("toast.connectFailed"),
-        description: e?.message || "",
-        variant: "destructive",
-      });
+      toast({ title: t("toast.connectFailed"), description: e?.message || "", variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -92,8 +89,7 @@ export function ProfileHeader({
   }
 
   async function handleDeposit() {
-    if (sendingRef.current) return;
-    let initResp: any;
+    let r: any;
     let tx: any;
 
     try {
@@ -103,51 +99,58 @@ export function ProfileHeader({
         return;
       }
 
-      // لا نفتح المودال إذا متصل؛ إن لم يكن متصل نفتح ونوقف هنا حتى يختار
-      const isConnected = !!wallet;
+      // ✅ لا تستدعِ waitForConnect إذا كان متصلاً أصلاً
+      const isConnected = !!tonConnectUI?.wallet?.account?.address;
       if (!isConnected) {
-        await ensureConnected();
-        return; // ننتظر المستخدم يربط، ثم يعيد المحاولة
+        const addr = await waitForConnect(tonConnectUI);
+        if (!addr) throw new Error("Wallet not connected");
       }
 
-      // تحقق من توافق الشبكة
+      // تحقق توافق الشبكة
       const appNet = (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
-      const chain = wallet?.account?.chain; // "-239" mainnet, "-3" testnet
+      const chain = tonConnectUI?.wallet?.account?.chain; // "-239" mainnet, "-3" testnet
       const walletNet = chain === "-3" ? "TESTNET" : "MAINNET";
       if (walletNet !== appNet) throw new Error(`Wallet on ${walletNet}. Switch to ${appNet}.`);
 
-      if (!connectionRestored) throw new Error("Connection is not restored yet");
+      // اطلب تهيئة الإرسال من السيرفر
+      r = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
+      console.log("Deposit txPayload (raw):", r?.txPayload);
 
-      sendingRef.current = true;
-      setBusy(true);
-
-      // طلب إعداد المعاملة
-      initResp = await apiRequest("POST", "/api/wallet/deposit/initiate", { amountTon: amt });
-      const raw = initResp?.txPayload || {};
+      // ✅ تحضير آمن مع مهلة أكبر والتحقق من وجود رسائل
+      const raw = r?.txPayload || {};
       const messages = Array.isArray(raw.messages) ? raw.messages : [];
       if (messages.length === 0) throw new Error("No messages in txPayload");
 
       tx = {
-        validUntil:
-          Number(raw.validUntil) > 0 ? Number(raw.validUntil) : Math.floor(Date.now() / 1000) + 900, // 15m
+        validUntil: Number(raw.validUntil) > 0 ? Number(raw.validUntil) : Math.floor(Date.now() / 1000) + 900, // 15m
         messages: messages.map((m: any) => ({
           address: String(m.address),
           amount: String(m.amount),
-          ...(m.payload ? { payload: String(m.payload) } : {}),
+          ...(m.payload   ? { payload:   String(m.payload) }   : {}),
           ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
         })),
       };
 
-      // إرسال مرة واحدة فقط
+      // ⬇️ إضافة تعليق "For TG Marketplace" إذا ماكو payload بالرسالة
+      const commentCell = beginCell()
+        .storeUint(0, 32) // comment opcode
+        .storeStringTail("For TG Marketplace")
+        .endCell();
+      const commentB64 = commentCell.toBoc().toString("base64");
+
+      tx.messages = tx.messages.map((m: any) =>
+        m.payload ? m : { ...m, payload: commentB64 }
+      );
+
+      console.log("Deposit txPayload (normalized + comment):", tx);
+
+      // ✅ إرسال مرة واحدة فقط
       await tonConnectUI.sendTransaction(tx);
       toast({ title: t("toast.confirmDeposit") });
 
-      // تتبع التأكيد
+      // تتبّع التأكيد
       const poll = async () => {
-        const status = await apiRequest("POST", "/api/wallet/deposit/status", {
-          code: initResp.code,
-          minTon: amt,
-        });
+        const status = await apiRequest("POST", "/api/wallet/deposit/status", { code: r.code, minTon: amt });
         if (status.status === "paid") {
           toast({ title: t("toast.depositConfirmed"), description: `Tx: ${status.txHash}` });
           qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
@@ -160,13 +163,11 @@ export function ProfileHeader({
       setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
+      // احتمال unlink
       if (String(e?.message || "").toLowerCase().includes("unlinked")) {
-        try {
-          await tonConnectUI?.disconnect();
-        } catch {}
+        try { await tonConnectUI?.disconnect(); } catch {}
       }
 
-      // تطبيع الخطأ
       const normalizeError = (err: any) => {
         if (!err) return { name: "UnknownError", message: "Empty rejection from SDK" };
         if (err instanceof Error) return { name: err.name, message: err.message, stack: err.stack };
@@ -178,8 +179,8 @@ export function ProfileHeader({
       const details = normalizeError(e);
       const safe = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
 
-      console.log("[TON] wallet account:", wallet?.account);
-      console.log("[TON] last txPayload (raw):", initResp?.txPayload);
+      console.log("[TON] wallet account:", tonConnectUI?.wallet?.account);
+      console.log("[TON] last txPayload (raw):", r?.txPayload);
       console.log("[TON] last txPayload (normalized):", tx);
       console.error("TonConnect error raw:", details);
 
@@ -192,8 +193,8 @@ export function ProfileHeader({
           context: "deposit/sendTransaction",
           details,
           tx,
-          init: initResp,
-          wallet: wallet?.account,
+          init: r,
+          wallet: tonConnectUI?.wallet?.account,
           url: window.location.href,
           ua: navigator.userAgent,
           ts: new Date().toISOString(),
@@ -202,9 +203,6 @@ export function ProfileHeader({
 
       const msgShort = details.message || "Transaction failed";
       toast({ title: "Deposit failed", description: msgShort, variant: "destructive" });
-    } finally {
-      sendingRef.current = false;
-      setBusy(false);
     }
   }
 
@@ -294,9 +292,7 @@ export function ProfileHeader({
               {telegramUser?.username && <p className="text-muted-foreground">@{telegramUser.username}</p>}
               <div className="flex items-center gap-2 mt-2">
                 {telegramUser?.is_premium && <Badge variant="secondary">⭐</Badge>}
-                <Badge variant="secondary">
-                  {t("profilePage.memberSince")} {new Date().getFullYear()}
-                </Badge>
+                <Badge variant="secondary">{t("profilePage.memberSince")} {new Date().getFullYear()}</Badge>
                 {linkedWallet && (
                   <Badge variant="secondary" className="truncate max-w-[180px]">
                     <img src={tonIconUrl} className="w-3 h-3 mr-1" alt="" />
@@ -309,7 +305,6 @@ export function ProfileHeader({
         </CardContent>
       </Card>
 
-      {/* Deposit Dialog */}
       <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
         <DialogContent>
           <DialogHeader>
@@ -329,7 +324,6 @@ export function ProfileHeader({
         </DialogContent>
       </Dialog>
 
-      {/* Withdraw Dialog */}
       <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
         <DialogContent>
           <DialogHeader>
