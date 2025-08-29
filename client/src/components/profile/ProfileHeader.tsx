@@ -44,6 +44,18 @@ async function ensureConnected(tonConnectUI: any, timeoutMs = 15000) {
   });
 }
 
+function openDeepLink(url: string) {
+  try {
+    // @ts-ignore
+    const twa = window?.Telegram?.WebApp;
+    if (twa?.openTelegramLink) {
+      twa.openTelegramLink(url);
+      return;
+    }
+  } catch {}
+  window.location.href = url;
+}
+
 export function ProfileHeader({
   telegramUser,
   onBack,
@@ -64,6 +76,10 @@ export function ProfileHeader({
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Popup للرابط العميق
+  const [deepOpen, setDeepOpen] = useState(false);
+  const [deepUrl, setDeepUrl] = useState("");
+
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
   async function handleConnect() {
@@ -81,9 +97,8 @@ export function ProfileHeader({
     try {
       setBusy(true);
       await tonConnectUI?.disconnect?.();
-    } catch (e) {
-      // تجاهل
-    } finally {
+    } catch {}
+    finally {
       setBusy(false);
     }
   }
@@ -98,10 +113,10 @@ export function ProfileHeader({
         return;
       }
 
-      // 1) نطلب الإيداع من السيرفر الصحيح
+      // 1) طلب من السيرفر
       resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt });
 
-      // 2) جرّب TonConnect أولاً
+      // 2) جرّب TonConnect
       try {
         await ensureConnected(tonConnectUI);
         const tx = resp?.deposit?.tonConnectTx;
@@ -124,22 +139,22 @@ export function ProfileHeader({
           setAmount("");
           return;
         }
-        // إذا ماكو رسائل جاهزة، نسقط للديب لنك
+        // لا رسائل → نعرض ديب لنك
         const deep = resp?.deposit?.tonDeepLink;
         if (deep) {
-          window.location.href = deep;
+          setDeepUrl(deep);
+          setDeepOpen(true);
           setDepositOpen(false);
-          setAmount("");
           return;
         }
         throw new Error("no tx and no deeplink");
       } catch {
-        // فشل TonConnect أو أُلغي. افتح deep link لمحفظة تيليجرام الداخلية
+        // فشل TonConnect → نعرض ديب لنك
         const deep = resp?.deposit?.tonDeepLink;
         if (deep) {
-          window.location.href = deep;
+          setDeepUrl(deep);
+          setDeepOpen(true);
           setDepositOpen(false);
-          setAmount("");
           return;
         }
         throw new Error("TonConnect and deeplink both unavailable");
@@ -177,8 +192,7 @@ export function ProfileHeader({
             <div className="flex items-center gap-2 bg-muted rounded-full pl-3 pr-2 py-1">
               <img src={tonIconUrl} alt="TON" className="w-4 h-4" />
               <span className="text-sm font-semibold">
-                {(walletBalance?.balance ?? 0).toLocaleString()}{" "}
-                {walletBalance?.currency || "TON"}
+                {(walletBalance?.balance ?? 0).toLocaleString()} {walletBalance?.currency || "TON"}
               </span>
               <button
                 onClick={() => setDepositOpen(true)}
@@ -225,9 +239,7 @@ export function ProfileHeader({
               <h2 className="text-xl font-semibold">
                 {S(telegramUser?.first_name)} {S(telegramUser?.last_name)}
               </h2>
-              {telegramUser?.username && (
-                <p className="text-muted-foreground">@{telegramUser.username}</p>
-              )}
+              {telegramUser?.username && <p className="text-muted-foreground">@{telegramUser.username}</p>}
               <div className="flex items-center gap-2 mt-2">
                 {telegramUser?.is_premium && <Badge variant="secondary">⭐</Badge>}
                 <Badge variant="secondary">{new Date().getFullYear()}</Badge>
@@ -237,6 +249,7 @@ export function ProfileHeader({
         </CardContent>
       </Card>
 
+      {/* Dialog إدخال مبلغ */}
       <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
         <DialogContent>
           <DialogHeader>
@@ -251,6 +264,44 @@ export function ProfileHeader({
           <DialogFooter>
             <Button onClick={handleDeposit} disabled={busy}>
               {busy ? "…" : t("wallet.deposit")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog عرض رابط الإيداع للموافقة */}
+      <Dialog open={deepOpen} onOpenChange={setDeepOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("wallet.deposit")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">افتح الرابط للموافقة داخل محفظتك:</p>
+            <div className="text-xs break-all rounded bg-muted p-2">{deepUrl}</div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              onClick={() => {
+                if (deepUrl) openDeepLink(deepUrl);
+              }}
+            >
+              فتح بالمحفظة
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(deepUrl || "");
+                  toast({ title: "تم نسخ الرابط" });
+                } catch {
+                  toast({ title: "فشل نسخ الرابط", variant: "destructive" });
+                }
+              }}
+            >
+              نسخ الرابط
+            </Button>
+            <Button variant="ghost" onClick={() => setDeepOpen(false)}>
+              إغلاق
             </Button>
           </DialogFooter>
         </DialogContent>
