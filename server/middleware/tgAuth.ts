@@ -22,6 +22,8 @@ declare module "express-serve-static-core" {
 const MAX_INITDATA_BYTES = 8 * 1024;
 const DEFAULT_MAX_AGE_SEC = 24 * 60 * 60;
 const DEBUG = String(process.env.DEBUG_TG_AUTH || "").toLowerCase() === "true";
+// الوضع الصارم فقط إذا TG_ENFORCE=true
+const ENFORCE = String(process.env.TG_ENFORCE || "").toLowerCase() === "true";
 
 function dbg(...args: any[]) {
   if (!DEBUG) return;
@@ -97,8 +99,13 @@ async function upsertUser(user: { id: number; username?: string }) {
   }
 }
 
-/** Required auth: rejects if invalid/missing */
+/** اختياري دائمًا افتراضيًا. صارم فقط إذا TG_ENFORCE=true */
 export function tgAuth(req: Request, res: Response, next: NextFunction) {
+  if (!ENFORCE) {
+    // وضع مرن: لا نمنع أحد. فقط نملأ telegramUser إن كانت صحيحة.
+    return tgOptionalAuth(req, res, next);
+  }
+
   const botToken = process.env.TELEGRAM_BOT_TOKEN || "";
   const initData = (req.get("x-telegram-init-data") ||
     (req.body && (req.body as any).initData) ||
@@ -153,7 +160,7 @@ export function tgAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-/** Optional auth: fills req.telegramUser when valid; auto-upserts if username exists */
+/** اختياري: يملأ req.telegramUser إن كانت البيانات صحيحة. لا يمنع أحد. */
 export async function tgOptionalAuth(req: Request, _res: Response, next: NextFunction) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN || "";
   const initData = (req.get("x-telegram-init-data") ||
@@ -192,8 +199,13 @@ export async function tgOptionalAuth(req: Request, _res: Response, next: NextFun
   next();
 }
 
-/** Required Telegram user + username (with DB upsert) */
+/** يفرض وجود مستخدم تيليجرام فقط إذا TG_ENFORCE=true. غير ذلك يسمح بالضيف. */
 export async function requireTelegramUser(req: Request, res: Response, next: NextFunction) {
+  if (!ENFORCE) {
+    // وضع مرن: اسمح كضيف
+    return next();
+  }
+
   const user = req.telegramUser;
 
   if (!user?.id) {
