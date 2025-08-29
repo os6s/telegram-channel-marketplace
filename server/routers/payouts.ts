@@ -5,12 +5,12 @@ import { db } from "../db.js";
 import { requireTelegramUser as tgAuth } from "../middleware/tgAuth.js";
 import { payouts, walletBalancesView, walletLedger, users } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
-import { Address } from "@ton/core"; // ✅ for TON address validation
+import { Address } from "@ton/core";
 
 // ------------------ utils ------------------
 const createPayoutSchema = z.object({
   amount: z.number().positive(),
-  toAddress: z.string().min(10).max(128), // further validated with ton-core
+  toAddress: z.string().min(10).max(128),
   note: z.string().optional(),
 });
 
@@ -38,7 +38,7 @@ const ADMIN_TG_IDS = (process.env.ADMIN_TG_IDS || "")
 
 // ------------------ router ------------------
 export function mountPayouts(app: Express) {
-  /** User: Create payout request */
+  /** User: Create payout request (locks balance immediately) */
   app.post("/api/payouts", tgAuth, async (req: Request, res: Response) => {
     try {
       const me = await getMe(req);
@@ -50,7 +50,7 @@ export function mountPayouts(app: Express) {
         return res.status(400).json({ ok: false, error: "invalid_address" });
       }
 
-      // Check balance
+      // Check available balance
       const row = await db
         .select()
         .from(walletBalancesView)
@@ -75,7 +75,16 @@ export function mountPayouts(app: Express) {
         })
         .returning();
 
-      // ⚠️ Do NOT deduct balance yet → only lock logically
+      // Lock funds now to prevent spam requests
+      await db.insert(walletLedger).values({
+        userId: me.id,
+        direction: "out",
+        amount: String(body.amount),
+        currency: "TON",
+        refType: "payout_request",   // ← القرار النهائي
+        refId: payout.id,
+        note: `payout to ${payout.toAddress}`,
+      });
 
       return res.status(201).json({ ok: true, payout });
     } catch (e: any) {
@@ -125,16 +134,20 @@ export function mountPayouts(app: Express) {
       }
 
       const id = String(req.params.id);
-      const { status, txHash, note } = req.body || {};
+      const { status, txHash, note } = (req.body || {}) as {
+        status?: string;
+        txHash?: string | null;
+        note?: string | null;
+      };
 
-      if (!["processing", "completed", "failed"].includes(status)) {
+      if (!["processing", "completed", "failed"].includes(String(status))) {
         return res.status(400).json({ ok: false, error: "invalid_status" });
       }
 
       const [updated] = await db
         .update(payouts)
         .set({
-          status,
+          status: status as any,
           txHash: txHash ?? null,
           note: note ?? null,
           sentAt: status === "processing" ? new Date() : undefined,
@@ -145,26 +158,16 @@ export function mountPayouts(app: Express) {
 
       if (!updated) return res.status(404).json({ ok: false, error: "not_found" });
 
-      // ✅ Ledger updates only on final result
-      if (status === "completed") {
-        await db.insert(walletLedger).values({
-          userId: updated.userId,
-          direction: "out",
-          amount: String(updated.amount),
-          currency: "TON",
-          refType: "payout",
-          refId: updated.id,
-          note: "Payout completed",
-        });
-      }
-
+      // Ledger:
+      // - عند "completed": لا تضيف قيد out جديد. الرصيد محجوز مسبقًا بـ payout_request.
+      // - عند "failed": أرجع الحجز بقيد "in" مع ref_type 'refund'.
       if (status === "failed") {
         await db.insert(walletLedger).values({
-          userId: updated.userId,
+          userId: updated.userId!,
           direction: "in",
           amount: String(updated.amount),
           currency: "TON",
-          refType: "payout_refund",
+          refType: "refund",
           refId: updated.id,
           note: "Refund from failed payout",
         });
