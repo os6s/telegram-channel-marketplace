@@ -1,13 +1,13 @@
 import { Router, Request, Response } from "express";
-import { beginCell } from "ton-core";
+import { beginCell } from "@ton/core"; // ✅ correct package
 
 const router = Router();
 
-// عنوان الإسكرو (bounceable address)
+// Escrow wallet address (bounceable, mainnet)
 const ESCROW_ADDRESS = "EQAdnKLl4-hXE_oDoqTwD22aA3ou884lqEQrTzazKI3zxIhf";
 const COMMENT_TEXT = "ton/ton!!!";
 
-// تحويل TON إلى nano كـ string
+// Convert TON to nanotons as string
 function toNanoStr(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("amount invalid");
   const [i, f = ""] = String(amount).split(".");
@@ -16,7 +16,7 @@ function toNanoStr(amount: number): string {
   return s.length ? s : "0";
 }
 
-// توليد payload نصّي كـ base64
+// Encode comment payload to base64
 function buildCommentPayload(text: string): string {
   const cell = beginCell().storeUint(0, 32).storeStringTail(text).endCell();
   return cell.toBoc().toString("base64");
@@ -32,12 +32,12 @@ router.post("/deposit", (req: Request, res: Response) => {
     }
 
     const tonConnectTx = {
-      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 دقائق
+      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 min
       messages: [
         {
           address: ESCROW_ADDRESS,
           amount: toNanoStr(amount),
-          payload: buildCommentPayload(COMMENT_TEXT), // ✅ تعليق يظهر في Popup
+          payload: buildCommentPayload(COMMENT_TEXT), // comment visible in popup
         },
       ],
     };
