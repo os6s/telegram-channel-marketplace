@@ -6,14 +6,16 @@ import { db } from "../db.js";
 import { payments, users, walletLedger, walletBalancesView } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { verifyTonDepositByComment } from "../ton-verify.js";
-import { Address } from "@ton/core";        // Address يبقى من core
-import { beginCell } from "@ton/ton";       // ✅ التعليق من ton/ton
+import { Address, beginCell } from "@ton/core"; // نستخدم beginCell لبناء التعليق داخل الـ payload
 
 type TgUser = { id: number };
 
-// ===== Helpers =====
+/* -------------------- Helpers -------------------- */
+
+// نولّد كود نصّي فريد ونخزّنه بالـ DB كمفتاح تحقق (مو ظاهر للمستخدم)
 const genCode = () => "D" + crypto.randomBytes(4).toString("hex");
 
+// تحويل TON إلى nano (string)
 function toNano(ton: number): string {
   if (!Number.isFinite(ton) || ton <= 0) return "0";
   const [iRaw, fRaw = ""] = String(ton).trim().split(".");
@@ -38,6 +40,7 @@ async function getMe(req: Request) {
   return rows[0] ?? null;
 }
 
+// نطبع العنوان بصيغة non-bounceable (UQ على المين نت / EQ على التست نت حسب testOnly=false/true)
 function normalizeTonAddressStrict(input: string): string {
   const cleaned = String(input ?? "")
     .trim()
@@ -49,7 +52,7 @@ function normalizeTonAddressStrict(input: string): string {
 
 const jsonSafe = (_k: string, v: any) => (typeof v === "bigint" ? v.toString() : v);
 
-// ===== Mount =====
+/* -------------------- Mount -------------------- */
 export function mountWallet(app: Express) {
   /** 1) Wallet address management */
   app.get("/api/wallet/address", tgAuth, async (req: Request, res: Response) => {
@@ -71,13 +74,16 @@ export function mountWallet(app: Express) {
 
       const input = String(rawInput ?? "").trim();
 
+      // unlink
       if (!input) {
-        await db.update(users)
+        await db
+          .update(users)
           .set({ walletAddress: null, updatedAt: new Date() })
           .where(eq(users.id, me.id));
         return res.json({ ok: true, walletAddress: null });
       }
 
+      // validate + normalize (UQ/EQ حسب الشبكة مع non-bounceable)
       let pretty: string;
       try {
         pretty = normalizeTonAddressStrict(input);
@@ -85,7 +91,8 @@ export function mountWallet(app: Express) {
         return res.status(400).json({ ok: false, error: "invalid_address" });
       }
 
-      await db.update(users)
+      await db
+        .update(users)
         .set({ walletAddress: pretty, updatedAt: new Date() })
         .where(eq(users.id, me.id));
 
@@ -101,7 +108,8 @@ export function mountWallet(app: Express) {
       const me = await getMe(req);
       if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-      await db.update(users)
+      await db
+        .update(users)
         .set({ walletAddress: null, updatedAt: new Date() })
         .where(eq(users.id, me.id));
 
@@ -118,6 +126,7 @@ export function mountWallet(app: Express) {
       const escrowRaw = (process.env.ESCROW_WALLET || "").trim();
       if (!escrowRaw) return res.status(500).json({ ok: false, error: "ESCROW_WALLET not set" });
 
+      // نطبّع عنوان الاسكرو non-bounceable (UQ على المين نت)
       const isTest = (process.env.TON_NETWORK || "mainnet") !== "mainnet";
       let escrow: string;
       try {
@@ -135,48 +144,54 @@ export function mountWallet(app: Express) {
       if (!me) return res.status(404).json({ ok: false, error: "user_not_found" });
       if (!me.walletAddress) return res.status(400).json({ ok: false, error: "wallet_not_linked" });
 
+      // نولّد كود نصّي فريد ونخزّنه، ونبني الـ payload بالتعليق عبر beginCell (ton/core)
       const code = genCode();
       const amountNano = toNano(amountTon);
 
-      const [p] = await db.insert(payments).values({
-        listingId: null,
-        buyerId: me.id,
-        sellerId: null,
-        kind: "deposit",
-        locked: false,
-        amount: String(amountTon),
-        currency: "TON",
-        feePercent: "0",
-        feeAmount: "0",
-        sellerAmount: "0",
-        escrowAddress: escrow,
-        comment: code,             // نخزن التعليق
-        txHash: null,
-        buyerConfirmed: false,
-        sellerConfirmed: false,
-        status: "waiting",
-        adminAction: "none",
-      }).returning({ id: payments.id });
+      // نسجّل الدفع بحالة waiting (نخزّن TON كوحدة)
+      const [p] = await db
+        .insert(payments)
+        .values({
+          listingId: null,
+          buyerId: me.id,
+          sellerId: null,
+          kind: "deposit",
+          locked: false,
+          amount: String(amountTon), // TON
+          currency: "TON",
+          feePercent: "0",
+          feeAmount: "0",
+          sellerAmount: "0",
+          escrowAddress: escrow,
+          comment: code, // نخزّن الكود لإثبات الدفع لاحقاً
+          txHash: null,
+          buyerConfirmed: false,
+          sellerConfirmed: false,
+          status: "waiting",
+          adminAction: "none",
+        })
+        .returning({ id: payments.id });
 
-      // ✅ بناء الـ comment payload بالـ @ton/ton
-      const comment = `TG-${code}`; // تعليق مميز
-      const commentCell = beginCell()
-        .storeUint(0, 32)
-        .storeStringTail(comment)
-        .endCell();
+      // ✅ نبني payload يحتوي التعليق (code) — هذا فقط من السيرفر (ما نضيفه بالفرونت)
+      const commentCell = beginCell().storeUint(0, 32).storeStringTail(code).endCell();
       const payloadB64 = commentCell.toBoc().toString("base64");
 
       const txPayload = {
-        validUntil: Math.floor(Date.now() / 1000) + 600, // ⏳ 10 دقائق
+        // نخلي 6 دقائق، والفرونت عنده fallback لـ 15 دقيقة إذا مفقود
+        validUntil: Math.floor(Date.now() / 1000) + 360,
         messages: [
-          { address: escrow, amount: amountNano, payload: payloadB64 }
+          {
+            address: escrow,
+            amount: amountNano,
+            payload: payloadB64,
+          },
         ],
       } as const;
 
       return res.status(201).json({
         ok: true,
         id: String(p.id),
-        code,
+        code, // الكود النصّي للمطابقة لاحقاً
         escrowAddress: escrow,
         amountTon,
         amountNano,
@@ -188,7 +203,7 @@ export function mountWallet(app: Express) {
     }
   });
 
-  /** 3) Deposit status check */
+  /** 3) Deposit status check (مطابقة عبر التعليق) */
   app.post("/api/wallet/deposit/status", tgAuth, async (req, res) => {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
@@ -198,25 +213,31 @@ export function mountWallet(app: Express) {
     const minTon = Number((req.body as any)?.minTon || "0");
     if (!escrow || !code) return res.status(400).json({ ok: false, error: "bad_request" });
 
-    const waitingRows = await db.select({
-      id: payments.id, buyerId: payments.buyerId, kind: payments.kind,
-      status: payments.status, comment: payments.comment, createdAt: payments.createdAt,
-    })
-    .from(payments)
-    .where(
-      and(
-        eq(payments.buyerId, me.id),
-        eq(payments.kind, "deposit" as any),
-        eq(payments.status, "waiting" as any),
-        eq(payments.comment, code)
+    const waitingRows = await db
+      .select({
+        id: payments.id,
+        buyerId: payments.buyerId,
+        kind: payments.kind,
+        status: payments.status,
+        comment: payments.comment,
+        createdAt: payments.createdAt,
+      })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.buyerId, me.id),
+          eq(payments.kind, "deposit" as any),
+          eq(payments.status, "waiting" as any),
+          eq(payments.comment, code)
+        )
       )
-    )
-    .orderBy(desc(payments.createdAt))
-    .limit(1);
+      .orderBy(desc(payments.createdAt))
+      .limit(1);
 
     const waiting = waitingRows[0];
     if (!waiting) return res.status(404).json({ ok: false, status: "not_found" });
 
+    // نتحقق على السلسلة بالبحث عن رسالة إلى الاسكرو تحمل نفس التعليق (code)
     const v = await verifyTonDepositByComment({
       escrow,
       code,
@@ -225,9 +246,11 @@ export function mountWallet(app: Express) {
 
     if (!v.ok) return res.json({ ok: true, status: "pending" });
 
-    await db.update(payments)
+    // ثبّت الوحدات: خزّن TON دائمًا
+    await db
+      .update(payments)
       .set({
-        amount: String(v.amountTon),
+        amount: String(v.amountTon), // TON
         txHash: v.txHash ?? null,
         status: "paid",
         confirmedAt: new Date(),
@@ -235,14 +258,20 @@ export function mountWallet(app: Express) {
       })
       .where(and(eq(payments.id, waiting.id), eq(payments.status, "waiting")));
 
-    const [updated] = await db.select({
-      id: payments.id, amount: payments.amount, txHash: payments.txHash,
-    }).from(payments).where(eq(payments.id, waiting.id)).limit(1);
+    const [updated] = await db
+      .select({
+        id: payments.id,
+        amount: payments.amount,
+        txHash: payments.txHash,
+      })
+      .from(payments)
+      .where(eq(payments.id, waiting.id))
+      .limit(1);
 
     await db.insert(walletLedger).values({
       userId: me.id,
       direction: "in",
-      amount: String(v.amountTon),
+      amount: String(v.amountTon), // TON
       currency: "TON",
       refType: "deposit",
       refId: updated.id,
@@ -263,7 +292,11 @@ export function mountWallet(app: Express) {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-    const row = await db.select().from(walletBalancesView).where(eq(walletBalancesView.userId, me.id)).limit(1);
+    const row = await db
+      .select()
+      .from(walletBalancesView)
+      .where(eq(walletBalancesView.userId, me.id))
+      .limit(1);
 
     res.json({
       ok: true,
@@ -277,7 +310,12 @@ export function mountWallet(app: Express) {
     const me = await getMe(req);
     if (!me) return res.status(401).json({ ok: false, error: "unauthorized" });
 
-    const rows = await db.select().from(walletLedger).where(eq(walletLedger.userId, me.id)).orderBy(desc(walletLedger.createdAt)).limit(50);
+    const rows = await db
+      .select()
+      .from(walletLedger)
+      .where(eq(walletLedger.userId, me.id))
+      .orderBy(desc(walletLedger.createdAt))
+      .limit(50);
 
     const safeRows = JSON.parse(JSON.stringify(rows, jsonSafe));
     res.json({ ok: true, rows: safeRows });
