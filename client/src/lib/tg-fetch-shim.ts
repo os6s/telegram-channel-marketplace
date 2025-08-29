@@ -2,7 +2,9 @@
 function getInitData(): string | null {
   try {
     // @ts-ignore
-    return typeof window !== "undefined" ? window?.Telegram?.WebApp?.initData || null : null;
+    return typeof window !== "undefined"
+      ? window?.Telegram?.WebApp?.initData || null
+      : null;
   } catch {
     return null;
   }
@@ -16,23 +18,37 @@ export function installTgFetchShim() {
   const origFetch = window.fetch.bind(window);
 
   window.fetch = (input: RequestInfo | URL, initArg?: RequestInit) => {
-    const init: RequestInit = initArg ?? {};
-    const urlStr =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-        ? input.toString()
-        : (input as Request).url;
+    // طبّع الطلب أولاً إلى Request واحد آمن
+    const req = new Request(input as any, initArg);
+    // دعم الروابط النسبية
+    const url = new URL(req.url, window.location.href);
 
-    const url = new URL(urlStr, window.location.href);
-
-    // لا نمنع أي نطاق. فقط نضيف هيدر initData إذا موجود.
-    const headers = new Headers(init.headers || {});
+    // انسخ الهيدرات ثم أضف initData بالاسم الصحيح (lowercase)
+    const headers = new Headers(req.headers);
     const initData = getInitData();
-    if (initData && !headers.has("X-Telegram-Init-Data")) {
-      headers.set("X-Telegram-Init-Data", initData);
+    if (initData && !headers.has("x-telegram-init-data")) {
+      headers.set("x-telegram-init-data", initData);
     }
 
-    return origFetch(url.toString(), { ...init, headers });
+    // أعد استدعاء fetch بالأجزاء نفسها
+    const method = req.method || "GET";
+    const body =
+      method !== "GET" && method !== "HEAD" ? (req as any).body : undefined;
+
+    return origFetch(url.toString(), {
+      method,
+      headers,
+      body,
+      // نحافظ على خصائص الطلب الأصلي
+      credentials: req.credentials,
+      cache: req.cache as RequestCache,
+      redirect: req.redirect as RequestRedirect,
+      referrer: req.referrer || undefined,
+      referrerPolicy: req.referrerPolicy || undefined,
+      integrity: (req as any).integrity,
+      keepalive: (req as any).keepalive,
+      mode: req.mode as RequestMode,
+      signal: req.signal,
+    });
   };
 }
