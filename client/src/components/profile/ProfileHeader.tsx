@@ -58,7 +58,6 @@ export function ProfileHeader({
   const [tonConnectUI] = useTonConnectUI();
   const tonWallet = useTonWallet();
 
-  // هووكس مالتك
   const { data: linkedWallet, updateWallet } = useWalletAddress();
   const { data: walletBalance } = useWalletBalance();
 
@@ -68,7 +67,6 @@ export function ProfileHeader({
 
   const address = useMemo(() => tonWallet?.account?.address || "", [tonWallet?.account?.address]);
 
-  // تزامن العنوان من TonConnect مع الهوك
   useEffect(() => {
     if (address) updateWallet(address);
   }, [address, updateWallet]);
@@ -94,6 +92,7 @@ export function ProfileHeader({
       setBusy(true);
       await tonConnectUI?.disconnect?.();
       updateWallet(null);
+      setDepositOpen(false);
     } finally {
       setBusy(false);
     }
@@ -102,6 +101,12 @@ export function ProfileHeader({
   async function handleDeposit() {
     try {
       setBusy(true);
+
+      // تأكد من الاتصال أولاً
+      await ensureConnected(tonConnectUI);
+      const addrNow = tonConnectUI?.wallet?.account?.address;
+      if (!addrNow) throw new Error("Wallet not connected");
+
       const amt = Number(amount);
       if (!amt || amt <= 0) {
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
@@ -109,18 +114,20 @@ export function ProfileHeader({
       }
 
       const resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt });
-      await ensureConnected(tonConnectUI);
 
       const tx = resp?.deposit?.tonConnectTx;
       if (!tx?.messages?.length) throw new Error("invalid tx from server");
 
+      // أغلق الدايالوگ قبل الإرسال لتحاشي مشاكل iOS WebView
+      setDepositOpen(false);
+
       await tonConnectUI.sendTransaction(tx);
       toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة." });
 
-      setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
-      toast({ title: "Deposit failed", description: String(e?.message || e), variant: "destructive" });
+      const msg = String(e?.message || e);
+      toast({ title: "Deposit failed", description: msg, variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -224,7 +231,7 @@ export function ProfileHeader({
             inputMode="decimal"
           />
           <DialogFooter>
-            <Button onClick={handleDeposit} disabled={busy}>
+            <Button onClick={handleDeposit} disabled={busy || !linkedWallet}>
               {busy ? "…" : t("wallet.deposit")}
             </Button>
           </DialogFooter>
