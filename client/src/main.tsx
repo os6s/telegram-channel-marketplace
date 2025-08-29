@@ -8,63 +8,45 @@ import { installTgFetchShim } from "@/lib/tg-fetch-shim";
 import { installRemoteLogger } from "@/lib/remote-logger";
 import { TonConnectUIProvider } from "@tonconnect/ui-react";
 
-// ===== 0) Utilities =====
+// ---- utils ----
 function reportError(error: any, context: string) {
   console.error(`[${context}]`, error);
-  // Optionally POST to your backend:
-  // fetch("/api/log-client-error", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ context, error: String(error) }) });
 }
-
-// Install fetch shim & remote logger ASAP
 installTgFetchShim();
 installRemoteLogger();
-
 window.addEventListener("error", (e) => reportError(e.error || e.message, "GlobalError"));
 window.addEventListener("unhandledrejection", (e) => reportError((e as any).reason, "UnhandledPromise"));
 
-// ===== 1) Telegram Mini App boot =====
+// ---- Telegram Mini App boot ----
 const tg = (window as any).Telegram?.WebApp;
 if (tg) {
   try {
     tg.ready();
     tg.expand();
-
-    const applyTheme = (themeParams: any) => {
-      document.body.dataset.tgTheme = themeParams?.theme || "light";
-    };
+    const applyTheme = (themeParams: any) => { document.body.dataset.tgTheme = themeParams?.theme || "light"; };
     applyTheme(tg.themeParams);
     tg.onEvent("themeChanged", () => applyTheme(tg.themeParams));
-
-    if (tg.initDataUnsafe) {
-      console.log("Telegram initDataUnsafe:", tg.initDataUnsafe);
-    }
-
+    if (tg.initDataUnsafe) console.log("Telegram initDataUnsafe:", tg.initDataUnsafe);
     const viewport = document.querySelector('meta[name="viewport"]');
-    if (viewport) {
-      viewport.setAttribute(
-        "content",
-        "width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
-      );
-    }
+    if (viewport) viewport.setAttribute("content","width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover");
   } catch (err) {
     reportError(err, "TelegramWebAppInit");
   }
 } else {
-  console.warn("Telegram.WebApp is not available — likely running outside Telegram.");
+  console.warn("Telegram.WebApp is not available — likely outside Telegram.");
 }
 
-// ===== 2) TonConnect UI Provider config =====
+// ---- TonConnect UI Provider (official flow) ----
 const manifestUrl =
   typeof window !== "undefined"
     ? `${window.location.origin}/tonconnect-manifest.json`
     : "/tonconnect-manifest.json";
 
-// Map Vite env to UI network
-const APP_NET =
-  (import.meta as any)?.env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
+// 'MAINNET' | 'TESTNET'
+const APP_NET = (import.meta as any)?.env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
 
-// Deep-link back to your bot (use /startapp, not ?startapp)
-const TWA_RETURN_URL = "https://t.me/giftspremarketbot/startapp";
+// Use /app for TWA return URL
+const TWA_RETURN_URL = "https://t.me/giftspremarketbot/app";
 
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
@@ -73,6 +55,9 @@ createRoot(document.getElementById("root")!).render(
       returnStrategy="twa"
       actionsConfiguration={{ twaReturnUrl: TWA_RETURN_URL }}
       walletsListConfiguration={{ network: APP_NET }}
+      // optional hardening:
+      // restoreConnection={true}
+      // uiPreferences={{ theme: THEME.DARK }}
     >
       <App />
     </TonConnectUIProvider>
