@@ -4,7 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Settings, ArrowLeft, Plus } from "lucide-react";
 import tonIconUrl from "@/assets/icons/ton.svg?url";
@@ -27,8 +33,13 @@ async function ensureConnected(tonConnectUI: any, timeoutMs = 15000) {
   return await new Promise<string>((resolve, reject) => {
     const iv = setInterval(() => {
       const addr = tonConnectUI?.wallet?.account?.address;
-      if (addr) { clearInterval(iv); resolve(addr); }
-      else if (Date.now() - start > timeoutMs) { clearInterval(iv); reject(new Error("Connection timeout")); }
+      if (addr) {
+        clearInterval(iv);
+        resolve(addr);
+      } else if (Date.now() - start > timeoutMs) {
+        clearInterval(iv);
+        reject(new Error("Connection timeout"));
+      }
     }, 250);
   });
 }
@@ -37,7 +48,7 @@ export function ProfileHeader({
   telegramUser,
   onBack,
   onOpenSettings,
-  walletBalance
+  walletBalance,
 }: {
   telegramUser: any;
   onBack: () => void;
@@ -55,6 +66,28 @@ export function ProfileHeader({
 
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
+  async function handleConnect() {
+    try {
+      setBusy(true);
+      await ensureConnected(tonConnectUI);
+    } catch (e: any) {
+      toast({ title: t("toast.connectFailed"), description: e?.message || "", variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    try {
+      setBusy(true);
+      await tonConnectUI?.disconnect?.();
+    } catch (e) {
+      // تجاهل
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleDeposit() {
     let resp: any;
     try {
@@ -65,41 +98,51 @@ export function ProfileHeader({
         return;
       }
 
-      // 1) اطلب الإيداع من السيرفر الصحيح
+      // 1) نطلب الإيداع من السيرفر الصحيح
       resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt });
 
       // 2) جرّب TonConnect أولاً
       try {
         await ensureConnected(tonConnectUI);
         const tx = resp?.deposit?.tonConnectTx;
-if (tx?.messages?.length) {
-  const prepared = {
-    validUntil: Number(tx.validUntil) > 0 ? Number(tx.validUntil) : Math.floor(Date.now() / 1000) + 900,
-    messages: tx.messages.map((m: any) => ({
-      address: String(m.address),
-      amount: String(m.amount),
-      ...(m.payload ? { payload: String(m.payload) } : {}),
-      ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
-    })),
-  };
-  await tonConnectUI.sendTransaction(prepared);
-  toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة." });
-  setDepositOpen(false);
-  setAmount("");
-  return;
-}
-
-// إذا ماكو رسائل جاهزة، افتح الـ deep link فورًا
-const deep = resp?.deposit?.tonDeepLink;
-if (deep) {
-  window.location.href = deep;
-  setDepositOpen(false);
-  setAmount("");
-  return;
-}
-throw new Error("no tx and no deeplink");
+        if (tx?.messages?.length) {
+          const prepared = {
+            validUntil:
+              Number(tx.validUntil) > 0
+                ? Number(tx.validUntil)
+                : Math.floor(Date.now() / 1000) + 900,
+            messages: tx.messages.map((m: any) => ({
+              address: String(m.address),
+              amount: String(m.amount),
+              ...(m.payload ? { payload: String(m.payload) } : {}),
+              ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
+            })),
+          };
+          await tonConnectUI.sendTransaction(prepared);
+          toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة." });
+          setDepositOpen(false);
+          setAmount("");
+          return;
         }
-        throw e;
+        // إذا ماكو رسائل جاهزة، نسقط للديب لنك
+        const deep = resp?.deposit?.tonDeepLink;
+        if (deep) {
+          window.location.href = deep;
+          setDepositOpen(false);
+          setAmount("");
+          return;
+        }
+        throw new Error("no tx and no deeplink");
+      } catch {
+        // فشل TonConnect أو أُلغي. افتح deep link لمحفظة تيليجرام الداخلية
+        const deep = resp?.deposit?.tonDeepLink;
+        if (deep) {
+          window.location.href = deep;
+          setDepositOpen(false);
+          setAmount("");
+          return;
+        }
+        throw new Error("TonConnect and deeplink both unavailable");
       }
     } catch (e: any) {
       const msg = String(e?.message || "Transaction failed");
@@ -114,13 +157,17 @@ throw new Error("no tx and no deeplink");
       <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" onClick={onBack}>
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
             <div>
               <h1 className="text-lg font-semibold">{t("profilePage.title")}</h1>
               <p className="text-xs text-muted-foreground">{t("profilePage.subtitle")}</p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onOpenSettings}><Settings className="w-4 h-4" /></Button>
+          <Button variant="ghost" size="sm" onClick={onOpenSettings}>
+            <Settings className="w-4 h-4" />
+          </Button>
         </div>
       </header>
 
@@ -130,7 +177,8 @@ throw new Error("no tx and no deeplink");
             <div className="flex items-center gap-2 bg-muted rounded-full pl-3 pr-2 py-1">
               <img src={tonIconUrl} alt="TON" className="w-4 h-4" />
               <span className="text-sm font-semibold">
-                {(walletBalance?.balance ?? 0).toLocaleString()} {walletBalance?.currency || "TON"}
+                {(walletBalance?.balance ?? 0).toLocaleString()}{" "}
+                {walletBalance?.currency || "TON"}
               </span>
               <button
                 onClick={() => setDepositOpen(true)}
@@ -142,14 +190,27 @@ throw new Error("no tx and no deeplink");
             </div>
 
             {!address ? (
-              <Button onClick={() => ensureConnected(tonConnectUI)} className="rounded-full px-5" disabled={busy}>
-                <img src={tonIconUrl} alt="" className="w-4 h-4 mr-2" />
-                {busy ? "…" : "Connect Wallet"}
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={handleConnect} className="rounded-full px-5" disabled={busy}>
+                  <img src={tonIconUrl} alt="" className="w-4 h-4 mr-2" />
+                  {busy ? "…" : "Connect Wallet"}
+                </Button>
+              </div>
             ) : (
-              <Badge variant="secondary" className="truncate max-w-[200px]">
-                {address.slice(0, 6)}…{address.slice(-4)}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="truncate max-w-[200px]">
+                  {address.slice(0, 6)}…{address.slice(-4)}
+                </Badge>
+                <Button
+                  onClick={handleDisconnect}
+                  className="rounded-full px-4"
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy}
+                >
+                  Disconnect
+                </Button>
+              </div>
             )}
           </div>
 
@@ -164,7 +225,9 @@ throw new Error("no tx and no deeplink");
               <h2 className="text-xl font-semibold">
                 {S(telegramUser?.first_name)} {S(telegramUser?.last_name)}
               </h2>
-              {telegramUser?.username && <p className="text-muted-foreground">@{telegramUser.username}</p>}
+              {telegramUser?.username && (
+                <p className="text-muted-foreground">@{telegramUser.username}</p>
+              )}
               <div className="flex items-center gap-2 mt-2">
                 {telegramUser?.is_premium && <Badge variant="secondary">⭐</Badge>}
                 <Badge variant="secondary">{new Date().getFullYear()}</Badge>
@@ -176,7 +239,9 @@ throw new Error("no tx and no deeplink");
 
       <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{t("wallet.deposit")}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{t("wallet.deposit")}</DialogTitle>
+          </DialogHeader>
           <Input
             placeholder={t("profilePage.depositPlaceholder")}
             value={amount}
