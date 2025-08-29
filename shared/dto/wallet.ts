@@ -7,13 +7,12 @@ const RE_NUMERIC = /^[0-9]+(\.[0-9]+)?$/;
 /* ===== Enums ===== */
 export const Currency = z.enum(["TON", "USDT"]);
 
-
-
-/* ===== Deposit Request (TonConnect flow only) ===== */
+/* ===== Deposit Request (يتطابق مع /api/wallet/deposit) ===== */
 export const DepositRequestSchema = z.object({
-  amountTon: z.number().positive(),   // backend expects a numeric TON amount
+  amount: z.number().positive(),   // الآن نتوقع الحقل "amount"
 });
 export type DepositRequestDTO = z.infer<typeof DepositRequestSchema>;
+
 /* ===== Withdraw Request ===== */
 export const WithdrawRequestSchema = z.object({
   userId: z.string().uuid(),
@@ -27,10 +26,10 @@ export type WithdrawRequestDTO = z.infer<typeof WithdrawRequestSchema>;
 /* ===== Wallet Balance DTO (from wallet_balances_view) ===== */
 export const WalletBalanceSchema = z.object({
   userId: z.string().uuid(),
-  telegramId: z.string().nullable().optional(),   // new from view
+  telegramId: z.string().nullable().optional(),
   username: z.string().nullable().optional(),
-  walletAddress: z.string().nullable().optional(), // new from view
-  balance: z.string(),                             // keep as string for NUMERIC precision
+  walletAddress: z.string().nullable().optional(),
+  balance: z.string(),  // string لحفظ الدقة
   currency: Currency,
   txCount: z.union([z.string(), z.number()]).optional(),
   lastTx: z.string().nullable().optional(),
@@ -50,8 +49,8 @@ export const WalletLedgerSchema = z.object({
     "order_release",
     "refund",
     "adjustment",
-    "payout_request",  // ✅ added
-    "payout_refund",   // ✅ added
+    "payout_request",
+    "payout_refund",
   ]),
   refId: z.string().uuid().optional(),
   note: z.string().nullable().optional(),
