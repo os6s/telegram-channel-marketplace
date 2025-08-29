@@ -1,11 +1,13 @@
-// server/routes/wallet.ts
 import { Router, Request, Response } from "express";
+import { beginCell } from "ton-core";
 
 const router = Router();
 
-// Use a bounceable user-friendly address (EQ... recommended).
+// عنوان الإسكرو (bounceable address)
 const ESCROW_ADDRESS = "EQAdnKLl4-hXE_oDoqTwD22aA3ou884lqEQrTzazKI3zxIhf";
+const COMMENT_TEXT = "ton/ton!!!";
 
+// تحويل TON إلى nano كـ string
 function toNanoStr(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("amount invalid");
   const [i, f = ""] = String(amount).split(".");
@@ -14,27 +16,28 @@ function toNanoStr(amount: number): string {
   return s.length ? s : "0";
 }
 
+// توليد payload نصّي كـ base64
+function buildCommentPayload(text: string): string {
+  const cell = beginCell().storeUint(0, 32).storeStringTail(text).endCell();
+  return cell.toBoc().toString("base64");
+}
+
+// POST /api/wallet/deposit
 router.post("/deposit", (req: Request, res: Response) => {
   try {
-    const { amount, chain } = req.body as { amount?: number; chain?: "mainnet" | "testnet" };
+    const { amount } = req.body as { amount?: number };
 
     if (typeof amount !== "number" || amount <= 0) {
       return res.status(400).json({ ok: false, error: "amount > 0 required" });
     }
 
-    // Optional: log/validate chain to avoid mainnet/testnet mismatches.
-    if (chain && chain !== "mainnet" && chain !== "testnet") {
-      return res.status(400).json({ ok: false, error: "invalid chain" });
-    }
-
-    // Build TonConnect transaction
     const tonConnectTx = {
-      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes per spec
+      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 دقائق
       messages: [
         {
-          address: ESCROW_ADDRESS,          // user-friendly address
-          amount: toNanoStr(amount),        // string, nanotons
-          // payload/stateInit omitted -> pure TON transfer
+          address: ESCROW_ADDRESS,
+          amount: toNanoStr(amount),
+          payload: buildCommentPayload(COMMENT_TEXT), // ✅ تعليق يظهر في Popup
         },
       ],
     };
@@ -44,7 +47,6 @@ router.post("/deposit", (req: Request, res: Response) => {
       deposit: {
         asset: "TON",
         amount,
-        chain: chain || "mainnet",
         tonConnectTx,
       },
     });
