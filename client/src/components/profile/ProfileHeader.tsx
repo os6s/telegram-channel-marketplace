@@ -1,4 +1,3 @@
-// client/src/components/profile/ProfileHeader.tsx
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -44,12 +43,6 @@ async function ensureConnected(tonConnectUI: any, timeoutMs = 15000) {
   });
 }
 
-function openDeepLink(url: string) {
-  // نعتمد حصراً على popup الرسمي
-  // @ts-ignore
-  window?.Telegram?.WebApp?.openTelegramLink(url);
-}
-
 export function ProfileHeader({
   telegramUser,
   onBack,
@@ -70,10 +63,6 @@ export function ProfileHeader({
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Popup للرابط العميق
-  const [deepOpen, setDeepOpen] = useState(false);
-  const [deepUrl, setDeepUrl] = useState("");
-
   const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
 
   async function handleConnect() {
@@ -81,11 +70,7 @@ export function ProfileHeader({
       setBusy(true);
       await ensureConnected(tonConnectUI);
     } catch (e: any) {
-      toast({
-        title: t("toast.connectFailed"),
-        description: e?.message || "",
-        variant: "destructive",
-      });
+      toast({ title: t("toast.connectFailed"), description: e?.message || "", variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -95,14 +80,12 @@ export function ProfileHeader({
     try {
       setBusy(true);
       await tonConnectUI?.disconnect?.();
-    } catch {}
-    finally {
+    } finally {
       setBusy(false);
     }
   }
 
   async function handleDeposit() {
-    let resp: any;
     try {
       setBusy(true);
       const amt = Number(amount);
@@ -111,53 +94,19 @@ export function ProfileHeader({
         return;
       }
 
-      resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt });
+      const resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt });
+      await ensureConnected(tonConnectUI);
 
-      try {
-        await ensureConnected(tonConnectUI);
-        const tx = resp?.deposit?.tonConnectTx;
-        if (tx?.messages?.length) {
-          const prepared = {
-            validUntil:
-              Number(tx.validUntil) > 0
-                ? Number(tx.validUntil)
-                : Math.floor(Date.now() / 1000) + 900,
-            messages: tx.messages.map((m: any) => ({
-              address: String(m.address),
-              amount: String(m.amount),
-              ...(m.payload ? { payload: String(m.payload) } : {}),
-              ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
-            })),
-          };
-          await tonConnectUI.sendTransaction(prepared);
-          toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة." });
-          setDepositOpen(false);
-          setAmount("");
-          return;
-        }
+      const tx = resp?.deposit?.tonConnectTx;
+      if (!tx?.messages?.length) throw new Error("invalid tx from server");
 
-        // إذا ماكو رسائل جاهزة → نعرض popup للديب لنك
-        const deep = resp?.deposit?.tonDeepLink;
-        if (deep) {
-          setDeepUrl(deep);
-          setDeepOpen(true);
-          setDepositOpen(false);
-          return;
-        }
-        throw new Error("no tx and no deeplink");
-      } catch {
-        const deep = resp?.deposit?.tonDeepLink;
-        if (deep) {
-          setDeepUrl(deep);
-          setDeepOpen(true);
-          setDepositOpen(false);
-          return;
-        }
-        throw new Error("TonConnect and deeplink both unavailable");
-      }
+      await tonConnectUI.sendTransaction(tx);
+      toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة." });
+
+      setDepositOpen(false);
+      setAmount("");
     } catch (e: any) {
-      const msg = String(e?.message || "Transaction failed");
-      toast({ title: "Deposit failed", description: msg, variant: "destructive" });
+      toast({ title: "Deposit failed", description: String(e?.message || e), variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -188,8 +137,7 @@ export function ProfileHeader({
             <div className="flex items-center gap-2 bg-muted rounded-full pl-3 pr-2 py-1">
               <img src={tonIconUrl} alt="TON" className="w-4 h-4" />
               <span className="text-sm font-semibold">
-                {(walletBalance?.balance ?? 0).toLocaleString()}{" "}
-                {walletBalance?.currency || "TON"}
+                {(walletBalance?.balance ?? 0).toLocaleString()} {walletBalance?.currency || "TON"}
               </span>
               <button
                 onClick={() => setDepositOpen(true)}
@@ -246,7 +194,6 @@ export function ProfileHeader({
         </CardContent>
       </Card>
 
-      {/* Dialog إدخال مبلغ */}
       <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
         <DialogContent>
           <DialogHeader>
@@ -261,31 +208,6 @@ export function ProfileHeader({
           <DialogFooter>
             <Button onClick={handleDeposit} disabled={busy}>
               {busy ? "…" : t("wallet.deposit")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog عرض رابط الإيداع */}
-      <Dialog open={deepOpen} onOpenChange={setDeepOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("wallet.deposit")}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">اضغط لفتح محفظتك:</p>
-            <div className="text-xs break-all rounded bg-muted p-2">{deepUrl}</div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button
-              onClick={() => {
-                if (deepUrl) openDeepLink(deepUrl);
-              }}
-            >
-              فتح بالمحفظة
-            </Button>
-            <Button variant="ghost" onClick={() => setDeepOpen(false)}>
-              إغلاق
             </Button>
           </DialogFooter>
         </DialogContent>
