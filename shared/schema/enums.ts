@@ -15,7 +15,6 @@ export const platformKindEnum = pgEnum("platform_kind_enum", [
 export const disputeStatusEnum = pgEnum("dispute_status_enum", ["open","resolved","cancelled"]);
 
 /* ===== activities ===== */
-// مطابق لما يُستخدم في الراوترات/السكيمة
 export const activityTypeEnum = pgEnum("activity_type_enum", [
   "listed",
   "buy",
@@ -31,14 +30,25 @@ export const activityTypeEnum = pgEnum("activity_type_enum", [
 export const activityStatusEnum = pgEnum("activity_status_enum", ["pending","completed","failed"]);
 
 /* ===== payments ===== */
-export const paymentStatusEnum = pgEnum("payment_status_enum", ["waiting","pending","paid","refunded","cancelled"]);
+export const paymentStatusEnum = pgEnum("payment_status_enum", [
+  "waiting",
+  "pending",
+  "paid",
+  "refunded",
+  "cancelled",
+]);
 
-export const adminActionEnum = pgEnum("admin_action_enum", ["none","release","refund","freeze"]);
+export const adminActionEnum = pgEnum("admin_action_enum", [
+  "none",
+  "release",
+  "refund",
+  "freeze",
+]);
 
-export const paymentKindEnum = pgEnum("payment_kind_enum", ["order","deposit"]);
+export const paymentKindEnum = pgEnum("payment_kind_enum", ["order", "deposit"]);
 
 /* ===== wallet (ledger) ===== */
-export const walletDirEnum = pgEnum("wallet_dir_enum", ["in","out"]);
+export const walletDirEnum = pgEnum("wallet_dir_enum", ["in", "out"]);
 
 export const walletRefEnum = pgEnum("wallet_ref_enum", [
   "deposit",
@@ -46,5 +56,5 @@ export const walletRefEnum = pgEnum("wallet_ref_enum", [
   "order_release",
   "refund",
   "adjustment",
-  "withdraw",
+  "payout_request", // ← هنا التغيير
 ]);
