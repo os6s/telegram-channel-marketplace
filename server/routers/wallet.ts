@@ -1,26 +1,11 @@
 import { Router, Request, Response } from "express";
-import { beginCell } from "@ton/core"; // ✅ correct package
+import { toNano } from "@ton/core"; // safer conversion
 
 const router = Router();
 
-// Escrow wallet address (bounceable, mainnet)
+// Escrow wallet address (mainnet, bounceable)
 const ESCROW_ADDRESS = "EQAdnKLl4-hXE_oDoqTwD22aA3ou884lqEQrTzazKI3zxIhf";
-const COMMENT_TEXT = "ton/ton!!!";
-
-// Convert TON to nanotons as string
-function toNanoStr(amount: number): string {
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("amount invalid");
-  const [i, f = ""] = String(amount).split(".");
-  const f9 = (f + "000000000").slice(0, 9);
-  const s = `${i.replace(/^0+/, "")}${f9}`.replace(/^0+/, "");
-  return s.length ? s : "0";
-}
-
-// Encode comment payload to base64
-function buildCommentPayload(text: string): string {
-  const cell = beginCell().storeUint(0, 32).storeStringTail(text).endCell();
-  return cell.toBoc().toString("base64");
-}
+const COMMENT_TEXT = "ton/ton!!!"; // static comment for testing
 
 // POST /api/wallet/deposit
 router.post("/deposit", (req: Request, res: Response) => {
@@ -31,13 +16,14 @@ router.post("/deposit", (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: "amount > 0 required" });
     }
 
+    // Build TonConnect transaction
     const tonConnectTx = {
-      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 min
+      validUntil: Math.floor(Date.now() / 1000) + 300, // valid for 5 min
       messages: [
         {
           address: ESCROW_ADDRESS,
-          amount: toNanoStr(amount),
-          payload: buildCommentPayload(COMMENT_TEXT), // comment visible in popup
+          amount: toNano(amount).toString(), // convert TON -> nanotons
+          payload: COMMENT_TEXT              // plain string comment
         },
       ],
     };
