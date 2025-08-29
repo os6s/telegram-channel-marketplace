@@ -72,30 +72,32 @@ export function ProfileHeader({
       try {
         await ensureConnected(tonConnectUI);
         const tx = resp?.deposit?.tonConnectTx;
-        if (!tx?.messages?.length) throw new Error("bad tx");
-        // validUntil احتياط
-        const prepared = {
-          validUntil: Number(tx.validUntil) > 0 ? Number(tx.validUntil) : Math.floor(Date.now() / 1000) + 900,
-          messages: tx.messages.map((m: any) => ({
-            address: String(m.address),
-            amount: String(m.amount),
-            ...(m.payload ? { payload: String(m.payload) } : {}),
-            ...(m.stateInit ? { stateInit: String(m.stateInit) } : {})
-          }))
-        };
-        await tonConnectUI.sendTransaction(prepared);
-        toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة، أكدها في محفظتك." });
-        setDepositOpen(false);
-        setAmount("");
-        return;
-      } catch (e) {
-        // 3) فشل TonConnect؟ افتح deep link لمحفظة تيليجرام الداخلية
-        const deep = resp?.deposit?.tonDeepLink;
-        if (deep) {
-          window.location.href = deep; // يعمل داخل تيليجرام Wallet
-          setDepositOpen(false);
-          setAmount("");
-          return;
+if (tx?.messages?.length) {
+  const prepared = {
+    validUntil: Number(tx.validUntil) > 0 ? Number(tx.validUntil) : Math.floor(Date.now() / 1000) + 900,
+    messages: tx.messages.map((m: any) => ({
+      address: String(m.address),
+      amount: String(m.amount),
+      ...(m.payload ? { payload: String(m.payload) } : {}),
+      ...(m.stateInit ? { stateInit: String(m.stateInit) } : {}),
+    })),
+  };
+  await tonConnectUI.sendTransaction(prepared);
+  toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة." });
+  setDepositOpen(false);
+  setAmount("");
+  return;
+}
+
+// إذا ماكو رسائل جاهزة، افتح الـ deep link فورًا
+const deep = resp?.deposit?.tonDeepLink;
+if (deep) {
+  window.location.href = deep;
+  setDepositOpen(false);
+  setAmount("");
+  return;
+}
+throw new Error("no tx and no deeplink");
         }
         throw e;
       }
