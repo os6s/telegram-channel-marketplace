@@ -5,11 +5,11 @@ import { createServer, type Server } from "http";
 import { mountWebhook } from "./routers/webhook";
 import { mountUsers } from "./routers/users";
 import { mountListings } from "./routers/listings";
-import { mountActivities } from "./routers/activities/index"; // ✅ explicit
+import { mountActivities } from "./routers/activities/index";
 import { mountPayments } from "./routers/payments";
 import { mountDisputes } from "./routers/disputes";
-// import { mountDisputeMessages } from "./routers/messages"; // removed
-import { mountWallet } from "./routers/wallet";
+// import { mountDisputeMessages } from "./routers/messages";
+import walletRouter from "./routers/wallet";
 import { mountProfile } from "./routers/profile";
 import { mountBalance } from "./routers/balance";
 import { mountPayouts } from "./routers/payouts";
@@ -81,7 +81,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   mountActivities(app);
 
   // Wallet / Profile / Balance / Payouts
-  mountWallet(app);
+  app.use("/api/wallet", walletRouter);
   mountProfile(app);
   mountBalance(app);
   mountPayouts(app);
@@ -89,7 +89,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Payments & Disputes
   mountPayments(app);
   mountDisputes(app);
-  // mountDisputeMessages(app); // removed
+  // mountDisputeMessages(app);
 
   // Admin
   mountAdmin(app);
