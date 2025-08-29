@@ -45,15 +45,9 @@ async function ensureConnected(tonConnectUI: any, timeoutMs = 15000) {
 }
 
 function openDeepLink(url: string) {
-  try {
-    // @ts-ignore
-    const twa = window?.Telegram?.WebApp;
-    if (twa?.openTelegramLink) {
-      twa.openTelegramLink(url);
-      return;
-    }
-  } catch {}
-  window.location.href = url;
+  // نعتمد حصراً على popup الرسمي
+  // @ts-ignore
+  window?.Telegram?.WebApp?.openTelegramLink(url);
 }
 
 export function ProfileHeader({
@@ -87,7 +81,11 @@ export function ProfileHeader({
       setBusy(true);
       await ensureConnected(tonConnectUI);
     } catch (e: any) {
-      toast({ title: t("toast.connectFailed"), description: e?.message || "", variant: "destructive" });
+      toast({
+        title: t("toast.connectFailed"),
+        description: e?.message || "",
+        variant: "destructive",
+      });
     } finally {
       setBusy(false);
     }
@@ -113,10 +111,8 @@ export function ProfileHeader({
         return;
       }
 
-      // 1) طلب من السيرفر
       resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt });
 
-      // 2) جرّب TonConnect
       try {
         await ensureConnected(tonConnectUI);
         const tx = resp?.deposit?.tonConnectTx;
@@ -139,7 +135,8 @@ export function ProfileHeader({
           setAmount("");
           return;
         }
-        // لا رسائل → نعرض ديب لنك
+
+        // إذا ماكو رسائل جاهزة → نعرض popup للديب لنك
         const deep = resp?.deposit?.tonDeepLink;
         if (deep) {
           setDeepUrl(deep);
@@ -149,7 +146,6 @@ export function ProfileHeader({
         }
         throw new Error("no tx and no deeplink");
       } catch {
-        // فشل TonConnect → نعرض ديب لنك
         const deep = resp?.deposit?.tonDeepLink;
         if (deep) {
           setDeepUrl(deep);
@@ -192,7 +188,8 @@ export function ProfileHeader({
             <div className="flex items-center gap-2 bg-muted rounded-full pl-3 pr-2 py-1">
               <img src={tonIconUrl} alt="TON" className="w-4 h-4" />
               <span className="text-sm font-semibold">
-                {(walletBalance?.balance ?? 0).toLocaleString()} {walletBalance?.currency || "TON"}
+                {(walletBalance?.balance ?? 0).toLocaleString()}{" "}
+                {walletBalance?.currency || "TON"}
               </span>
               <button
                 onClick={() => setDepositOpen(true)}
@@ -204,12 +201,10 @@ export function ProfileHeader({
             </div>
 
             {!address ? (
-              <div className="flex gap-2">
-                <Button onClick={handleConnect} className="rounded-full px-5" disabled={busy}>
-                  <img src={tonIconUrl} alt="" className="w-4 h-4 mr-2" />
-                  {busy ? "…" : "Connect Wallet"}
-                </Button>
-              </div>
+              <Button onClick={handleConnect} className="rounded-full px-5" disabled={busy}>
+                <img src={tonIconUrl} alt="" className="w-4 h-4 mr-2" />
+                {busy ? "…" : "Connect Wallet"}
+              </Button>
             ) : (
               <div className="flex items-center gap-2">
                 <Badge variant="secondary" className="truncate max-w-[200px]">
@@ -239,7 +234,9 @@ export function ProfileHeader({
               <h2 className="text-xl font-semibold">
                 {S(telegramUser?.first_name)} {S(telegramUser?.last_name)}
               </h2>
-              {telegramUser?.username && <p className="text-muted-foreground">@{telegramUser.username}</p>}
+              {telegramUser?.username && (
+                <p className="text-muted-foreground">@{telegramUser.username}</p>
+              )}
               <div className="flex items-center gap-2 mt-2">
                 {telegramUser?.is_premium && <Badge variant="secondary">⭐</Badge>}
                 <Badge variant="secondary">{new Date().getFullYear()}</Badge>
@@ -269,14 +266,14 @@ export function ProfileHeader({
         </DialogContent>
       </Dialog>
 
-      {/* Dialog عرض رابط الإيداع للموافقة */}
+      {/* Dialog عرض رابط الإيداع */}
       <Dialog open={deepOpen} onOpenChange={setDeepOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("wallet.deposit")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">افتح الرابط للموافقة داخل محفظتك:</p>
+            <p className="text-sm text-muted-foreground">اضغط لفتح محفظتك:</p>
             <div className="text-xs break-all rounded bg-muted p-2">{deepUrl}</div>
           </div>
           <DialogFooter className="gap-2">
@@ -286,19 +283,6 @@ export function ProfileHeader({
               }}
             >
               فتح بالمحفظة
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(deepUrl || "");
-                  toast({ title: "تم نسخ الرابط" });
-                } catch {
-                  toast({ title: "فشل نسخ الرابط", variant: "destructive" });
-                }
-              }}
-            >
-              نسخ الرابط
             </Button>
             <Button variant="ghost" onClick={() => setDeepOpen(false)}>
               إغلاق
