@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -17,6 +17,7 @@ import { useLanguage } from "@/contexts/language-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
+import { useWalletAddress, useWalletBalance } from "@/hooks/use-wallet";
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
 const initialFrom = (v: unknown) => {
@@ -47,28 +48,36 @@ export function ProfileHeader({
   telegramUser,
   onBack,
   onOpenSettings,
-  walletBalance,
 }: {
   telegramUser: any;
   onBack: () => void;
   onOpenSettings: () => void;
-  walletBalance?: { balance: number; currency: string } | null;
 }) {
   const { t } = useLanguage();
   const { toast } = useToast();
   const [tonConnectUI] = useTonConnectUI();
-  const wallet = useTonWallet();
+  const tonWallet = useTonWallet();
+
+  // هووكس مالتك
+  const { data: linkedWallet, updateWallet } = useWalletAddress();
+  const { data: walletBalance } = useWalletBalance();
 
   const [depositOpen, setDepositOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const address = useMemo(() => wallet?.account?.address || "", [wallet?.account?.address]);
+  const address = useMemo(() => tonWallet?.account?.address || "", [tonWallet?.account?.address]);
+
+  // تزامن العنوان من TonConnect مع الهوك
+  useEffect(() => {
+    if (address) updateWallet(address);
+  }, [address, updateWallet]);
 
   async function handleConnect() {
     try {
       setBusy(true);
-      await ensureConnected(tonConnectUI);
+      const addr = await ensureConnected(tonConnectUI);
+      if (addr) updateWallet(addr);
     } catch (e: any) {
       toast({
         title: t("toast.connectFailed"),
@@ -84,6 +93,7 @@ export function ProfileHeader({
     try {
       setBusy(true);
       await tonConnectUI?.disconnect?.();
+      updateWallet(null);
     } finally {
       setBusy(false);
     }
@@ -152,7 +162,7 @@ export function ProfileHeader({
               </button>
             </div>
 
-            {!address ? (
+            {!linkedWallet ? (
               <Button onClick={handleConnect} className="rounded-full px-5" disabled={busy}>
                 <img src={tonIconUrl} alt="" className="w-4 h-4 mr-2" />
                 {busy ? "…" : "Connect Wallet"}
@@ -160,7 +170,7 @@ export function ProfileHeader({
             ) : (
               <div className="flex items-center gap-2">
                 <Badge variant="secondary" className="truncate max-w-[200px]">
-                  {address.slice(0, 6)}…{address.slice(-4)}
+                  {linkedWallet.slice(0, 6)}…{linkedWallet.slice(-4)}
                 </Badge>
                 <Button
                   onClick={handleDisconnect}
@@ -191,7 +201,11 @@ export function ProfileHeader({
               )}
               <div className="flex items-center gap-2 mt-2">
                 {telegramUser?.is_premium && <Badge variant="secondary">⭐</Badge>}
-                <Badge variant="secondary">{new Date().getFullYear()}</Badge>
+                {linkedWallet && (
+                  <Badge variant="secondary" className="truncate max-w-[180px]">
+                    {linkedWallet.slice(0, 6)}…{linkedWallet.slice(-4)}
+                  </Badge>
+                )}
               </div>
             </div>
           </div>
