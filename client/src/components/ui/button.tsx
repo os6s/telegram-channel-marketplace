@@ -17,7 +17,6 @@ const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
-        // سيُستخدم فقط عند theme === "system"
         telegram: "telegram-button haptic-feedback touch-target",
       },
       size: {
@@ -34,14 +33,26 @@ const buttonVariants = cva(
 type Haptic = "light" | "medium" | "heavy" | "success" | "error" | "selection";
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "color">,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
   hapticFeedback?: Haptic;
 }
 
-const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, hapticFeedback = "medium", onClick, ...props }, ref) => {
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  (
+    {
+      className,
+      variant,
+      size,
+      asChild = false,
+      hapticFeedback = "medium",
+      onClick,
+      type, // سنضبط افتراضيًا "button" إذا لم يُمرَّر
+      ...props
+    },
+    ref
+  ) => {
     const Comp = asChild ? Slot : "button";
     const { hapticFeedback: tgHaptic } = useTelegram();
     const { theme } = useTheme();
@@ -49,26 +60,35 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
       try {
-        if (tgHaptic) {
-          if (hapticFeedback === "success" || hapticFeedback === "error") {
-            tgHaptic.notification?.(hapticFeedback as any);
-          } else if (hapticFeedback === "selection") {
-            tgHaptic.selection?.();
-          } else {
-            tgHaptic.impact?.(hapticFeedback as any);
+        // شغّل الهابتك فقط داخل Telegram WebApp إذا API متوفّر
+        if (tgHaptic && (window as any)?.Telegram?.WebApp) {
+          switch (hapticFeedback) {
+            case "success":
+            case "error":
+              tgHaptic.notification?.(hapticFeedback);
+              break;
+            case "selection":
+              tgHaptic.selection?.();
+              break;
+            default:
+              tgHaptic.impact?.(hapticFeedback);
           }
         }
-      } catch {}
+      } catch {
+        // تجاهل أخطاء الهابتك نهائيًا
+      }
       onClick?.(e);
     };
 
-    // لو المستخدم اختار Light/Dark يدويًا، نتجاهل telegram-styles ونستخدم default
+    // عند اختيار "system" نسمح باستخدام مظهر Telegram، خلافه نرجع للـ default
     const effectiveVariant =
       variant === "telegram" && !isSystem ? "default" : (variant ?? "default");
 
     return (
       <Comp
-        ref={ref}
+        ref={ref as any}
+        // type افتراضيًا "button" لتجنب submit غير مقصود داخل فورم
+        {...(Comp === "button" ? { type: (type as any) || "button" } : {})}
         className={cn(buttonVariants({ variant: effectiveVariant, size, className }))}
         onClick={handleClick}
         {...props}
@@ -78,4 +98,4 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
-export { Button, buttonVariants };
+export { buttonVariants };
