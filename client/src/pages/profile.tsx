@@ -42,20 +42,14 @@ export default function ProfilePage() {
     staleTime: 30_000,
   });
   const { data: myDisputes = [], isLoading: disputesLoading } = useMyDisputes(
-    uname || undefined,
-    { staleTime: 30_000 }
+    uname || undefined
   );
 
   const stats = useMemo(() => {
-    if (!Array.isArray(myListings))
-      return { activeCount: 0, totalValue: "0.00", totalSubs: 0 };
-    const active = myListings.filter((l: any) => l.isActive);
-    const activeCount = active.length;
-    const totalValue = active.reduce(
-      (s: number, l: any) => s + Number(String(l.price).replace(",", ".")),
-      0
-    );
-    const totalSubs = active
+    const activeCount = (myListings || []).filter((l: any) => l.status === "active").length;
+    const totalValue = (myListings || [])
+      .reduce((s: number, l: any) => s + (Number(l.price) || 0), 0);
+    const totalSubs = (myListings || [])
       .filter((l: any) => l.kind === "channel")
       .reduce((s: number, l: any) => s + N(l.subscribersCount), 0);
     return { activeCount, totalValue: totalValue.toFixed(2), totalSubs };
@@ -88,14 +82,8 @@ export default function ProfilePage() {
     });
   }, [myActivities, t]);
 
-  if (!tgUser?.id && !user?.id) {
-    return (
-      <div className="p-6 text-center text-red-500">
-        {t("activityPage.unauthorized") ||
-          "⚠️ Please open this app from Telegram."}
-      </div>
-    );
-  }
+  // ✅ ألغيت شرط “افتح من داخل تيليجرام”
+  // كان هنا return unauthorized وتم حذفه
 
   return (
     <div className={`min-h-screen bg-background ${lang === "ar" ? "rtl" : "ltr"}`}>
@@ -105,37 +93,24 @@ export default function ProfilePage() {
           telegramUser={tgUser}
           onBack={() => window.history.back()}
           onOpenSettings={() => setShowSettings(true)}
-          t={t}
-          balance={
-            balanceLoading
-              ? { balance: 0, currency: "…" }
-              : balance || { balance: 0, currency: "TON" }
-          }
+          // تقدر تمرر balance لو الكمبوننت يدعمه
+          walletBalance={balance}
+          walletBalanceLoading={balanceLoading}
         />
-      </div>
 
-      {/* Stats Section */}
-      <div className="px-4">
-        <StatsCards
-          activeCount={stats.activeCount}
-          totalValue={stats.totalValue}
-          totalSubs={stats.totalSubs}
-        />
-      </div>
+        <div className="mt-4">
+          <StatsCards
+            activeCount={stats.activeCount}
+            totalValue={stats.totalValue}
+            totalSubs={stats.totalSubs}
+          />
+        </div>
 
-      {/* Tabs */}
-      <div className="px-4 py-6">
-        <Tabs defaultValue="listings" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="listings">
-              {t("profilePage.tabs.listings")}
-            </TabsTrigger>
-            <TabsTrigger value="activity">
-              {t("profilePage.tabs.activity")}
-            </TabsTrigger>
-            <TabsTrigger value="disputes">
-              {t("profilePage.tabs.disputes")}
-            </TabsTrigger>
+        <Tabs defaultValue="listings" className="mt-6">
+          <TabsList className="grid grid-cols-3">
+            <TabsTrigger value="listings">{t("profilePage.tabs.listings") || "إعلاناتي"}</TabsTrigger>
+            <TabsTrigger value="activity">{t("profilePage.tabs.activity") || "النشاط"}</TabsTrigger>
+            <TabsTrigger value="disputes">{t("profilePage.tabs.disputes") || "النزاعات"}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="listings" className="space-y-4">
