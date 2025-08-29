@@ -36,7 +36,6 @@ export default function DisputesIndex() {
 
   const [items, setItems] = useState<Dispute[]>([]);
   const [loading, setLoading] = useState(true);
-  const [denied, setDenied] = useState(false);
 
   // فورماتر تواريخ محلي
   const fmt = useMemo(
@@ -51,36 +50,24 @@ export default function DisputesIndex() {
     []
   );
 
-  // توسيع الويب فيو
+  // ✅ ألغينا المنع: لا setDenied ولا رسالة "افتح من داخل تيليگرام"
   useEffect(() => {
-    try { telegramWebApp?.ready?.(); telegramWebApp?.expand?.(); } catch {}
-  }, []);
-
-  // حماية الوصول: لازم تيليگرام + username
-  useEffect(() => {
-    if (!hasTG || !me) {
-      setDenied(true);
-      setLoading(false);
-      return;
-    }
-
     const ac = new AbortController();
     setLoading(true);
 
     (async () => {
       try {
+        // الخادم يرجّع نزاعات المستخدم الحالي إن وُجد. خارج تيليجرام غالبًا يرجّع قائمة فارغة.
         const data = await apiRequest<Dispute[]>("GET", "/api/disputes?me=1");
         if (ac.signal.aborted) return;
         setItems(Array.isArray(data) ? data : []);
       } catch (e: any) {
         if (ac.signal.aborted) return;
-        setItems([]);
-        const msg =
-          e?.error === "forbidden"
-            ? "غير مسموح. افتح التطبيق من داخل تيليگرام."
-            : e?.message || "تعذر جلب النزاعات";
-        toast({ title: "خطأ", description: msg, variant: "destructive" });
-        if (e?.error === "forbidden") setDenied(true);
+        toast({
+          variant: "destructive",
+          title: "خطأ",
+          description: e?.message || "فشل جلب النزاعات",
+        });
       } finally {
         if (!ac.signal.aborted) setLoading(false);
       }
@@ -88,22 +75,6 @@ export default function DisputesIndex() {
 
     return () => ac.abort();
   }, [hasTG, me, toast]);
-
-  if (denied) {
-    return (
-      <div className="p-4 space-y-3">
-        <h1 className="text-lg font-semibold">النزاعات</h1>
-        <Card>
-          <CardContent className="p-4 text-sm">
-            غير مسموح. افتح التطبيق من داخل تيليگرام وبحسابك.
-          </CardContent>
-        </Card>
-        <div className="pt-2">
-          <Button variant="secondary" size="sm" onClick={() => navigate("/")}>رجوع</Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="p-4 space-y-3">
@@ -116,23 +87,20 @@ export default function DisputesIndex() {
       ) : (
         items.map((d) => (
           <Card key={d.id}>
-            <CardContent className="p-4 flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  {statusBadge(String(d.status))}
-                  {d.listingTitle ? <span className="text-sm opacity-80">— {d.listingTitle}</span> : null}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {d.createdAt ? fmt.format(new Date(d.createdAt)) : ""}
-                </div>
-                <div className="text-sm">
-                  {d.buyerUsername ? `المشتري: @${d.buyerUsername}` : null}
-                  {d.sellerUsername ? `، البائع: @${d.sellerUsername}` : null}
-                </div>
-                {d.reason ? <div className="text-xs opacity-70">السبب: {d.reason}</div> : null}
+            <CardContent className="p-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">{d.listingTitle || d.paymentId || d.id}</div>
+                {statusBadge(String(d.status || ""))}
               </div>
-              <div className="flex items-center gap-2">
-                <Link href={`/disputes/${d.id}`}>
+              <div className="text-sm text-muted-foreground">
+                {d.reason || "—"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {d.createdAt ? `بداية: ${fmt.format(new Date(d.createdAt))}` : null}
+                {d.lastUpdateAt ? ` • آخر تحديث: ${fmt.format(new Date(d.lastUpdateAt))}` : null}
+              </div>
+              <div className="pt-2">
+                <Link href={`/disputes/${encodeURIComponent(d.id)}`}>
                   <Button size="sm">فتح المحادثة</Button>
                 </Link>
               </div>
