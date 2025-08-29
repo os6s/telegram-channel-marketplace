@@ -1,6 +1,6 @@
 // server/routes/wallet.ts
 import { Router, Request, Response } from "express";
-import { beginCell } from "ton-core";
+import { beginCell } from "@ton/core";
 import { db } from "../db.js";
 import { users, walletLedger } from "@shared/schema";
 import { and, eq, sql } from "drizzle-orm";
