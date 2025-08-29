@@ -1,47 +1,56 @@
+// server/routes/wallet.ts
 import { Router, Request, Response } from "express";
 
 const router = Router();
 
-const ESCROW_ADDRESS = "UQAdnKLl4-hXE_oDoqTwD22aA3ou884lqEQrTzazKI3zxIhf";
-const COMMENT_TEXT = "ton/ton!!!";
+// Use a bounceable user-friendly address (EQ... recommended).
+const ESCROW_ADDRESS = "EQAdnKLl4-hXE_oDoqTwD22aA3ou884lqEQrTzazKI3zxIhf";
 
-function toNano(amount: number): string {
+function toNanoStr(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("amount invalid");
   const [i, f = ""] = String(amount).split(".");
   const f9 = (f + "000000000").slice(0, 9);
-  const s = `${i}${f9}`.replace(/^0+/, "");
+  const s = `${i.replace(/^0+/, "")}${f9}`.replace(/^0+/, "");
   return s.length ? s : "0";
 }
 
 router.post("/deposit", (req: Request, res: Response) => {
-  const { amount } = req.body as { amount?: number };
-  if (typeof amount !== "number" || amount <= 0) {
-    return res.status(400).json({ ok: false, error: "amount > 0 required" });
-  }
+  try {
+    const { amount, chain } = req.body as { amount?: number; chain?: "mainnet" | "testnet" };
 
-  const nanoAmount = toNano(amount);
-  const validUntil = Math.floor(Date.now() / 1000) + 15 * 60;
+    if (typeof amount !== "number" || amount <= 0) {
+      return res.status(400).json({ ok: false, error: "amount > 0 required" });
+    }
 
-  const tonConnectTx = {
-    validUntil,
-    messages: [
-      {
-        address: ESCROW_ADDRESS,
-        amount: nanoAmount,
-        // ❗️التعليق النصي (COMMENT_TEXT) ما ينضاف هنا لأن TonConnect يحتاج payload خاص.
-        // حالياً نخلي العملية تحويل صافي للمحفظة.
+    // Optional: log/validate chain to avoid mainnet/testnet mismatches.
+    if (chain && chain !== "mainnet" && chain !== "testnet") {
+      return res.status(400).json({ ok: false, error: "invalid chain" });
+    }
+
+    // Build TonConnect transaction
+    const tonConnectTx = {
+      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes per spec
+      messages: [
+        {
+          address: ESCROW_ADDRESS,          // user-friendly address
+          amount: toNanoStr(amount),        // string, nanotons
+          // payload/stateInit omitted -> pure TON transfer
+        },
+      ],
+    };
+
+    return res.json({
+      ok: true,
+      deposit: {
+        asset: "TON",
+        amount,
+        chain: chain || "mainnet",
+        tonConnectTx,
       },
-    ],
-  };
-
-  return res.json({
-    ok: true,
-    deposit: {
-      asset: "TON",
-      amount,
-      tonConnectTx,
-    },
-  });
+    });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: String(err?.message || err) });
+  }
 });
 
 export default router;
