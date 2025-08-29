@@ -18,37 +18,33 @@ export function installTgFetchShim() {
   const origFetch = window.fetch.bind(window);
 
   window.fetch = (input: RequestInfo | URL, initArg?: RequestInit) => {
-    // طبّع الطلب أولاً إلى Request واحد آمن
-    const req = new Request(input as any, initArg);
-    // دعم الروابط النسبية
-    const url = new URL(req.url, window.location.href);
+    // لا نعدل OPTIONS
+    const method = (initArg?.method || (input as any)?.method || "GET").toUpperCase();
+    if (method === "OPTIONS") return origFetch(input as any, initArg);
 
-    // انسخ الهيدرات ثم أضف initData بالاسم الصحيح (lowercase)
-    const headers = new Headers(req.headers);
-    const initData = getInitData();
-    if (initData && !headers.has("x-telegram-init-data")) {
-      headers.set("x-telegram-init-data", initData);
+    // استخرج الـ URL للفلترة فقط
+    let urlStr: string;
+    if (typeof input === "string") urlStr = input;
+    else if (input instanceof URL) urlStr = input.toString();
+    else urlStr = (input as Request).url;
+
+    const url = new URL(urlStr, window.location.href);
+
+    // نضيف الهيدر فقط لطلبات نفس الدومين وتحت /api/
+    const sameOrigin = url.origin === window.location.origin;
+    const isApi = url.pathname.startsWith("/api/");
+    if (!sameOrigin || !isApi) {
+      return origFetch(input as any, initArg);
     }
 
-    // أعد استدعاء fetch بالأجزاء نفسها
-    const method = req.method || "GET";
-    const body =
-      method !== "GET" && method !== "HEAD" ? (req as any).body : undefined;
+    // كوّن Headers جديدة بناءً على initArg فقط
+    const headers = new Headers(initArg?.headers || undefined);
+    const initData = getInitData();
+    if (initData && !headers.has("x-telegram-init-data")) {
+      headers.set("x-telegram-init-data", initData); // اسم الهيدر بالحروف الصغيرة
+    }
 
-    return origFetch(url.toString(), {
-      method,
-      headers,
-      body,
-      // نحافظ على خصائص الطلب الأصلي
-      credentials: req.credentials,
-      cache: req.cache as RequestCache,
-      redirect: req.redirect as RequestRedirect,
-      referrer: req.referrer || undefined,
-      referrerPolicy: req.referrerPolicy || undefined,
-      integrity: (req as any).integrity,
-      keepalive: (req as any).keepalive,
-      mode: req.mode as RequestMode,
-      signal: req.signal,
-    });
+    // استدعِ fetch بالأصل نفسه مع headers المعدلة. لا نحول URL ولا ننسخ الجسم.
+    return origFetch(input as any, { ...initArg, headers });
   };
 }
