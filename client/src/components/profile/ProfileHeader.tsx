@@ -18,6 +18,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
 
+const tg = (typeof window !== "undefined" && (window as any).Telegram?.WebApp) || null;
+
 const S = (v: unknown) => (typeof v === "string" ? v : "");
 const initialFrom = (v: unknown) => {
   const s = S(v);
@@ -88,25 +90,37 @@ export function ProfileHeader({
   async function handleDeposit() {
     try {
       setBusy(true);
+
       const amt = Number(amount);
       if (!amt || amt <= 0) {
         toast({ title: t("toast.invalidAmount"), variant: "destructive" });
         return;
       }
 
-      const resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt });
+      // 1) Ensure wallet connection on the same tap
       await ensureConnected(tonConnectUI);
 
+      // 2) Ask backend for tx using the actual chain
+      const chain = tonConnectUI?.wallet?.account?.chain; // 'mainnet' | 'testnet'
+      const resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt, chain });
       const tx = resp?.deposit?.tonConnectTx;
       if (!tx?.messages?.length) throw new Error("invalid tx from server");
 
-      await tonConnectUI.sendTransaction(tx);
-      toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة." });
+      // 3) Force-open the wallet app from Telegram webview
+      const link =
+        tonConnectUI?.wallet?.universalLink || tonConnectUI?.wallet?.deepLink || null;
+      if (tg && link) tg.openLink(link, { try_instant_view: false });
 
+      // 4) Send transaction via TonConnect
+      await tonConnectUI.sendTransaction(tx);
+
+      toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة." });
       setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
-      toast({ title: "Deposit failed", description: String(e?.message || e), variant: "destructive" });
+      const msg = e?.message || String(e);
+      const code = (e as any)?.code;
+      toast({ title: "Deposit failed", description: `${code ? code + " " : ""}${msg}`, variant: "destructive" });
     } finally {
       setBusy(false);
     }
