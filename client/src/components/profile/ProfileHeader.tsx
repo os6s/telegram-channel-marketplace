@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
+// client/src/components/profile/ProfileHeader.tsx
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -18,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
 import { useWalletAddress, useWalletBalance } from "@/hooks/use-wallet";
+import { useQueryClient } from "@tanstack/react-query";
 
 const S = (v: unknown) => (typeof v === "string" ? v : "");
 const initialFrom = (v: unknown) => {
@@ -55,6 +57,7 @@ export function ProfileHeader({
 }) {
   const { t } = useLanguage();
   const { toast } = useToast();
+  const qc = useQueryClient();
   const [tonConnectUI] = useTonConnectUI();
   const tonWallet = useTonWallet();
 
@@ -65,11 +68,21 @@ export function ProfileHeader({
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const pollRef = useRef<number | null>(null);
   const address = useMemo(() => tonWallet?.account?.address || "", [tonWallet?.account?.address]);
 
   useEffect(() => {
     if (address) updateWallet(address);
   }, [address, updateWallet]);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, []);
 
   async function handleConnect() {
     try {
@@ -102,7 +115,6 @@ export function ProfileHeader({
     try {
       setBusy(true);
 
-      // تأكد من الاتصال أولاً
       await ensureConnected(tonConnectUI);
       const addrNow = tonConnectUI?.wallet?.account?.address;
       if (!addrNow) throw new Error("Wallet not connected");
@@ -113,18 +125,48 @@ export function ProfileHeader({
         return;
       }
 
+      // 1) اطلب بيانات الباك: tx + comment
       const resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt });
-
       const tx = resp?.deposit?.tonConnectTx;
-      if (!tx?.messages?.length) throw new Error("invalid tx from server");
+      const comment: string | undefined = resp?.deposit?.comment;
+      if (!tx?.messages?.length || !comment) throw new Error("invalid deposit response");
 
-      // أغلق الدايالوگ قبل الإرسال لتحاشي مشاكل iOS WebView
+      // 2) أغلق الديالوج قبل الإرسال
       setDepositOpen(false);
 
+      // 3) أرسل المعاملة عبر TonConnect
       await tonConnectUI.sendTransaction(tx);
       toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة." });
-
       setAmount("");
+
+      // 4) ابدأ polling كل 5 ثواني على /deposit/status بالـ comment
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      let tries = 0;
+      pollRef.current = window.setInterval(async () => {
+        try {
+          tries += 1;
+          const st = await apiRequest("POST", "/api/wallet/deposit/status", { comment });
+          if (st?.status === "paid") {
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+            toast({ title: t("toast.depositConfirmed"), description: `Tx: ${st.txHash || ""}` });
+            qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
+          } else if (tries >= 36) {
+            // توقّف بعد ~3 دقائق
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+          }
+        } catch {
+          // تجاهل أخطاء الشبكة المؤقتة
+        }
+      }, 5000);
     } catch (e: any) {
       const msg = String(e?.message || e);
       toast({ title: "Deposit failed", description: msg, variant: "destructive" });
