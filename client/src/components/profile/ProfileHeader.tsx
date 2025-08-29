@@ -68,7 +68,12 @@ export function ProfileHeader({
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // حالة التأكيد
+  const [confirming, setConfirming] = useState(false);
+  const [pendingAmount, setPendingAmount] = useState<number | null>(null);
+  const pendingCommentRef = useRef<string | null>(null);
   const pollRef = useRef<number | null>(null);
+
   const address = useMemo(() => tonWallet?.account?.address || "", [tonWallet?.account?.address]);
 
   useEffect(() => {
@@ -106,6 +111,12 @@ export function ProfileHeader({
       await tonConnectUI?.disconnect?.();
       updateWallet(null);
       setDepositOpen(false);
+      // ألغِ أي مراقبة
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+      setConfirming(false);
+      pendingCommentRef.current = null;
+      setPendingAmount(null);
     } finally {
       setBusy(false);
     }
@@ -125,7 +136,7 @@ export function ProfileHeader({
         return;
       }
 
-      // 1) اطلب بيانات الباك: tx + comment
+      // 1) طلب بيانات الإيداع: tx + comment
       const resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt });
       const tx = resp?.deposit?.tonConnectTx;
       const comment: string | undefined = resp?.deposit?.comment;
@@ -134,12 +145,17 @@ export function ProfileHeader({
       // 2) أغلق الديالوج قبل الإرسال
       setDepositOpen(false);
 
-      // 3) أرسل المعاملة عبر TonConnect
+      // 3) إرسال المعاملة
       await tonConnectUI.sendTransaction(tx);
-      toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة." });
       setAmount("");
 
-      // 4) ابدأ polling كل 5 ثواني على /deposit/status بالـ comment
+      // 4) أظهر حالة "جارِ التأكيد"
+      setConfirming(true);
+      setPendingAmount(amt);
+      pendingCommentRef.current = comment;
+      toast({ title: t("deposit.confirmingTitle"), description: t("deposit.confirmingDesc") });
+
+      // 5) ابدأ polling كل 5 ثواني
       if (pollRef.current) {
         clearInterval(pollRef.current);
         pollRef.current = null;
@@ -154,22 +170,39 @@ export function ProfileHeader({
               clearInterval(pollRef.current);
               pollRef.current = null;
             }
-            toast({ title: t("toast.depositConfirmed"), description: `Tx: ${st.txHash || ""}` });
+            setConfirming(false);
+            setPendingAmount(null);
+            pendingCommentRef.current = null;
+            toast({
+              title: t("deposit.confirmedTitle"),
+              description: t("deposit.confirmedDesc", { tx: st.txHash || "" }),
+            });
             qc.invalidateQueries({ queryKey: ["/api/wallet/balance"] });
           } else if (tries >= 36) {
-            // توقّف بعد ~3 دقائق
+            // ~3 دقائق
             if (pollRef.current) {
               clearInterval(pollRef.current);
               pollRef.current = null;
             }
+            setConfirming(false);
+            setPendingAmount(null);
+            pendingCommentRef.current = null;
+            toast({
+              title: t("deposit.timeoutTitle"),
+              description: t("deposit.timeoutDesc"),
+              variant: "destructive",
+            });
           }
         } catch {
-          // تجاهل أخطاء الشبكة المؤقتة
+          // تجاهل أخطاء مؤقتة
         }
       }, 5000);
     } catch (e: any) {
+      setConfirming(false);
+      setPendingAmount(null);
+      pendingCommentRef.current = null;
       const msg = String(e?.message || e);
-      toast({ title: "Deposit failed", description: msg, variant: "destructive" });
+      toast({ title: t("deposit.failedTitle"), description: msg, variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -211,10 +244,17 @@ export function ProfileHeader({
               </button>
             </div>
 
+            {/* شارة حالة التأكيد */}
+            {confirming && (
+              <Badge variant="secondary" className="truncate max-w-[240px]">
+                {t("deposit.confirmingInline")}{pendingAmount ? ` • ${pendingAmount} TON` : ""}
+              </Badge>
+            )}
+
             {!linkedWallet ? (
               <Button onClick={handleConnect} className="rounded-full px-5" disabled={busy}>
                 <img src={tonIconUrl} alt="" className="w-4 h-4 mr-2" />
-                {busy ? "…" : "Connect Wallet"}
+                {busy ? "…" : t("wallet.connect")}
               </Button>
             ) : (
               <div className="flex items-center gap-2">
@@ -228,7 +268,7 @@ export function ProfileHeader({
                   variant="secondary"
                   disabled={busy}
                 >
-                  Disconnect
+                  {t("wallet.disconnect")}
                 </Button>
               </div>
             )}
