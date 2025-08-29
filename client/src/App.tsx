@@ -6,9 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { TelegramApp } from "@/components/telegram-app";
 import { ThemeProvider } from "@/contexts/theme-context";
 import { LanguageProvider, useLanguage } from "@/contexts/language-context";
-import { lazy, Suspense, useMemo } from "react";
+import { lazy, Suspense } from "react";
 import { useTelegram } from "@/hooks/use-telegram";
-import { TonConnectUIProvider } from "@tonconnect/ui-react";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Button } from "@/components/ui/button";
 
@@ -89,42 +88,24 @@ function BottomNavigation() {
 }
 
 function App() {
-  const manifestUrl = useMemo(() => {
-    return typeof window !== "undefined"
-      ? `${window.location.origin}/tonconnect-manifest.json`
-      : "/tonconnect-manifest.json";
-  }, []);
-
-  const APP_NET =
-    (import.meta as any).env?.VITE_TON_NETWORK === "TESTNET" ? "TESTNET" : "MAINNET";
-
   return (
     <QueryClientProvider client={queryClient}>
-      <TonConnectUIProvider
-        manifestUrl={manifestUrl}
-        returnStrategy="twa"   // ✅ Required inside Telegram WebApp
-        actionsConfiguration={{
-          twaReturnUrl: "https://t.me/Giftspremarketbot/startapp", //deep link back to your bot
-        }}
-        walletsListConfiguration={{ network: APP_NET }}
-      >
-        <ThemeProvider>
-          <LanguageProvider>
-            <TooltipProvider>
-              <TelegramApp>
-                <Toaster />
-                <Router />
-                <Link href="/sell" className="fixed bottom-20 right-4 z-50">
-                  <Button className="rounded-full w-14 h-14 bg-green-500 hover:bg-green-600 shadow-lg text-white text-2xl">
-                    +
-                  </Button>
-                </Link>
-                <BottomNavigation />
-              </TelegramApp>
-            </TooltipProvider>
-          </LanguageProvider>
-        </ThemeProvider>
-      </TonConnectUIProvider>
+      <ThemeProvider>
+        <LanguageProvider>
+          <TooltipProvider>
+            <TelegramApp>
+              <Toaster />
+              <Router />
+              <Link href="/sell" className="fixed bottom-20 right-4 z-50">
+                <Button className="rounded-full w-14 h-14 bg-green-500 hover:bg-green-600 shadow-lg text-white text-2xl">
+                  +
+                </Button>
+              </Link>
+              <BottomNavigation />
+            </TelegramApp>
+          </TooltipProvider>
+        </LanguageProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
