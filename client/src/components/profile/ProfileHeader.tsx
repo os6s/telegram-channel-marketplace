@@ -70,7 +70,11 @@ export function ProfileHeader({
       setBusy(true);
       await ensureConnected(tonConnectUI);
     } catch (e: any) {
-      toast({ title: t("toast.connectFailed"), description: e?.message || "", variant: "destructive" });
+      toast({
+        title: t("toast.connectFailed"),
+        description: e?.message || "",
+        variant: "destructive",
+      });
     } finally {
       setBusy(false);
     }
@@ -85,7 +89,6 @@ export function ProfileHeader({
     }
   }
 
-  // OFFICIAL FLOW: ensure connected -> build tx -> sendTransaction. No manual links.
   async function handleDeposit() {
     try {
       setBusy(true);
@@ -95,22 +98,19 @@ export function ProfileHeader({
         return;
       }
 
+      const resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt });
       await ensureConnected(tonConnectUI);
 
-      const chain = tonConnectUI?.wallet?.account?.chain; // 'mainnet' | 'testnet'
-      const resp = await apiRequest("POST", "/api/wallet/deposit", { amount: amt, chain });
       const tx = resp?.deposit?.tonConnectTx;
       if (!tx?.messages?.length) throw new Error("invalid tx from server");
 
       await tonConnectUI.sendTransaction(tx);
-
       toast({ title: t("toast.confirmDeposit") || "تم إرسال المعاملة." });
+
       setDepositOpen(false);
       setAmount("");
     } catch (e: any) {
-      const msg = e?.message || String(e);
-      const code = (e as any)?.code;
-      toast({ title: "Deposit failed", description: `${code ? code + " " : ""}${msg}`, variant: "destructive" });
+      toast({ title: "Deposit failed", description: String(e?.message || e), variant: "destructive" });
     } finally {
       setBusy(false);
     }
